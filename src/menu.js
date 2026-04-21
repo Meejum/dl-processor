@@ -3,6 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
+const { pickDldFiles, pickSfFile } = require('./file-picker');
 
 const ROOT         = path.join(__dirname, '..');
 const INPUT_DIR    = path.join(ROOT, 'input');
@@ -142,12 +143,13 @@ async function showMenu() {
   console.log('');
 
   sectionHeader('MAIN MENU');
-  menuLine('1', 'Parse & Import DLD',        'input/*.xps or *.csv');
-  menuLine('2', 'Import Salesforce',          'sf-input/*.xlsx');
+  menuLine('1', 'Parse & Import DLD',        'pick .xps or .csv file');
+  menuLine('2', 'Import Salesforce',          'pick .xlsx file');
   menuLine('3', 'Compare  (DLD vs SF)',        'writes .compare.csv / .html / audit-tasks');
   menuLine('4', 'Month-over-Month Diff',        'writes .diff.csv / .html');
   menuLine('5', 'Manual Overrides',              'bank-only units → real buyer');
-  menuLine('6', 'FULL PIPELINE',                 'do everything');
+  menuLine('6', 'FULL PIPELINE (folders)',       'process everything in input/ & sf-input/');
+  menuLine('7', 'QUICK AUDIT',                   'pick DLD + SF files, run everything');
   console.log('');
   menuLine('P', 'Projects list',                '');
   menuLine('S', 'Status',                       '');
@@ -161,13 +163,53 @@ async function showMenu() {
 
 async function doParseImport() {
   await showHeader(); sectionHeader('PARSE & IMPORT DLD');
-  runNode(['import']);
+  console.log('   opening file browser...');
+  const picks = await Promise.resolve(pickDldFiles());
+  if (!picks || picks.length === 0) {
+    console.log('   ' + C.dim + 'cancelled — no file selected' + C.reset);
+    await pause(); return;
+  }
+  console.log('   selected:');
+  picks.forEach(p => console.log('     ' + C.white + path.basename(p) + C.reset + C.dim + '  ' + p + C.reset));
+  console.log('');
+  runNode(['import', ...picks]);
   await pause();
 }
 
 async function doImportSf() {
   await showHeader(); sectionHeader('IMPORT SALESFORCE');
-  runNode(['import-sf']);
+  console.log('   opening file browser...');
+  const picks = await Promise.resolve(pickSfFile());
+  if (!picks || picks.length === 0) {
+    console.log('   ' + C.dim + 'cancelled — no file selected' + C.reset);
+    await pause(); return;
+  }
+  console.log('   selected:');
+  picks.forEach(p => console.log('     ' + C.white + path.basename(p) + C.reset + C.dim + '  ' + p + C.reset));
+  console.log('');
+  runNode(['import-sf', ...picks]);
+  await pause();
+}
+
+async function doQuickAudit() {
+  await showHeader(); sectionHeader('QUICK AUDIT  /  pick files + run all');
+  console.log('   Step 1/3 — pick DLD file(s)...');
+  const dldPicks = await Promise.resolve(pickDldFiles());
+  if (!dldPicks || dldPicks.length === 0) { console.log('   ' + C.dim + 'cancelled' + C.reset); await pause(); return; }
+  console.log('   DLD: ' + dldPicks.map(p => path.basename(p)).join(', '));
+  console.log('');
+  console.log('   Step 2/3 — pick Salesforce xlsx...');
+  const sfPicks = await Promise.resolve(pickSfFile());
+  if (!sfPicks || sfPicks.length === 0) { console.log('   ' + C.dim + 'cancelled — importing DLD only' + C.reset); }
+  else console.log('   SF: ' + path.basename(sfPicks[0]));
+  console.log('');
+  console.log('   Step 3/3 — running pipeline...');
+  console.log('');
+
+  runNode(['import', ...dldPicks]);
+  if (sfPicks && sfPicks.length) runNode(['import-sf', sfPicks[0]]);
+  runNode(['compare']);
+  runNode(['diff']);
   await pause();
 }
 
@@ -359,6 +401,7 @@ async function mainLoop() {
         case '4': await doDiff();        break;
         case '5': await doOverrides();   break;
         case '6': await doFull();        break;
+        case '7': await doQuickAudit();  break;
         case 'p': await doProjects();    break;
         case 's': await doStatus();      break;
         case 'o': await doOpenReport();  break;
