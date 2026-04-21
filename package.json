@@ -1,0 +1,22 @@
+{
+  "name": "xps-processor",
+  "version": "0.1.0",
+  "description": "Parse DLD Project Inquiry XPS reports into structured data (JSON/CSV) for Salesforce comparison",
+  "main": "index.js",
+  "bin": {
+    "xps-processor": "./index.js"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "parse": "node index.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Ali Alghumlasi — Sobha Realty Registration Team",
+  "license": "UNLICENSED",
+  "private": true
+}

@@ -1,0 +1,10 @@
+node_modules/
+output/*.json
+output/*.csv
+output/*.sqlite
+output/*.db
+!output/.gitkeep
+tmp/
+.DS_Store
+Thumbs.db
+*.log
