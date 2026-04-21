@@ -49,23 +49,35 @@ function getSfBookingsForSub(db, sfSnapshotId, subProject) {
   `).all(sfSnapshotId, subProject);
 }
 
+const MARKET_PRICE_TX = new Set([
+  'Complete Delayed Sell', 'Sell - Pre registration', 'Sale', 'Delayed Sell'
+]);
+
 const PURCHASE_TX_TYPES = new Set([
-  'Complete Delayed Sell', 'Sell - Pre registration', 'Sale', 'Delayed Sell', 'Grant', 'Lease to Own Registration'
+  ...MARKET_PRICE_TX, 'Grant', 'Lease to Own Registration'
 ]);
 const BANK_PREFIX_RE = /^(BANK|COMMERCIAL|EMIRATES|DUBAI|ABU DHABI|AJMAN|SHARJAH|AL\s|HSBC|MASHREQ|UNION NATIONAL|FIRST ABU DHABI|FAB|RAK BANK|NATIONAL BANK OF|ENBD|SAMBA|SABB|RIYAD|ARAB |EMIRATES NBD|EMIRATES ISLAMIC)/i;
 
-function pickLatestPurchase(dldTxs) {
-  const purchases = dldTxs.filter(t => PURCHASE_TX_TYPES.has(t.tx_type));
-  if (purchases.length === 0) return null;
-  purchases.sort((a, b) => {
+function pickLatestOfTypes(dldTxs, typeSet) {
+  const hits = dldTxs.filter(t => typeSet.has(t.tx_type));
+  if (hits.length === 0) return null;
+  hits.sort((a, b) => {
     const da = a.tx_date_iso || '';
     const db = b.tx_date_iso || '';
     return db.localeCompare(da);
   });
-  const top = purchases[0];
-  const sameDate = purchases.filter(t => (t.tx_date_iso || '') === (top.tx_date_iso || ''));
+  const top = hits[0];
+  const sameDate = hits.filter(t => (t.tx_date_iso || '') === (top.tx_date_iso || ''));
   const withName = sameDate.find(t => t.party_name && !BANK_PREFIX_RE.test(t.party_name));
   return withName || top;
+}
+
+function pickLatestPurchase(dldTxs) {
+  return pickLatestOfTypes(dldTxs, PURCHASE_TX_TYPES);
+}
+
+function pickLatestMarketPrice(dldTxs) {
+  return pickLatestOfTypes(dldTxs, MARKET_PRICE_TX);
 }
 
 function namesOverlap(a, b) {
@@ -79,17 +91,36 @@ function namesOverlap(a, b) {
   return false;
 }
 
+function computePriceDelta(dldPrice, sfPrice) {
+  if (dldPrice == null || sfPrice == null) return { diff: null, pct: null, direction: null };
+  const diff = dldPrice - sfPrice;
+  const pct  = sfPrice !== 0 ? (diff / sfPrice) * 100 : null;
+  let direction = 'flat';
+  if (diff > 0) direction = 'up';
+  else if (diff < 0) direction = 'down';
+  return { diff, pct, direction };
+}
+
 function classifyMatch(dldUnit, dldTxs, sfRow) {
-  if (!sfRow) return { status: 'DLD_ONLY', reasons: ['no SF booking'] };
+  if (!sfRow) return {
+    status: 'DLD_ONLY',
+    reasons: ['no SF booking'],
+    priceDelta: { diff: null, pct: null, direction: null }
+  };
   const reasons = [];
 
-  const purchase = pickLatestPurchase(dldTxs);
-  const dldPrice = purchase ? purchase.amount_aed : null;
+  const purchase    = pickLatestPurchase(dldTxs);
+  const marketPrice = pickLatestMarketPrice(dldTxs);
+  const dldPrice    = marketPrice ? marketPrice.amount_aed : null;
+  const sfPrice     = sfRow.purchase_price;
+  const delta       = computePriceDelta(dldPrice, sfPrice);
 
-  if (sfRow.purchase_price != null && dldPrice != null) {
-    const diff = Math.abs(sfRow.purchase_price - dldPrice);
-    const rel  = diff / Math.max(dldPrice, 1);
-    if (rel > 0.01) reasons.push(`price diff ${Math.round(diff).toLocaleString()} AED (DLD ${Math.round(dldPrice).toLocaleString()} vs SF ${Math.round(sfRow.purchase_price).toLocaleString()})`);
+  if (delta.pct != null && Math.abs(delta.pct) > 1) {
+    const absDiff = Math.abs(delta.diff);
+    const verb    = delta.direction === 'up' ? 'rose' : 'fell';
+    const sign    = delta.direction === 'up' ? '+' : '-';
+    const pctStr  = Math.abs(delta.pct).toFixed(2) + '%';
+    reasons.push(`price ${verb} ${pctStr} (${sign}${Math.round(absDiff).toLocaleString()} AED): DLD ${Math.round(dldPrice).toLocaleString()} vs SF ${Math.round(sfPrice).toLocaleString()}`);
   }
 
   if (purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name) && sfRow.applicant_name) {
@@ -98,8 +129,8 @@ function classifyMatch(dldUnit, dldTxs, sfRow) {
     }
   }
 
-  if (reasons.length === 0) return { status: 'MATCH', reasons: [] };
-  return { status: 'MISMATCH', reasons };
+  if (reasons.length === 0) return { status: 'MATCH', reasons: [], priceDelta: delta };
+  return { status: 'MISMATCH', reasons, priceDelta: delta };
 }
 
 function compareProject(db, projectId) {
@@ -155,6 +186,9 @@ function compareProject(db, projectId) {
       dld_purchase_date:   purchase.tx_date || null,
       dld_purchase_amount: purchase.amount_aed || null,
       dld_purchase_party:  purchase.party_name || null,
+      price_diff_aed:      cls.priceDelta.diff != null ? Math.round(cls.priceDelta.diff) : null,
+      price_diff_pct:      cls.priceDelta.pct != null ? +cls.priceDelta.pct.toFixed(2) : null,
+      price_direction:     cls.priceDelta.direction,
       dld_last_tx_type:    latestTx.tx_type || null,
       dld_last_tx_date:    latestTx.tx_date || null,
       dld_last_amount_aed: latestTx.amount_aed || null,
@@ -188,6 +222,9 @@ function compareProject(db, projectId) {
         dld_purchase_date:   null,
         dld_purchase_amount: null,
         dld_purchase_party:  null,
+        price_diff_aed:      null,
+        price_diff_pct:      null,
+        price_direction:     null,
         dld_last_tx_type:    null,
         dld_last_tx_date:    null,
         dld_last_amount_aed: null,
@@ -223,49 +260,246 @@ function writeCompareCsv(outPath, rows) {
   writeCsv(outPath, header, rows);
 }
 
+function escHtml(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function fmtMoney(v) {
+  if (v == null) return '';
+  return Math.round(v).toLocaleString();
+}
+
+function fmtPct(v) {
+  if (v == null) return '';
+  const sign = v > 0 ? '+' : '';
+  return sign + v.toFixed(2) + '%';
+}
+
 function writeCompareHtml(outPath, project, rows, counts) {
   const total = rows.length;
-  const pct = n => total ? ((n * 100) / total).toFixed(1) + '%' : '0%';
-  const statusClass = {
-    MATCH: 'ok', MISMATCH: 'warn', DLD_ONLY: 'dld', SF_ONLY: 'sf'
+  const pct   = n => total ? ((n * 100) / total).toFixed(1) + '%' : '0%';
+  const statusClass = { MATCH: 'ok', MISMATCH: 'warn', DLD_ONLY: 'dld', SF_ONLY: 'sf' };
+
+  const columns = [
+    { key: 'dld_unit_number',     label: 'DLD Unit',        align: 'left'  },
+    { key: 'expected_sf_unit',    label: 'Expected SF Unit', align: 'left' },
+    { key: 'sf_unit',             label: 'SF Unit (actual)', align: 'left' },
+    { key: 'dld_unit_type',       label: 'Type',             align: 'left' },
+    { key: 'dld_purchase_type',   label: 'DLD Tx',           align: 'left' },
+    { key: 'dld_purchase_date',   label: 'DLD Date',         align: 'left' },
+    { key: 'dld_purchase_amount', label: 'DLD Price',        align: 'num'  },
+    { key: 'dld_purchase_party',  label: 'DLD Buyer',        align: 'left' },
+    { key: 'sf_applicant',        label: 'SF Applicant',     align: 'left' },
+    { key: 'sf_purchase_price',   label: 'SF Price',         align: 'num'  },
+    { key: 'price_diff_pct',      label: 'Δ %',              align: 'num'  },
+    { key: 'price_diff_aed',      label: 'Δ AED',            align: 'num'  },
+    { key: 'sf_status',           label: 'SF Status',        align: 'left' },
+    { key: 'match_status',        label: 'Match',            align: 'left' },
+    { key: 'match_reasons',       label: 'Reason',           align: 'left' }
+  ];
+
+  const renderCell = (col, r) => {
+    const raw = r[col.key];
+    let html  = escHtml(raw);
+    let sortVal = raw == null ? '' : String(raw);
+    const cls  = [];
+    if (col.align === 'num') cls.push('num');
+
+    if (col.key === 'dld_purchase_amount' || col.key === 'sf_purchase_price') {
+      html = raw == null ? '' : fmtMoney(raw);
+      sortVal = raw == null ? '-Infinity' : String(raw);
+    } else if (col.key === 'price_diff_pct') {
+      html = raw == null ? '' : fmtPct(raw);
+      sortVal = raw == null ? '-999999' : String(raw);
+      if (raw != null) {
+        if (raw > 0)       cls.push('up');
+        else if (raw < 0)  cls.push('down');
+        else               cls.push('flat');
+      }
+    } else if (col.key === 'price_diff_aed') {
+      if (raw != null) {
+        const sign = raw > 0 ? '+' : (raw < 0 ? '-' : '');
+        html = sign + fmtMoney(Math.abs(raw));
+        if (raw > 0) cls.push('up');
+        else if (raw < 0) cls.push('down');
+      }
+      sortVal = raw == null ? '-Infinity' : String(raw);
+    } else if (col.key === 'match_status') {
+      html = `<span class="badge ${statusClass[raw] || ''}">${escHtml(raw)}</span>`;
+    } else if (col.key === 'dld_purchase_date') {
+      if (raw) {
+        const m = String(raw).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+        sortVal = m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : String(raw);
+      }
+    }
+    return `<td class="${cls.join(' ')}" data-sort-val="${escHtml(sortVal)}">${html}</td>`;
   };
-  const header = ['dld_unit_number','expected_sf_unit','sf_unit','dld_last_tx_type','dld_last_amount_aed','sf_applicant','sf_purchase_price','sf_status','match_status','match_reasons'];
-  const body = rows.map(r => `<tr class="${statusClass[r.match_status] || ''}">` + header.map(h => `<td>${(r[h] == null ? '' : String(r[h]).replace(/&/g,'&amp;').replace(/</g,'&lt;'))}</td>`).join('') + '</tr>').join('\n');
+
+  const renderRow = r => {
+    const searchText = columns.map(c => r[c.key] == null ? '' : String(r[c.key])).join(' ').toLowerCase();
+    return `<tr class="${statusClass[r.match_status] || ''}" data-status="${escHtml(r.match_status)}" data-search="${escHtml(searchText)}">` +
+      columns.map(c => renderCell(c, r)).join('') +
+      '</tr>';
+  };
+
+  const headHtml = columns
+    .map((c, i) => `<th data-col="${i}" data-align="${c.align}">${escHtml(c.label)}</th>`)
+    .join('');
+
+  const bodyHtml = rows.map(renderRow).join('\n');
+
+  const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+
   const html = `<!doctype html>
-<html><head><meta charset="utf-8"><title>${project.project_name} — DLD vs SF</title>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>${escHtml(project.project_name)} — DLD vs SF</title>
 <style>
-  body{font:13px/1.4 system-ui,Segoe UI,Arial;margin:20px;color:#111;background:#0b0f14;color:#e6e6e6}
-  h1,h2{color:#fff}
-  .chips{display:flex;gap:8px;margin:12px 0}
-  .chip{padding:6px 10px;border-radius:20px;font-weight:600}
+  *{box-sizing:border-box}
+  body{font:13px/1.4 system-ui,Segoe UI,Arial,sans-serif;margin:0;padding:20px 24px;background:#0b0f14;color:#e6e6e6}
+  h1{margin:0 0 4px;color:#fff;font-size:22px;letter-spacing:.3px}
+  .meta{color:#888;margin-bottom:14px;font-size:12px}
+  .meta b{color:#ccc}
+  .controls{display:flex;gap:10px;margin:12px 0 14px;align-items:center;flex-wrap:wrap}
+  .search{background:#0f141b;color:#fff;border:1px solid #222;padding:8px 12px;border-radius:6px;min-width:320px;font:inherit;outline:none}
+  .search:focus{border-color:#3ea1ff;box-shadow:0 0 0 2px rgba(62,161,255,.18)}
+  .chip{padding:6px 12px;border-radius:20px;font-weight:600;cursor:pointer;border:2px solid transparent;transition:filter .15s,opacity .15s;user-select:none;font-size:12px}
+  .chip:hover{filter:brightness(1.25)}
+  .chip.off{opacity:.28;filter:grayscale(.4)}
   .chip.ok{background:#0d3a1d;color:#4ce38e}
   .chip.warn{background:#3a2a0d;color:#ffcc55}
   .chip.dld{background:#0d2d3a;color:#5ad4ff}
   .chip.sf{background:#2d0d3a;color:#d88eff}
-  table{width:100%;border-collapse:collapse;margin-top:12px;font-size:12px}
-  th,td{border-bottom:1px solid #222;padding:6px 8px;text-align:left;vertical-align:top}
-  th{background:#11161d;color:#aaa;font-weight:600}
-  tr.ok td{background:rgba(76,227,142,.05)}
-  tr.warn td{background:rgba(255,204,85,.08)}
-  tr.dld td{background:rgba(90,212,255,.08)}
-  tr.sf td{background:rgba(216,142,255,.08)}
-  td:nth-child(5),td:nth-child(7){text-align:right;font-variant-numeric:tabular-nums}
-</style></head>
+  .count{color:#888;margin-left:auto;font-variant-numeric:tabular-nums;font-size:12px}
+  .count b{color:#fff}
+  .btn-reset{background:#11161d;color:#aaa;border:1px solid #222;padding:6px 10px;border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
+  .btn-reset:hover{color:#fff;border-color:#333}
+  .table-wrap{overflow-x:auto;border:1px solid #1b2028;border-radius:8px;background:#0d1218}
+  table{width:100%;border-collapse:collapse;font-size:12px;min-width:1400px}
+  thead th{background:#11161d;color:#aaa;font-weight:600;text-align:left;padding:8px 10px;border-bottom:2px solid #1f252e;cursor:pointer;position:sticky;top:0;user-select:none;white-space:nowrap}
+  thead th:hover{color:#fff;background:#151b24}
+  thead th.sort-asc::after{content:"  ↑";color:#4ce38e}
+  thead th.sort-desc::after{content:"  ↓";color:#ffcc55}
+  thead th[data-align="num"]{text-align:right}
+  tbody td{padding:6px 10px;border-bottom:1px solid #1a1f27;vertical-align:top;white-space:nowrap}
+  tbody td.num{text-align:right;font-variant-numeric:tabular-nums}
+  tbody td.up{color:#4ce38e;font-weight:600}
+  tbody td.down{color:#ff6b88;font-weight:600}
+  tbody td.flat{color:#666}
+  tbody tr.ok td{background:rgba(76,227,142,.04)}
+  tbody tr.warn td{background:rgba(255,204,85,.05)}
+  tbody tr.dld td{background:rgba(90,212,255,.05)}
+  tbody tr.sf td{background:rgba(216,142,255,.05)}
+  tbody tr:hover td{background:#151b24 !important}
+  tbody tr.hidden{display:none}
+  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
+  .badge.ok{background:#0d3a1d;color:#4ce38e}
+  .badge.warn{background:#3a2a0d;color:#ffcc55}
+  .badge.dld{background:#0d2d3a;color:#5ad4ff}
+  .badge.sf{background:#2d0d3a;color:#d88eff}
+  .empty{color:#666;padding:24px;text-align:center}
+  footer{margin-top:14px;color:#555;font-size:11px;text-align:right}
+  code{background:#11161d;color:#bcd;padding:1px 5px;border-radius:3px;font-size:11px}
+</style>
+</head>
 <body>
-<h1>${project.project_name}</h1>
-<div>Salesforce sub-project: <b>${project.sf_sub_project}</b> &nbsp;&nbsp; Unit prefix: <b>${project.sf_unit_prefix}-</b></div>
-<div class="chips">
-  <span class="chip ok">MATCH ${counts.MATCH || 0} (${pct(counts.MATCH || 0)})</span>
-  <span class="chip warn">MISMATCH ${counts.MISMATCH || 0} (${pct(counts.MISMATCH || 0)})</span>
-  <span class="chip dld">DLD-only ${counts.DLD_ONLY || 0} (${pct(counts.DLD_ONLY || 0)})</span>
-  <span class="chip sf">SF-only ${counts.SF_ONLY || 0} (${pct(counts.SF_ONLY || 0)})</span>
+<h1>${escHtml(project.project_name)}</h1>
+<div class="meta">
+  Salesforce sub-project: <b>${escHtml(project.sf_sub_project || '-')}</b>
+  &nbsp;·&nbsp; Unit prefix: <b>${escHtml(project.sf_unit_prefix || '-')}-</b>
+  &nbsp;·&nbsp; ${total.toLocaleString()} units compared
 </div>
-<table>
-<thead><tr>${header.map(h => '<th>' + h.replace(/_/g, ' ') + '</th>').join('')}</tr></thead>
+<div class="controls">
+  <input class="search" id="q" placeholder="Filter: unit, buyer, status, any text…" autocomplete="off">
+  <span class="chip ok"   data-status="MATCH">MATCH ${counts.MATCH    || 0} (${pct(counts.MATCH    || 0)})</span>
+  <span class="chip warn" data-status="MISMATCH">MISMATCH ${counts.MISMATCH || 0} (${pct(counts.MISMATCH || 0)})</span>
+  <span class="chip dld"  data-status="DLD_ONLY">DLD-only ${counts.DLD_ONLY || 0} (${pct(counts.DLD_ONLY || 0)})</span>
+  <span class="chip sf"   data-status="SF_ONLY">SF-only ${counts.SF_ONLY || 0} (${pct(counts.SF_ONLY || 0)})</span>
+  <button class="btn-reset" id="reset">Reset</button>
+  <span class="count" id="count">— rows</span>
+</div>
+<div class="table-wrap">
+<table id="tbl">
+<thead><tr>${headHtml}</tr></thead>
 <tbody>
-${body}
-</tbody></table>
-</body></html>`;
+${bodyHtml}
+</tbody>
+</table>
+</div>
+<footer>generated ${escHtml(generatedAt)} · click column headers to sort · click status chips to toggle · Δ% = (DLD − SF) / SF</footer>
+<script>
+(function(){
+  const tbl     = document.getElementById('tbl');
+  const tbody   = tbl.querySelector('tbody');
+  const q       = document.getElementById('q');
+  const chips   = [...document.querySelectorAll('.chip')];
+  const headers = [...tbl.querySelectorAll('thead th')];
+  const countEl = document.getElementById('count');
+  const reset   = document.getElementById('reset');
+  const rows    = [...tbody.querySelectorAll('tr')];
+  const active  = new Set(chips.map(c => c.dataset.status));
+  let sortCol = null, sortDir = 1;
+
+  function applyFilter(){
+    const needle = q.value.trim().toLowerCase();
+    let visible = 0;
+    for (const tr of rows) {
+      const statusOn = active.has(tr.dataset.status);
+      const searchOn = !needle || tr.dataset.search.indexOf(needle) !== -1;
+      const show = statusOn && searchOn;
+      tr.classList.toggle('hidden', !show);
+      if (show) visible++;
+    }
+    countEl.innerHTML = '<b>' + visible.toLocaleString() + '</b> / ' + rows.length.toLocaleString() + ' rows';
+  }
+
+  chips.forEach(chip => {
+    chip.addEventListener('click', () => {
+      const s = chip.dataset.status;
+      if (active.has(s)) { active.delete(s); chip.classList.add('off'); }
+      else               { active.add(s);    chip.classList.remove('off'); }
+      applyFilter();
+    });
+  });
+
+  q.addEventListener('input', applyFilter);
+
+  reset.addEventListener('click', () => {
+    q.value = '';
+    for (const c of chips) { active.add(c.dataset.status); c.classList.remove('off'); }
+    sortCol = null; sortDir = 1;
+    headers.forEach(h => h.classList.remove('sort-asc','sort-desc'));
+    for (const r of rows) tbody.appendChild(r); /* restore original order */
+    applyFilter();
+  });
+
+  headers.forEach((th, i) => {
+    th.addEventListener('click', () => {
+      if (sortCol === i) sortDir = -sortDir;
+      else { sortCol = i; sortDir = 1; }
+      headers.forEach(h => h.classList.remove('sort-asc','sort-desc'));
+      th.classList.add(sortDir === 1 ? 'sort-asc' : 'sort-desc');
+      const sorted = rows.slice().sort((a, b) => {
+        const av = a.children[i].dataset.sortVal || a.children[i].textContent;
+        const bv = b.children[i].dataset.sortVal || b.children[i].textContent;
+        const an = parseFloat(av), bn = parseFloat(bv);
+        if (!isNaN(an) && !isNaN(bn) && isFinite(an) && isFinite(bn)) return (an - bn) * sortDir;
+        return av.localeCompare(bv, undefined, {numeric:true}) * sortDir;
+      });
+      for (const r of sorted) tbody.appendChild(r);
+    });
+  });
+
+  applyFilter();
+})();
+</script>
+</body>
+</html>`;
   fs.writeFileSync(outPath, html, 'utf8');
 }
 
