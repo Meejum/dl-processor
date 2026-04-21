@@ -1,0 +1,13 @@
+{
+  "_note": "Override auto-inferred DLD<->SF mapping per project. Keys = DLD project_name (exact). unitTransforms: custom regex rules for unit number translation when default 'prefix + normalized unit number' doesn't work.",
+  "overrides": {
+    "Sobha Hartland Waves": {
+      "sf_project": "Sobha Hartland",
+      "sf_sub_project": "Waves",
+      "sf_unit_prefix": "W",
+      "unitTransforms": [
+        { "match": "^RETAIL\\s*(\\d+)$", "replace": "R$1" }
+      ]
+    }
+  }
+}

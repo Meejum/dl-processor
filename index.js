@@ -1,98 +1,280 @@
 #!/usr/bin/env node
 const fs = require('fs');
 const path = require('path');
-const { extractXps } = require('./src/extractor');
+
+const { extractXps }   = require('./src/extractor');
 const { parseProject } = require('./src/parser');
+const { parseDldCsv }  = require('./src/sources/csv');
 const { writeJson, writeUnitsCsv, writeTransactionsCsv, safeName } = require('./src/writers');
+const { openDb }       = require('./src/db');
+const { importDldSnapshot } = require('./src/import-dld');
+const { importSfSnapshot, readSfWorkbook } = require('./src/salesforce');
+const { buildMappingFor, saveMappingToDb } = require('./src/project-mapping');
+const { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks } = require('./src/compare');
+
+const INPUT_DIR    = path.join(__dirname, 'input');
+const SF_INPUT_DIR = path.join(__dirname, 'sf-input');
+const OUTPUT_DIR   = path.join(__dirname, 'output');
 
 function banner() {
   console.log('');
-  console.log('  XPS-Processor  /  DLD Project Inquiry Parser');
-  console.log('  Sobha Realty — Registration Team');
+  console.log('  DLD-SYNC  /  Project Inquiry <-> Salesforce Reconciler');
+  console.log('  Sobha Realty  -  Registration Team');
   console.log('');
 }
 
 function usage() {
   console.log('Usage:');
-  console.log('  node index.js <path-to-xps>           process a single XPS file');
-  console.log('  node index.js                         process all XPS files in input/');
+  console.log('  node index.js                  full pipeline: parse, import, import SF, compare');
+  console.log('  node index.js parse    [file]  parse XPS/CSV -> JSON+CSV in output/');
+  console.log('  node index.js import   [file]  parse + store in SQLite');
+  console.log('  node index.js import-sf [file] import Salesforce xlsx snapshot');
+  console.log('  node index.js compare  [name]  run comparison for one (or all) projects');
+  console.log('  node index.js projects         list projects stored in DB');
+  console.log('  node index.js status           overview');
   console.log('');
+  console.log('Drop DLD .xps/.csv into input/ and SF .xlsx into sf-input/, then run with no args.');
 }
 
-function processOne(xpsPath, outDir) {
-  const started = Date.now();
-  console.log(`  -> ${path.basename(xpsPath)}`);
-  const pages = extractXps(xpsPath);
-  console.log(`     pages: ${pages.length}`);
-  const data = parseProject(pages);
+function parseFileFromPath(filePath) {
+  const ext = path.extname(filePath).toLowerCase();
+  if (ext === '.xps') {
+    const pages = extractXps(filePath);
+    return { data: parseProject(pages), sourceFormat: 'xps' };
+  }
+  if (ext === '.csv') {
+    return { data: parseDldCsv(filePath), sourceFormat: 'csv' };
+  }
+  throw new Error('unsupported file type: ' + ext + ' (expect .xps or .csv)');
+}
 
+function listFiles(dir, extensions) {
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir)
+    .filter(f => extensions.includes(path.extname(f).toLowerCase()))
+    .map(f => path.join(dir, f));
+}
+
+function printParseSummary(data) {
   const totalBuildings = data.buildings.length;
   const totalUnits     = data.buildings.reduce((n, b) => n + b.units.length, 0);
   const totalTx        = data.buildings.reduce((n, b) => n + b.units.reduce((m, u) => m + (u.transactions?.length || 0), 0), 0);
-
   console.log(`     project:   ${data.project.projectName || '(unknown)'}`);
   console.log(`     developer: ${data.project.developer || '(unknown)'}`);
   console.log(`     value:     ${data.project.projectValueAED != null ? data.project.projectValueAED.toLocaleString() + ' AED' : '(unknown)'}`);
-  console.log(`     window:    ${data.project.startDate || '?'} -> ${data.project.endDate || '?'}`);
   console.log(`     buildings: ${totalBuildings}  |  units: ${totalUnits}  |  parties/tx: ${totalTx}`);
-  if (data.project.totalTransactions != null) {
-    console.log(`     header lifetime-tx count: ${data.project.totalTransactions} (historical, not detail-level)`);
-  }
-  if (data.project.totalInvestors != null) {
-    console.log(`     investors: ${data.project.totalInvestors}`);
-  }
+  if (data.project.totalInvestors != null) console.log(`     investors: ${data.project.totalInvestors}`);
+}
 
-  const base = safeName(data.project.projectName) || path.basename(xpsPath, path.extname(xpsPath));
-  const jsonPath = path.join(outDir, base + '.json');
-  const unitsCsv = path.join(outDir, base + '.units.csv');
-  const txCsv    = path.join(outDir, base + '.transactions.csv');
-
-  const payload = {
-    source: path.basename(xpsPath),
+function writeOutputFiles(data, sourceFilename) {
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  const base = safeName(data.project.projectName) || path.basename(sourceFilename, path.extname(sourceFilename));
+  const jsonPath = path.join(OUTPUT_DIR, base + '.json');
+  const unitsCsv = path.join(OUTPUT_DIR, base + '.units.csv');
+  const txCsv    = path.join(OUTPUT_DIR, base + '.transactions.csv');
+  writeJson({
+    source: sourceFilename,
     extractedAt: new Date().toISOString(),
     project: data.project,
-    buildings: data.buildings.map(b => ({
-      id: b.id, name: b.name, type: b.type, unitCount: b.units.length, units: b.units
-    }))
-  };
-  writeJson(payload, jsonPath);
+    buildings: data.buildings.map(b => ({ id: b.id, name: b.name, type: b.type, unitCount: b.units.length, units: b.units }))
+  }, jsonPath);
   writeUnitsCsv(data, unitsCsv);
   writeTransactionsCsv(data, txCsv);
+  return { jsonPath, unitsCsv, txCsv };
+}
 
-  const ms = Date.now() - started;
-  console.log(`     wrote: ${path.relative(process.cwd(), jsonPath)}`);
-  console.log(`     wrote: ${path.relative(process.cwd(), unitsCsv)}`);
-  console.log(`     wrote: ${path.relative(process.cwd(), txCsv)}`);
-  console.log(`     done in ${ms}ms`);
-  console.log('');
+function cmdParse(targets) {
+  for (const t of targets) {
+    console.log(`  -> ${path.basename(t)}`);
+    const { data } = parseFileFromPath(t);
+    printParseSummary(data);
+    const outs = writeOutputFiles(data, path.basename(t));
+    console.log(`     wrote: ${path.relative(process.cwd(), outs.jsonPath)}`);
+    console.log(`     wrote: ${path.relative(process.cwd(), outs.unitsCsv)}`);
+    console.log(`     wrote: ${path.relative(process.cwd(), outs.txCsv)}`);
+    console.log('');
+  }
+}
+
+function cmdImport(targets) {
+  const db = openDb();
+  for (const t of targets) {
+    console.log(`  -> ${path.basename(t)}`);
+    const { data, sourceFormat } = parseFileFromPath(t);
+    printParseSummary(data);
+    const result = importDldSnapshot({ db, data, sourceFormat, sourceFile: t });
+    console.log(`     imported as snapshot #${result.snapshotId} (project #${result.projectId})`);
+    console.log(`     db: ${result.totalUnits} units, ${result.totalTx} tx rows`);
+    writeOutputFiles(data, path.basename(t));
+    console.log('');
+  }
+  db.close();
+}
+
+function cmdImportSf(targets) {
+  const db = openDb();
+  for (const t of targets) {
+    console.log(`  -> SF: ${path.basename(t)}`);
+    const result = importSfSnapshot({ db, filePath: t });
+    console.log(`     imported snapshot #${result.sfSnapshotId} (${result.rowsInserted} rows, generated ${result.generatedAt || 'unknown'})`);
+    console.log('');
+  }
+  db.close();
+}
+
+function ensureMappings(db) {
+  const { rows: sfRows } = (function () {
+    const latest = db.prepare(`SELECT * FROM sf_snapshot ORDER BY imported_at DESC LIMIT 1`).get();
+    if (!latest) return { rows: [] };
+    const rows = db.prepare(`SELECT sub_project AS subProject, unit, project FROM sf_booking WHERE sf_snapshot_id=?`).all(latest.sf_snapshot_id);
+    return { rows };
+  })();
+  const projects = db.prepare(`SELECT * FROM dld_project`).all();
+  for (const p of projects) {
+    const mapping = buildMappingFor(p.project_name, sfRows);
+    saveMappingToDb(db, p.project_id, mapping);
+  }
+}
+
+function cmdCompare(filterProjectName) {
+  const db = openDb();
+  ensureMappings(db);
+  const projects = db.prepare(
+    filterProjectName
+      ? `SELECT * FROM dld_project WHERE project_name = ?`
+      : `SELECT * FROM dld_project`
+  ).all(...(filterProjectName ? [filterProjectName] : []));
+  if (projects.length === 0) {
+    console.log('  no projects in DB. Run: node index.js import <file>');
+    db.close();
+    return;
+  }
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  for (const p of projects) {
+    console.log(`  -> ${p.project_name}`);
+    const result = compareProject(db, p.project_id);
+    if (result.status !== 'ok') {
+      console.log(`     skipped: ${result.status}`);
+      continue;
+    }
+    const counts = summarize(result.rows);
+    console.log(`     MATCH: ${counts.MATCH||0}  MISMATCH: ${counts.MISMATCH||0}  DLD-only: ${counts.DLD_ONLY||0}  SF-only: ${counts.SF_ONLY||0}`);
+    const base   = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
+    const csvOut = path.join(OUTPUT_DIR, base + '.compare.csv');
+    const htmlOut= path.join(OUTPUT_DIR, base + '.compare.html');
+    const tasksOut = path.join(OUTPUT_DIR, base + '.audit-tasks.csv');
+    writeCompareCsv(csvOut, result.rows);
+    writeCompareHtml(htmlOut, p, result.rows, counts);
+    const tasks = writeAuditTasks(tasksOut, p, result.rows);
+    console.log(`     wrote: ${path.relative(process.cwd(), csvOut)}`);
+    console.log(`     wrote: ${path.relative(process.cwd(), htmlOut)}`);
+    console.log(`     wrote: ${path.relative(process.cwd(), tasksOut)}  (${tasks.length} audit tasks)`);
+    console.log('');
+  }
+  db.close();
+}
+
+function cmdProjects() {
+  const db = openDb();
+  const rows = db.prepare(`
+    SELECT p.project_name, p.developer, p.sf_sub_project, p.sf_unit_prefix,
+           (SELECT COUNT(*) FROM dld_snapshot s WHERE s.project_id = p.project_id) AS snapshot_count,
+           (SELECT MAX(imported_at) FROM dld_snapshot s WHERE s.project_id = p.project_id) AS last_imported
+    FROM dld_project p
+    ORDER BY p.project_name
+  `).all();
+  if (rows.length === 0) { console.log('  no projects imported yet'); db.close(); return; }
+  console.log('  ' + 'PROJECT'.padEnd(35) + 'SF SUB'.padEnd(20) + 'PFX'.padEnd(6) + 'SNAP'.padEnd(6) + 'LAST IMPORTED');
+  for (const r of rows) {
+    console.log('  '
+      + (r.project_name || '').padEnd(35)
+      + (r.sf_sub_project || '-').padEnd(20)
+      + ((r.sf_unit_prefix || '-') + '-').padEnd(6)
+      + String(r.snapshot_count || 0).padEnd(6)
+      + (r.last_imported || '-')
+    );
+  }
+  db.close();
+}
+
+function cmdStatus() {
+  const db = openDb();
+  const projCount = db.prepare(`SELECT COUNT(*) AS n FROM dld_project`).get().n;
+  const snapCount = db.prepare(`SELECT COUNT(*) AS n FROM dld_snapshot`).get().n;
+  const unitCount = db.prepare(`SELECT COUNT(*) AS n FROM dld_unit`).get().n;
+  const txCount   = db.prepare(`SELECT COUNT(*) AS n FROM dld_transaction`).get().n;
+  const sfCount   = db.prepare(`SELECT COUNT(*) AS n FROM sf_booking`).get().n;
+  const sfLatest  = db.prepare(`SELECT source_file, generated_at FROM sf_snapshot ORDER BY imported_at DESC LIMIT 1`).get();
+  console.log('  DB: ' + path.relative(process.cwd(), path.join(__dirname, 'data', 'dld-sync.sqlite')));
+  console.log('  projects: ' + projCount);
+  console.log('  DLD snapshots: ' + snapCount);
+  console.log('  DLD units (all snapshots): ' + unitCount);
+  console.log('  DLD tx rows (all snapshots): ' + txCount);
+  console.log('  SF bookings (all snapshots): ' + sfCount);
+  if (sfLatest) console.log('  latest SF: ' + sfLatest.source_file + ' (' + (sfLatest.generated_at || 'unknown') + ')');
+  db.close();
+}
+
+function cmdAll() {
+  console.log('  [1/4] parse + import DLD files from input/');
+  const dldTargets = listFiles(INPUT_DIR, ['.xps', '.csv']);
+  if (dldTargets.length === 0) console.log('     (no DLD files)');
+  else cmdImport(dldTargets);
+
+  console.log('  [2/4] import Salesforce files from sf-input/');
+  const sfTargets = listFiles(SF_INPUT_DIR, ['.xlsx']);
+  if (sfTargets.length === 0) console.log('     (no SF files)');
+  else cmdImportSf(sfTargets);
+
+  console.log('  [3/4] compare');
+  cmdCompare(null);
+
+  console.log('  [4/4] summary');
+  cmdStatus();
 }
 
 function main() {
   banner();
-  const arg = process.argv[2];
-  const outDir = path.join(__dirname, 'output');
-  fs.mkdirSync(outDir, { recursive: true });
+  const [cmd, ...rest] = process.argv.slice(2);
 
-  let targets = [];
-  if (arg === '-h' || arg === '--help') { usage(); return; }
-  if (arg) {
-    if (!fs.existsSync(arg)) { console.error('File not found: ' + arg); process.exit(1); }
-    targets = [arg];
-  } else {
-    const inputDir = path.join(__dirname, 'input');
-    if (!fs.existsSync(inputDir)) { console.error('No input/ folder and no file argument.'); process.exit(1); }
-    targets = fs.readdirSync(inputDir)
-      .filter(f => /\.xps$/i.test(f))
-      .map(f => path.join(inputDir, f));
-    if (targets.length === 0) { console.log('  No .xps files in input/'); usage(); return; }
+  if (cmd === '-h' || cmd === '--help') { usage(); return; }
+
+  if (!cmd) { cmdAll(); return; }
+
+  if (cmd === 'parse') {
+    const targets = rest.length ? rest : listFiles(INPUT_DIR, ['.xps', '.csv']);
+    if (targets.length === 0) { console.log('  no files'); return; }
+    cmdParse(targets);
+    return;
   }
 
-  for (const t of targets) processOne(t, outDir);
-  console.log('  All done.');
+  if (cmd === 'import') {
+    const targets = rest.length ? rest : listFiles(INPUT_DIR, ['.xps', '.csv']);
+    if (targets.length === 0) { console.log('  no files'); return; }
+    cmdImport(targets);
+    return;
+  }
+
+  if (cmd === 'import-sf') {
+    const targets = rest.length ? rest : listFiles(SF_INPUT_DIR, ['.xlsx']);
+    if (targets.length === 0) { console.log('  no files'); return; }
+    cmdImportSf(targets);
+    return;
+  }
+
+  if (cmd === 'compare') {
+    cmdCompare(rest[0] || null);
+    return;
+  }
+
+  if (cmd === 'projects') { cmdProjects(); return; }
+  if (cmd === 'status')   { cmdStatus();   return; }
+
+  console.log('unknown command: ' + cmd);
+  usage();
+  process.exit(1);
 }
 
 if (require.main === module) {
   try { main(); } catch (e) { console.error(e); process.exit(1); }
 }
-
-module.exports = { processOne };

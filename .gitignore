@@ -1,9 +1,23 @@
 node_modules/
+
+# derived outputs
 output/*.json
 output/*.csv
-output/*.sqlite
-output/*.db
+output/*.html
 !output/.gitkeep
+
+# local DB (can contain sensitive unit/buyer data)
+data/*.sqlite
+data/*.sqlite-*
+data/*.db
+
+# inputs (real customer data — not for git)
+input/*.xps
+input/*.csv
+input/*.xlsx
+sf-input/*.xlsx
+sf-input/*.xls
+
 tmp/
 .DS_Store
 Thumbs.db

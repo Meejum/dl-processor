@@ -1,4 +1,11 @@
 const { groupRows } = require('./extractor');
+const {
+  asNumber,
+  stripAedLeak,
+  parsePartyText,
+  parseAmountText,
+  SHARE_RE
+} = require('./common');
 
 const COLS = {
   seq:        { min: 0,   max: 80 },
@@ -20,12 +27,6 @@ function pick(row, colKey) {
   const col = COLS[colKey];
   const hits = row.items.filter(i => i.x >= col.min && i.x < col.max);
   return hits.map(h => h.t).join('').trim();
-}
-
-function asNumber(s) {
-  if (s == null || s === '' || s === '-') return null;
-  const v = parseFloat(String(s).replace(/,/g, ''));
-  return Number.isFinite(v) ? v : null;
 }
 
 function rowText(row) {
@@ -64,46 +65,6 @@ function isUnitRow(row) {
   const seq = pick(row, 'seq');
   const id  = pick(row, 'unitId');
   return /^\d+$/.test(seq) && /^\d+$/.test(id);
-}
-
-function stripAedLeak(name) {
-  return name.replace(/^AED\s*/, '').trim();
-}
-
-const SHARE_RE = /^(.*?)\(\s*([-\d.]+)\s*(F\.T\.|SQ\.M\.?)\s*\)\s*$/;
-
-function parsePartyText(raw) {
-  if (!raw) return null;
-  const trimmed = raw.trim();
-  if (!trimmed) return null;
-  const m = trimmed.match(SHARE_RE);
-  if (!m) return { name: stripAedLeak(trimmed), ftShare: null, shareUnit: null, raw };
-  return {
-    name: stripAedLeak(m[1].trim()),
-    ftShare: asNumber(m[2]),
-    shareUnit: m[3].trim(),
-    raw
-  };
-}
-
-function parseAmountText(raw) {
-  if (!raw) return { amount: null, nameOverflow: '', inlineParty: null };
-  let m = raw.match(/^\s*([\d.,]+)\s*AED\s*(.*)$/);
-  if (!m) {
-    const bareNum = raw.match(/^\s*([\d.,]+)\s*$/);
-    if (bareNum) return { amount: asNumber(bareNum[1]), nameOverflow: '', inlineParty: null };
-    return { amount: null, nameOverflow: '', inlineParty: null, raw };
-  }
-  const leftover = m[2].trim();
-  const ftMatch  = leftover.match(/^(.*?)\(\s*([-\d.]+)\s*F\.T\.\)\s*$/);
-  if (ftMatch) {
-    return {
-      amount: asNumber(m[1]),
-      nameOverflow: '',
-      inlineParty: { name: stripAedLeak(ftMatch[1].trim()), ftShare: asNumber(ftMatch[2]) }
-    };
-  }
-  return { amount: asNumber(m[1]), nameOverflow: leftover, inlineParty: null };
 }
 
 function parseUnitRow(row) {
