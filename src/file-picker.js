@@ -10,7 +10,7 @@ function pickFile({ title, filter, initialDir, multi } = {}) {
 
   const startDir = initialDir && fs.existsSync(initialDir) ? initialDir : DOWNLOADS;
 
-  const ps = [
+  const psScript = [
     'Add-Type -AssemblyName System.Windows.Forms | Out-Null',
     '$f = New-Object System.Windows.Forms.OpenFileDialog',
     `$f.Title = '${(title || 'Select file').replace(/'/g, "''")}'`,
@@ -18,22 +18,38 @@ function pickFile({ title, filter, initialDir, multi } = {}) {
     `$f.InitialDirectory = '${startDir.replace(/'/g, "''")}'`,
     `$f.Multiselect = $${multi ? 'true' : 'false'}`,
     '$f.RestoreDirectory = $true',
-    '$null = $f.ShowDialog()',
-    'if ($f.FileNames -and $f.FileNames.Length -gt 0) { ($f.FileNames -join [char]0x7C) }'
-  ].join('; ');
+    '$result = $f.ShowDialog()',
+    'if ($result -eq [System.Windows.Forms.DialogResult]::OK -and $f.FileNames.Length -gt 0) {',
+    '  ($f.FileNames -join [char]0x7C) | Write-Output',
+    '}'
+  ].join('\n');
 
-  const res = spawnSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-STA', '-Command', ps], {
-    encoding: 'utf8',
-    stdio: ['ignore', 'pipe', 'pipe'],
-    windowsHide: true
-  });
+  const tmp = path.join(os.tmpdir(), 'dlp-picker-' + Date.now() + '.ps1');
+  fs.writeFileSync(tmp, psScript, 'utf8');
 
-  if (res.error || (res.status !== 0 && !res.stdout)) {
+  let res;
+  try {
+    res = spawnSync('powershell.exe', [
+      '-NoProfile',
+      '-ExecutionPolicy', 'Bypass',
+      '-STA',
+      '-File', tmp
+    ], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'pipe']
+    });
+  } finally {
+    try { fs.unlinkSync(tmp); } catch (_) {}
+  }
+
+  if (res.error) {
+    console.log('   (file dialog failed: ' + res.error.message + ' — falling back to typed input)');
     return pickViaPrompt({ title });
   }
   const out = (res.stdout || '').trim();
-  if (!out) return [];
-  return out.split('|').map(s => s.trim()).filter(Boolean);
+  if (!out) return []; // user cancelled, don't fall back — just return empty
+  const paths = out.split('|').map(s => s.trim()).filter(Boolean);
+  return paths.filter(p => { try { return fs.existsSync(p); } catch (_) { return false; } });
 }
 
 function pickViaPrompt({ title }) {

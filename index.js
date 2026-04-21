@@ -39,6 +39,9 @@ function usage() {
 }
 
 function parseFileFromPath(filePath) {
+  if (!filePath || !fs.existsSync(filePath)) {
+    throw new Error('file not found: ' + (filePath || '(empty)'));
+  }
   const ext = path.extname(filePath).toLowerCase();
   if (ext === '.xps') {
     const pages = extractXps(filePath);
@@ -47,7 +50,7 @@ function parseFileFromPath(filePath) {
   if (ext === '.csv') {
     return { data: parseDldCsv(filePath), sourceFormat: 'csv' };
   }
-  throw new Error('unsupported file type: ' + ext + ' (expect .xps or .csv)');
+  throw new Error('unsupported file type: "' + ext + '" for ' + path.basename(filePath) + ' (expect .xps or .csv)');
 }
 
 function listFiles(dir, extensions) {

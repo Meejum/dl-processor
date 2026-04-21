@@ -161,6 +161,29 @@ async function showMenu() {
   process.stdout.write('    ' + C.magenta + '>>' + C.reset + ' ');
 }
 
+function validateDldPaths(picks) {
+  const good = [];
+  const bad  = [];
+  for (const p of picks || []) {
+    if (!p || !fs.existsSync(p)) { bad.push({ p, why: 'not found' }); continue; }
+    const ext = path.extname(p).toLowerCase();
+    if (ext !== '.xps' && ext !== '.csv') { bad.push({ p, why: 'not .xps or .csv' }); continue; }
+    good.push(p);
+  }
+  return { good, bad };
+}
+
+function validateSfPaths(picks) {
+  const good = [];
+  const bad  = [];
+  for (const p of picks || []) {
+    if (!p || !fs.existsSync(p)) { bad.push({ p, why: 'not found' }); continue; }
+    if (path.extname(p).toLowerCase() !== '.xlsx') { bad.push({ p, why: 'not .xlsx' }); continue; }
+    good.push(p);
+  }
+  return { good, bad };
+}
+
 async function doParseImport() {
   await showHeader(); sectionHeader('PARSE & IMPORT DLD');
   console.log('   opening file browser...');
@@ -169,10 +192,13 @@ async function doParseImport() {
     console.log('   ' + C.dim + 'cancelled — no file selected' + C.reset);
     await pause(); return;
   }
+  const { good, bad } = validateDldPaths(picks);
+  bad.forEach(b => console.log('   ' + C.red + 'skip: ' + C.reset + (b.p || '(empty)') + C.dim + '  (' + b.why + ')' + C.reset));
+  if (good.length === 0) { console.log('   ' + C.red + 'nothing to import' + C.reset); await pause(); return; }
   console.log('   selected:');
-  picks.forEach(p => console.log('     ' + C.white + path.basename(p) + C.reset + C.dim + '  ' + p + C.reset));
+  good.forEach(p => console.log('     ' + C.white + path.basename(p) + C.reset + C.dim + '  ' + p + C.reset));
   console.log('');
-  runNode(['import', ...picks]);
+  runNode(['import', ...good]);
   await pause();
 }
 
@@ -184,30 +210,37 @@ async function doImportSf() {
     console.log('   ' + C.dim + 'cancelled — no file selected' + C.reset);
     await pause(); return;
   }
+  const { good, bad } = validateSfPaths(picks);
+  bad.forEach(b => console.log('   ' + C.red + 'skip: ' + C.reset + (b.p || '(empty)') + C.dim + '  (' + b.why + ')' + C.reset));
+  if (good.length === 0) { console.log('   ' + C.red + 'nothing to import' + C.reset); await pause(); return; }
   console.log('   selected:');
-  picks.forEach(p => console.log('     ' + C.white + path.basename(p) + C.reset + C.dim + '  ' + p + C.reset));
+  good.forEach(p => console.log('     ' + C.white + path.basename(p) + C.reset + C.dim + '  ' + p + C.reset));
   console.log('');
-  runNode(['import-sf', ...picks]);
+  runNode(['import-sf', ...good]);
   await pause();
 }
 
 async function doQuickAudit() {
   await showHeader(); sectionHeader('QUICK AUDIT  /  pick files + run all');
   console.log('   Step 1/3 — pick DLD file(s)...');
-  const dldPicks = await Promise.resolve(pickDldFiles());
-  if (!dldPicks || dldPicks.length === 0) { console.log('   ' + C.dim + 'cancelled' + C.reset); await pause(); return; }
+  const dldPicksRaw = await Promise.resolve(pickDldFiles());
+  const { good: dldPicks, bad: dldBad } = validateDldPaths(dldPicksRaw);
+  dldBad.forEach(b => console.log('   ' + C.red + 'skip: ' + C.reset + (b.p || '(empty)') + C.dim + '  (' + b.why + ')' + C.reset));
+  if (dldPicks.length === 0) { console.log('   ' + C.dim + 'cancelled — no valid DLD file' + C.reset); await pause(); return; }
   console.log('   DLD: ' + dldPicks.map(p => path.basename(p)).join(', '));
   console.log('');
   console.log('   Step 2/3 — pick Salesforce xlsx...');
-  const sfPicks = await Promise.resolve(pickSfFile());
-  if (!sfPicks || sfPicks.length === 0) { console.log('   ' + C.dim + 'cancelled — importing DLD only' + C.reset); }
+  const sfPicksRaw = await Promise.resolve(pickSfFile());
+  const { good: sfPicks, bad: sfBad } = validateSfPaths(sfPicksRaw);
+  sfBad.forEach(b => console.log('   ' + C.red + 'skip: ' + C.reset + (b.p || '(empty)') + C.dim + '  (' + b.why + ')' + C.reset));
+  if (sfPicks.length === 0) { console.log('   ' + C.dim + '(no SF — compare will reuse last imported SF snapshot)' + C.reset); }
   else console.log('   SF: ' + path.basename(sfPicks[0]));
   console.log('');
   console.log('   Step 3/3 — running pipeline...');
   console.log('');
 
   runNode(['import', ...dldPicks]);
-  if (sfPicks && sfPicks.length) runNode(['import-sf', sfPicks[0]]);
+  if (sfPicks.length) runNode(['import-sf', sfPicks[0]]);
   runNode(['compare']);
   runNode(['diff']);
   await pause();
@@ -383,17 +416,19 @@ async function overridesFor(db, project) {
 function stripAnsi(s) { return String(s).replace(/\x1b\[[0-9;]*m/g, ''); }
 function pad(s, w) { const vis = stripAnsi(s); return s + ' '.repeat(Math.max(0, w - vis.length)); }
 
+function askOnce(promptText) {
+  return new Promise(resolve => {
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
+    rl.question(promptText, ans => { rl.close(); resolve((ans || '').trim()); });
+  });
+}
+
 async function mainLoop() {
   hideCursor();
   try {
-    await showMenu();
-    readline.emitKeypressEvents(process.stdin);
-    if (process.stdin.isTTY) process.stdin.setRawMode(false);
-    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
-
     while (true) {
-      const choice = await new Promise(resolve => rl.question('', ans => resolve(ans.trim().toLowerCase())));
-      rl.pause();
+      await showMenu();
+      const choice = (await askOnce('')).toLowerCase();
       switch (choice) {
         case '1': await doParseImport(); break;
         case '2': await doImportSf();    break;
@@ -409,12 +444,9 @@ async function mainLoop() {
         case 'q': case 'exit': case 'quit':
           showCursor(); clear();
           console.log('  bye.\n');
-          rl.close();
           return;
         default: /* re-show menu */;
       }
-      await showMenu();
-      rl.resume();
     }
   } finally {
     showCursor();
