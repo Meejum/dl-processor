@@ -102,10 +102,24 @@ function computePriceDelta(dldPrice, sfPrice) {
   return { diff, pct, direction };
 }
 
+function shortAed(n) {
+  const abs = Math.abs(n);
+  if (abs >= 1e6) return (Math.round(abs / 1e5) / 10) + 'M';
+  if (abs >= 1e3) return Math.round(abs / 1e3) + 'k';
+  return Math.round(abs).toString();
+}
+
+function priceTag(delta) {
+  const sign = delta.direction === 'up' ? '+' : '-';
+  const pct  = Math.abs(delta.pct).toFixed(2);
+  const aed  = shortAed(delta.diff);
+  return `${sign}${pct}% (${sign}${aed})`;
+}
+
 function classifyMatch(dldUnit, dldTxs, sfRow) {
   if (!sfRow) return {
     status: 'DLD_ONLY',
-    reasons: ['no SF booking'],
+    reasons: ['no SF'],
     priceDelta: { diff: null, pct: null, direction: null },
     nameState: 'none'
   };
@@ -126,26 +140,18 @@ function classifyMatch(dldUnit, dldTxs, sfRow) {
   const reasons = [];
 
   if (nameState === 'mismatch') {
-    reasons.push(`buyer mismatch: DLD "${dldBuyer}" vs SF "${sfRow.applicant_name}"`);
-    if (priceMeaningful) reasons.push(priceReason(delta, dldPrice, sfPrice));
+    if (priceMeaningful) reasons.push('buyer ' + priceTag(delta));
+    else                 reasons.push('buyer');
     return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState };
   }
 
   if (priceMeaningful) {
-    reasons.push(priceReason(delta, dldPrice, sfPrice));
+    reasons.push(priceTag(delta));
     const status = delta.direction === 'up' ? 'PRICE_UP' : 'PRICE_DOWN';
     return { status, reasons, priceDelta: delta, nameState };
   }
 
   return { status: 'MATCH', reasons: [], priceDelta: delta, nameState };
-}
-
-function priceReason(delta, dldPrice, sfPrice) {
-  const absDiff = Math.abs(delta.diff);
-  const verb    = delta.direction === 'up' ? 'rose' : 'fell';
-  const sign    = delta.direction === 'up' ? '+' : '-';
-  const pctStr  = Math.abs(delta.pct).toFixed(2) + '%';
-  return `price ${verb} ${pctStr} (${sign}${Math.round(absDiff).toLocaleString()} AED): DLD ${Math.round(dldPrice).toLocaleString()} vs SF ${Math.round(sfPrice).toLocaleString()}`;
 }
 
 function compareProject(db, projectId) {
@@ -252,7 +258,7 @@ function compareProject(db, projectId) {
         sf_procedure_number: b.procedure_number,
         sf_booking_name:     b.booking_name,
         match_status:        'SF_ONLY',
-        match_reasons:       'unit in SF but not in DLD'
+        match_reasons:       'no DLD'
       });
     }
   }
