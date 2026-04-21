@@ -11,6 +11,7 @@ const { importDldSnapshot } = require('./src/import-dld');
 const { importSfSnapshot, readSfWorkbook } = require('./src/salesforce');
 const { buildMappingFor, saveMappingToDb } = require('./src/project-mapping');
 const { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks } = require('./src/compare');
+const { diffProject, summarizeDiff, writeDiffCsv, writeDiffHtml } = require('./src/diff');
 
 const INPUT_DIR    = path.join(__dirname, 'input');
 const SF_INPUT_DIR = path.join(__dirname, 'sf-input');
@@ -29,7 +30,8 @@ function usage() {
   console.log('  node index.js parse    [file]  parse XPS/CSV -> JSON+CSV in output/');
   console.log('  node index.js import   [file]  parse + store in SQLite');
   console.log('  node index.js import-sf [file] import Salesforce xlsx snapshot');
-  console.log('  node index.js compare  [name]  run comparison for one (or all) projects');
+  console.log('  node index.js compare  [name]  DLD vs SF comparison');
+  console.log('  node index.js diff     [name]  month-over-month DLD snapshot diff');
   console.log('  node index.js projects         list projects stored in DB');
   console.log('  node index.js status           overview');
   console.log('');
@@ -158,7 +160,7 @@ function cmdCompare(filterProjectName) {
       continue;
     }
     const counts = summarize(result.rows);
-    console.log(`     MATCH: ${counts.MATCH||0}  MISMATCH: ${counts.MISMATCH||0}  DLD-only: ${counts.DLD_ONLY||0}  SF-only: ${counts.SF_ONLY||0}`);
+    console.log(`     MATCH:${counts.MATCH||0}  PRICE↑:${counts.PRICE_UP||0}  PRICE↓:${counts.PRICE_DOWN||0}  BUYER:${counts.BUYER_MISMATCH||0}  DLD-only:${counts.DLD_ONLY||0}  SF-only:${counts.SF_ONLY||0}`);
     const base   = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
     const csvOut = path.join(OUTPUT_DIR, base + '.compare.csv');
     const htmlOut= path.join(OUTPUT_DIR, base + '.compare.html');
@@ -169,6 +171,44 @@ function cmdCompare(filterProjectName) {
     console.log(`     wrote: ${path.relative(process.cwd(), csvOut)}`);
     console.log(`     wrote: ${path.relative(process.cwd(), htmlOut)}`);
     console.log(`     wrote: ${path.relative(process.cwd(), tasksOut)}  (${tasks.length} audit tasks)`);
+    console.log('');
+  }
+  db.close();
+}
+
+function cmdDiff(filterProjectName) {
+  const db = openDb();
+  const projects = db.prepare(
+    filterProjectName
+      ? `SELECT * FROM dld_project WHERE project_name = ?`
+      : `SELECT * FROM dld_project`
+  ).all(...(filterProjectName ? [filterProjectName] : []));
+  if (projects.length === 0) { console.log('  no projects in DB'); db.close(); return; }
+  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  for (const p of projects) {
+    console.log(`  -> ${p.project_name}`);
+    const result = diffProject(db, p.project_id);
+    if (result.status !== 'ok') {
+      console.log(`     skipped: ${result.status}` + (result.status === 'not-enough-snapshots' ? ' (need >= 2 snapshots)' : ''));
+      continue;
+    }
+    const counts = summarizeDiff(result.rows);
+    const totalChanges = result.rows.length;
+    const oldLabel = result.oldSnapshot.snapshot_date + '/' + result.oldSnapshot.source_format;
+    const newLabel = result.newSnapshot.snapshot_date + '/' + result.newSnapshot.source_format;
+    console.log(`     ${oldLabel}  ->  ${newLabel}`);
+    if (totalChanges === 0) console.log('     no changes');
+    else {
+      const summary = Object.entries(counts).map(([k, v]) => `${k}:${v}`).join('  ');
+      console.log(`     ${summary}  (${totalChanges} rows)`);
+    }
+    const base = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
+    const csvOut  = path.join(OUTPUT_DIR, base + '.diff.csv');
+    const htmlOut = path.join(OUTPUT_DIR, base + '.diff.html');
+    writeDiffCsv(csvOut, result);
+    writeDiffHtml(htmlOut, result, counts);
+    console.log(`     wrote: ${path.relative(process.cwd(), csvOut)}`);
+    console.log(`     wrote: ${path.relative(process.cwd(), htmlOut)}`);
     console.log('');
   }
   db.close();
@@ -226,10 +266,13 @@ function cmdAll() {
   if (sfTargets.length === 0) console.log('     (no SF files)');
   else cmdImportSf(sfTargets);
 
-  console.log('  [3/4] compare');
+  console.log('  [3/5] compare');
   cmdCompare(null);
 
-  console.log('  [4/4] summary');
+  console.log('  [4/5] month-over-month diff');
+  cmdDiff(null);
+
+  console.log('  [5/5] summary');
   cmdStatus();
 }
 
@@ -264,6 +307,11 @@ function main() {
 
   if (cmd === 'compare') {
     cmdCompare(rest[0] || null);
+    return;
+  }
+
+  if (cmd === 'diff') {
+    cmdDiff(rest[0] || null);
     return;
   }
 

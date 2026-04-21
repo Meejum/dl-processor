@@ -106,9 +106,9 @@ function classifyMatch(dldUnit, dldTxs, sfRow) {
   if (!sfRow) return {
     status: 'DLD_ONLY',
     reasons: ['no SF booking'],
-    priceDelta: { diff: null, pct: null, direction: null }
+    priceDelta: { diff: null, pct: null, direction: null },
+    nameState: 'none'
   };
-  const reasons = [];
 
   const purchase    = pickLatestPurchase(dldTxs);
   const marketPrice = pickLatestMarketPrice(dldTxs);
@@ -116,22 +116,36 @@ function classifyMatch(dldUnit, dldTxs, sfRow) {
   const sfPrice     = sfRow.purchase_price;
   const delta       = computePriceDelta(dldPrice, sfPrice);
 
-  if (delta.pct != null && Math.abs(delta.pct) > 1) {
-    const absDiff = Math.abs(delta.diff);
-    const verb    = delta.direction === 'up' ? 'rose' : 'fell';
-    const sign    = delta.direction === 'up' ? '+' : '-';
-    const pctStr  = Math.abs(delta.pct).toFixed(2) + '%';
-    reasons.push(`price ${verb} ${pctStr} (${sign}${Math.round(absDiff).toLocaleString()} AED): DLD ${Math.round(dldPrice).toLocaleString()} vs SF ${Math.round(sfPrice).toLocaleString()}`);
+  const haveSfName  = !!sfRow.applicant_name;
+  const dldBuyer    = purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name) ? purchase.party_name : null;
+  let nameState;
+  if (!dldBuyer || !haveSfName) nameState = 'unknown';
+  else nameState = namesOverlap(dldBuyer, sfRow.applicant_name) ? 'match' : 'mismatch';
+
+  const priceMeaningful = delta.pct != null && Math.abs(delta.pct) > 1;
+  const reasons = [];
+
+  if (nameState === 'mismatch') {
+    reasons.push(`buyer mismatch: DLD "${dldBuyer}" vs SF "${sfRow.applicant_name}"`);
+    if (priceMeaningful) reasons.push(priceReason(delta, dldPrice, sfPrice));
+    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState };
   }
 
-  if (purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name) && sfRow.applicant_name) {
-    if (!namesOverlap(purchase.party_name, sfRow.applicant_name)) {
-      reasons.push(`buyer mismatch: DLD "${purchase.party_name}" vs SF "${sfRow.applicant_name}"`);
-    }
+  if (priceMeaningful) {
+    reasons.push(priceReason(delta, dldPrice, sfPrice));
+    const status = delta.direction === 'up' ? 'PRICE_UP' : 'PRICE_DOWN';
+    return { status, reasons, priceDelta: delta, nameState };
   }
 
-  if (reasons.length === 0) return { status: 'MATCH', reasons: [], priceDelta: delta };
-  return { status: 'MISMATCH', reasons, priceDelta: delta };
+  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState };
+}
+
+function priceReason(delta, dldPrice, sfPrice) {
+  const absDiff = Math.abs(delta.diff);
+  const verb    = delta.direction === 'up' ? 'rose' : 'fell';
+  const sign    = delta.direction === 'up' ? '+' : '-';
+  const pctStr  = Math.abs(delta.pct).toFixed(2) + '%';
+  return `price ${verb} ${pctStr} (${sign}${Math.round(absDiff).toLocaleString()} AED): DLD ${Math.round(dldPrice).toLocaleString()} vs SF ${Math.round(sfPrice).toLocaleString()}`;
 }
 
 function compareProject(db, projectId) {
@@ -246,8 +260,11 @@ function compareProject(db, projectId) {
   return { project, status: 'ok', rows, dldSnapshotId: dldSnap.snapshot_id, sfSnapshotId: sfSnap.sf_snapshot_id };
 }
 
+const STATUS_ORDER = ['MATCH', 'PRICE_UP', 'PRICE_DOWN', 'BUYER_MISMATCH', 'DLD_ONLY', 'SF_ONLY'];
+
 function summarize(rows) {
-  const counts = { MATCH: 0, MISMATCH: 0, DLD_ONLY: 0, SF_ONLY: 0 };
+  const counts = {};
+  for (const s of STATUS_ORDER) counts[s] = 0;
   for (const r of rows) counts[r.match_status] = (counts[r.match_status] || 0) + 1;
   return counts;
 }
@@ -283,7 +300,22 @@ function fmtPct(v) {
 function writeCompareHtml(outPath, project, rows, counts) {
   const total = rows.length;
   const pct   = n => total ? ((n * 100) / total).toFixed(1) + '%' : '0%';
-  const statusClass = { MATCH: 'ok', MISMATCH: 'warn', DLD_ONLY: 'dld', SF_ONLY: 'sf' };
+  const statusClass = {
+    MATCH:          'ok',
+    PRICE_UP:       'up',
+    PRICE_DOWN:     'down',
+    BUYER_MISMATCH: 'warn',
+    DLD_ONLY:       'dld',
+    SF_ONLY:        'sf'
+  };
+  const statusLabel = {
+    MATCH:          'MATCH',
+    PRICE_UP:       'PRICE ↑',
+    PRICE_DOWN:     'PRICE ↓',
+    BUYER_MISMATCH: 'BUYER MISMATCH',
+    DLD_ONLY:       'DLD-only',
+    SF_ONLY:        'SF-only'
+  };
 
   const columns = [
     { key: 'dld_unit_number',     label: 'DLD Unit',        align: 'left'  },
@@ -329,7 +361,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
         cls.push(raw > 0 ? 'up' : 'down');
       }
     } else if (col.key === 'match_status') {
-      html = `<span class="badge ${statusClass[raw] || ''}">${escHtml(raw)}</span>`;
+      html = `<span class="badge ${statusClass[raw] || ''}">${escHtml(statusLabel[raw] || raw)}</span>`;
     } else if (col.key === 'dld_purchase_date') {
       if (raw) {
         const m = String(raw).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
@@ -372,6 +404,8 @@ function writeCompareHtml(outPath, project, rows, counts) {
   .chip:hover{filter:brightness(1.25)}
   .chip.off{opacity:.28;filter:grayscale(.4)}
   .chip.ok{background:#0d3a1d;color:#4ce38e}
+  .chip.up{background:#0f3a2f;color:#5cf0aa}
+  .chip.down{background:#3a0f1a;color:#ff7fa6}
   .chip.warn{background:#3a2a0d;color:#ffcc55}
   .chip.dld{background:#0d2d3a;color:#5ad4ff}
   .chip.sf{background:#2d0d3a;color:#d88eff}
@@ -392,6 +426,8 @@ function writeCompareHtml(outPath, project, rows, counts) {
   tbody td.down{color:#ff6b88;font-weight:600}
   tbody td.flat{color:#666}
   tbody tr.ok td{background:rgba(76,227,142,.04)}
+  tbody tr.up td{background:rgba(92,240,170,.06)}
+  tbody tr.down td{background:rgba(255,127,166,.06)}
   tbody tr.warn td{background:rgba(255,204,85,.05)}
   tbody tr.dld td{background:rgba(90,212,255,.05)}
   tbody tr.sf td{background:rgba(216,142,255,.05)}
@@ -399,6 +435,8 @@ function writeCompareHtml(outPath, project, rows, counts) {
   tbody tr.hidden{display:none}
   .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
   .badge.ok{background:#0d3a1d;color:#4ce38e}
+  .badge.up{background:#0f3a2f;color:#5cf0aa}
+  .badge.down{background:#3a0f1a;color:#ff7fa6}
   .badge.warn{background:#3a2a0d;color:#ffcc55}
   .badge.dld{background:#0d2d3a;color:#5ad4ff}
   .badge.sf{background:#2d0d3a;color:#d88eff}
@@ -416,8 +454,10 @@ function writeCompareHtml(outPath, project, rows, counts) {
 </div>
 <div class="controls">
   <input class="search" id="q" placeholder="Filter: unit, buyer, status, any text…" autocomplete="off">
-  <span class="chip ok"   data-status="MATCH">MATCH ${counts.MATCH    || 0} (${pct(counts.MATCH    || 0)})</span>
-  <span class="chip warn" data-status="MISMATCH">MISMATCH ${counts.MISMATCH || 0} (${pct(counts.MISMATCH || 0)})</span>
+  <span class="chip ok"   data-status="MATCH">MATCH ${counts.MATCH || 0} (${pct(counts.MATCH || 0)})</span>
+  <span class="chip up"   data-status="PRICE_UP">PRICE ↑ ${counts.PRICE_UP || 0} (${pct(counts.PRICE_UP || 0)})</span>
+  <span class="chip down" data-status="PRICE_DOWN">PRICE ↓ ${counts.PRICE_DOWN || 0} (${pct(counts.PRICE_DOWN || 0)})</span>
+  <span class="chip warn" data-status="BUYER_MISMATCH">BUYER ${counts.BUYER_MISMATCH || 0} (${pct(counts.BUYER_MISMATCH || 0)})</span>
   <span class="chip dld"  data-status="DLD_ONLY">DLD-only ${counts.DLD_ONLY || 0} (${pct(counts.DLD_ONLY || 0)})</span>
   <span class="chip sf"   data-status="SF_ONLY">SF-only ${counts.SF_ONLY || 0} (${pct(counts.SF_ONLY || 0)})</span>
   <button class="btn-reset" id="reset">Reset</button>
@@ -508,13 +548,45 @@ function writeAuditTasks(outPath, project, rows) {
   let n = 1;
   for (const r of rows) {
     if (r.match_status === 'MATCH') continue;
-    let action;
-    if (r.match_status === 'DLD_ONLY') action = `Add SF booking for unit ${r.expected_sf_unit} (DLD unit ${r.dld_unit_number}, ${r.dld_last_tx_type}, ${r.dld_last_amount_aed} AED)`;
-    else if (r.match_status === 'SF_ONLY') action = `Verify SF booking ${r.sf_booking_name} / unit ${r.sf_unit} — not found in DLD snapshot`;
-    else action = `Reconcile unit ${r.expected_sf_unit}: ${r.match_reasons}`;
-    tasks.push({ n: n++, project: project.project_name, unit: r.expected_sf_unit || r.sf_unit, status: r.match_status, action });
+    let action, priority;
+    switch (r.match_status) {
+      case 'PRICE_UP':
+        priority = 'low';
+        action = `Update SF price for ${r.expected_sf_unit}: ${r.match_reasons} (buyer OK, resale at higher price)`;
+        break;
+      case 'PRICE_DOWN':
+        priority = 'medium';
+        action = `Investigate price drop for ${r.expected_sf_unit}: ${r.match_reasons}`;
+        break;
+      case 'BUYER_MISMATCH':
+        priority = 'high';
+        action = `Reconcile ${r.expected_sf_unit}: ${r.match_reasons}`;
+        break;
+      case 'DLD_ONLY':
+        priority = 'high';
+        action = `Add SF booking for ${r.expected_sf_unit} (DLD unit ${r.dld_unit_number}, ${r.dld_purchase_type || r.dld_last_tx_type}, ${r.dld_purchase_amount || r.dld_last_amount_aed} AED)`;
+        break;
+      case 'SF_ONLY':
+        priority = 'high';
+        action = `Verify SF booking ${r.sf_booking_name} / unit ${r.sf_unit} — not found in DLD snapshot`;
+        break;
+      default:
+        priority = 'medium';
+        action = `Review ${r.expected_sf_unit}: ${r.match_reasons}`;
+    }
+    tasks.push({
+      n: n++,
+      priority,
+      project: project.project_name,
+      unit: r.expected_sf_unit || r.sf_unit,
+      status: r.match_status,
+      action
+    });
   }
-  const header = ['n', 'project', 'unit', 'status', 'action'];
+  const priOrder = { high: 0, medium: 1, low: 2 };
+  tasks.sort((a, b) => priOrder[a.priority] - priOrder[b.priority]);
+  tasks.forEach((t, i) => t.n = i + 1);
+  const header = ['n', 'priority', 'project', 'unit', 'status', 'action'];
   writeCsv(outPath, header, tasks);
   return tasks;
 }
