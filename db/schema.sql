@@ -131,6 +131,18 @@ CREATE INDEX IF NOT EXISTS idx_sfb_snapshot ON sf_booking(sf_snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_sfb_sub_unit ON sf_booking(sub_project, unit_norm);
 CREATE INDEX IF NOT EXISTS idx_sfb_unit     ON sf_booking(unit_norm);
 
+CREATE TABLE IF NOT EXISTS manual_override (
+  override_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id       INTEGER NOT NULL REFERENCES dld_project ON DELETE CASCADE,
+  unit_number_norm TEXT NOT NULL,
+  actual_buyer     TEXT,
+  notes            TEXT,
+  created_at       TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at       TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(project_id, unit_number_norm)
+);
+CREATE INDEX IF NOT EXISTS idx_override_proj_unit ON manual_override(project_id, unit_number_norm);
+
 CREATE TABLE IF NOT EXISTS project_mapping (
   project_id     INTEGER PRIMARY KEY REFERENCES dld_project ON DELETE CASCADE,
   sf_sub_project TEXT NOT NULL,

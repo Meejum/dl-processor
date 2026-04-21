@@ -19,7 +19,7 @@ const OUTPUT_DIR   = path.join(__dirname, 'output');
 
 function banner() {
   console.log('');
-  console.log('  DLD-SYNC  /  Project Inquiry <-> Salesforce Reconciler');
+  console.log('  DL-PROCESSOR  /  DLD Project Inquiry <-> Salesforce Reconciler');
   console.log('  Sobha Realty  -  Registration Team');
   console.log('');
 }

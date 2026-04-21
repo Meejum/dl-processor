@@ -1,10 +1,10 @@
 {
-  "name": "dld-sync",
-  "version": "0.2.0",
-  "description": "Reconcile DLD Project Inquiry reports (XPS/CSV) against Salesforce. Parse, snapshot into SQLite, diff, and produce monthly audit tasks.",
+  "name": "dl-processor",
+  "version": "0.3.0",
+  "description": "DL-Processor — reconcile DLD Project Inquiry reports (XPS/CSV) against Salesforce. Parse, snapshot into SQLite, diff, and produce monthly audit tasks.",
   "main": "index.js",
   "bin": {
-    "dld-sync": "./index.js"
+    "dl-processor": "./index.js"
   },
   "scripts": {
     "start": "node index.js",

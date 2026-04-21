@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { expectedSfUnit, applyUnitTransforms } = require('./project-mapping');
+const { getOverridesMapForProject } = require('./overrides');
 
 function csvEscape(v) {
   if (v == null) return '';
@@ -116,12 +117,13 @@ function priceTag(delta) {
   return `${sign}${pct}% (${sign}${aed})`;
 }
 
-function classifyMatch(dldUnit, dldTxs, sfRow) {
+function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
   if (!sfRow) return {
     status: 'DLD_ONLY',
     reasons: ['no SF'],
     priceDelta: { diff: null, pct: null, direction: null },
-    nameState: 'none'
+    nameState: 'none',
+    usedOverride: false
   };
 
   const purchase    = pickLatestPurchase(dldTxs);
@@ -131,7 +133,10 @@ function classifyMatch(dldUnit, dldTxs, sfRow) {
   const delta       = computePriceDelta(dldPrice, sfPrice);
 
   const haveSfName  = !!sfRow.applicant_name;
-  const dldBuyer    = purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name) ? purchase.party_name : null;
+  const naturalBuyer = purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name) ? purchase.party_name : null;
+  const dldBuyer = naturalBuyer || overrideBuyer || null;
+  const usedOverride = !naturalBuyer && !!overrideBuyer;
+
   let nameState;
   if (!dldBuyer || !haveSfName) nameState = 'unknown';
   else nameState = namesOverlap(dldBuyer, sfRow.applicant_name) ? 'match' : 'mismatch';
@@ -142,16 +147,19 @@ function classifyMatch(dldUnit, dldTxs, sfRow) {
   if (nameState === 'mismatch') {
     if (priceMeaningful) reasons.push('buyer ' + priceTag(delta));
     else                 reasons.push('buyer');
-    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState };
+    if (usedOverride) reasons.push('override');
+    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride };
   }
 
   if (priceMeaningful) {
     reasons.push(priceTag(delta));
+    if (usedOverride) reasons.push('override');
     const status = delta.direction === 'up' ? 'PRICE_UP' : 'PRICE_DOWN';
-    return { status, reasons, priceDelta: delta, nameState };
+    return { status, reasons, priceDelta: delta, nameState, usedOverride };
   }
 
-  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState };
+  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride };
+  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride };
 }
 
 function compareProject(db, projectId) {
@@ -176,6 +184,7 @@ function compareProject(db, projectId) {
   for (const b of sfBookings) {
     if (b.unit_norm) sfByUnit.set(b.unit_norm, b);
   }
+  const overrideMap = getOverridesMapForProject(db, projectId);
 
   const rows = [];
   const matchedSfUnits = new Set();
@@ -189,7 +198,8 @@ function compareProject(db, projectId) {
     const dldTxs = getTxForUnit(db, u.unit_id);
     const purchase = pickLatestPurchase(dldTxs) || dldTxs[dldTxs.length - 1] || {};
     const latestTx = dldTxs[dldTxs.length - 1] || {};
-    const cls = classifyMatch(u, dldTxs, sfRow);
+    const overrideBuyer = overrideMap.get(u.unit_number_norm) || null;
+    const cls = classifyMatch(u, dldTxs, sfRow, overrideBuyer);
     if (sfRow) matchedSfUnits.add(sfRow.unit_norm);
 
     rows.push({
