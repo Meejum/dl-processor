@@ -96,8 +96,9 @@ function computePriceDelta(dldPrice, sfPrice) {
   const diff = dldPrice - sfPrice;
   const pct  = sfPrice !== 0 ? (diff / sfPrice) * 100 : null;
   let direction = 'flat';
-  if (diff > 0) direction = 'up';
-  else if (diff < 0) direction = 'down';
+  if (pct != null && Math.abs(pct) >= 0.01) {
+    direction = diff > 0 ? 'up' : 'down';
+  }
   return { diff, pct, direction };
 }
 
@@ -313,21 +314,20 @@ function writeCompareHtml(outPath, project, rows, counts) {
       html = raw == null ? '' : fmtMoney(raw);
       sortVal = raw == null ? '-Infinity' : String(raw);
     } else if (col.key === 'price_diff_pct') {
-      html = raw == null ? '' : fmtPct(raw);
       sortVal = raw == null ? '-999999' : String(raw);
-      if (raw != null) {
-        if (raw > 0)       cls.push('up');
-        else if (raw < 0)  cls.push('down');
-        else               cls.push('flat');
+      if (raw == null || Math.abs(raw) < 0.01) { html = ''; cls.push('flat'); }
+      else {
+        html = fmtPct(raw);
+        cls.push(raw > 0 ? 'up' : 'down');
       }
     } else if (col.key === 'price_diff_aed') {
-      if (raw != null) {
-        const sign = raw > 0 ? '+' : (raw < 0 ? '-' : '');
-        html = sign + fmtMoney(Math.abs(raw));
-        if (raw > 0) cls.push('up');
-        else if (raw < 0) cls.push('down');
-      }
       sortVal = raw == null ? '-Infinity' : String(raw);
+      if (raw == null || Math.abs(raw) < 1) { html = ''; }
+      else {
+        const sign = raw > 0 ? '+' : '-';
+        html = sign + fmtMoney(Math.abs(raw));
+        cls.push(raw > 0 ? 'up' : 'down');
+      }
     } else if (col.key === 'match_status') {
       html = `<span class="badge ${statusClass[raw] || ''}">${escHtml(raw)}</span>`;
     } else if (col.key === 'dld_purchase_date') {
