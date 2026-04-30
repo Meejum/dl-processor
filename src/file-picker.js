@@ -46,8 +46,10 @@ function parseSelection(input, files, multi) {
   return [trimmed];
 }
 
-function pickFile({ title, filter, initialDir, multi, searchDir, extensions } = {}) {
-  if (process.platform !== 'win32') return pickViaPrompt({ title, searchDir, extensions, multi });
+function pickFile({ title, filter, initialDir, multi, searchDir, searchDirs, extensions } = {}) {
+  // Normalize searchDir(s) into an array; pickViaPrompt will list each in turn.
+  const dirList = (searchDirs && searchDirs.length) ? searchDirs : (searchDir ? [searchDir] : []);
+  if (process.platform !== 'win32') return pickViaPrompt({ title, searchDirs: dirList, extensions, multi });
 
   const startDir = initialDir && fs.existsSync(initialDir) ? initialDir : DOWNLOADS;
 
@@ -85,7 +87,7 @@ function pickFile({ title, filter, initialDir, multi, searchDir, extensions } = 
 
   if (res.error) {
     console.log('   (file dialog failed: ' + res.error.message + ' — falling back to typed input)');
-    return pickViaPrompt({ title, searchDir, extensions, multi });
+    return pickViaPrompt({ title, searchDirs: dirList, extensions, multi });
   }
   const out = (res.stdout || '').trim();
   if (!out) return []; // user cancelled, don't fall back — just return empty
@@ -93,18 +95,26 @@ function pickFile({ title, filter, initialDir, multi, searchDir, extensions } = 
   return paths.filter(p => { try { return fs.existsSync(p); } catch (_) { return false; } });
 }
 
-function pickViaPrompt({ title, searchDir, extensions, multi }) {
+function pickViaPrompt({ title, searchDir, searchDirs, extensions, multi }) {
   const readline = require('readline');
-  const files = listFilesInDir(searchDir, extensions);
+  const dirs = (searchDirs && searchDirs.length) ? searchDirs : (searchDir ? [searchDir] : []);
+  // Aggregate files across each directory; remember which dir each came from
+  // so the listing can group them visually.
+  const groups = dirs.map(d => ({ dir: d, files: listFilesInDir(d, extensions) }))
+                     .filter(g => g.files.length > 0);
+  const files = groups.flatMap(g => g.files);
   return new Promise(resolve => {
     if (files.length > 0) {
+      let n = 0;
+      for (const g of groups) {
+        console.log('');
+        console.log('  Files in ' + g.dir + ':');
+        for (const f of g.files) console.log('    [' + (++n) + '] ' + path.basename(f));
+      }
       console.log('');
-      console.log('  Files in ' + searchDir + ':');
-      files.forEach((f, i) => console.log('    [' + (i + 1) + '] ' + path.basename(f)));
+    } else if (dirs.length) {
       console.log('');
-    } else if (searchDir) {
-      console.log('');
-      console.log('  (no matching files in ' + searchDir + ')');
+      console.log('  (no matching files in ' + dirs.join(' / ') + ')');
       console.log('');
     }
     const hint = files.length > 0
@@ -147,7 +157,8 @@ function pickAuditFile() {
     title: 'Select audit workbook (xlsx) — team verification',
     filter: 'Audit workbook (*.xlsx)|*.xlsx|All files (*.*)|*.*',
     initialDir: DLD_INPUT_DIR,
-    searchDir:  DLD_INPUT_DIR,
+    // Look in input/ AND Downloads — the workbook commonly lives in either.
+    searchDirs: [DLD_INPUT_DIR, DOWNLOADS],
     extensions: ['.xlsx'],
     multi: false
   });

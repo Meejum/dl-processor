@@ -36,8 +36,12 @@ function migrateSchema(db) {
   const prefixCol = pmCols.find(r => r.name === 'sf_unit_prefix');
   const needsRebuild = (subCol && subCol.notnull === 1) || (prefixCol && prefixCol.notnull === 1);
   if (needsRebuild) {
+    // v_unit_compare references project_mapping. SQLite errors on table drop /
+    // rename when a view depends on the table. Drop the view first; schema.sql
+    // will recreate it on the next openDb() (CREATE VIEW IF NOT EXISTS).
     db.exec(`
       BEGIN TRANSACTION;
+      DROP VIEW IF EXISTS v_unit_compare;
       CREATE TABLE project_mapping_new (
         project_id     INTEGER PRIMARY KEY REFERENCES dld_project ON DELETE CASCADE,
         sf_sub_project TEXT,
