@@ -1,4 +1,5 @@
 node_modules/
+.worktrees/
 
 # derived outputs
 output/*.json
