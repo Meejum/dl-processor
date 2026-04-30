@@ -1,3 +1,11 @@
+const { BANK_PATTERNS, BANK_SQL_CONDITIONS } = require('./common');
+
+const BANK_SQL_NOT_CONDITIONS = BANK_PATTERNS
+  .map(p => p === 'BANK'
+    ? `t2.party_name NOT LIKE '%BANK%'`
+    : `t2.party_name NOT LIKE '${p.trimEnd()}%'`)
+  .join('\n          AND ');
+
 function listBankOnlyUnits(db, projectId) {
   return db.prepare(`
     WITH latest AS (
@@ -27,34 +35,14 @@ function listBankOnlyUnits(db, projectId) {
     WHERE u.project_id = ?
       AND lt.party_name IS NOT NULL
       AND (
-           lt.party_name LIKE '%BANK%'
-        OR lt.party_name LIKE 'COMMERCIAL %'
-        OR lt.party_name LIKE 'EMIRATES %'
-        OR lt.party_name LIKE 'DUBAI ISLAMIC%'
-        OR lt.party_name LIKE 'ABU DHABI %'
-        OR lt.party_name LIKE 'AJMAN %'
-        OR lt.party_name LIKE 'FIRST ABU DHABI%'
-        OR lt.party_name LIKE 'MASHREQ%'
-        OR lt.party_name LIKE 'HSBC%'
-        OR lt.party_name LIKE 'RAK BANK%'
-        OR lt.party_name LIKE 'NATIONAL BANK%'
+        ${BANK_SQL_CONDITIONS}
       )
       AND NOT EXISTS (
         SELECT 1 FROM dld_transaction t2
         WHERE t2.unit_id = u.unit_id
           AND t2.party_name IS NOT NULL
           AND t2.party_name <> ''
-          AND t2.party_name NOT LIKE '%BANK%'
-          AND t2.party_name NOT LIKE 'COMMERCIAL %'
-          AND t2.party_name NOT LIKE 'EMIRATES %'
-          AND t2.party_name NOT LIKE 'DUBAI ISLAMIC%'
-          AND t2.party_name NOT LIKE 'ABU DHABI %'
-          AND t2.party_name NOT LIKE 'AJMAN %'
-          AND t2.party_name NOT LIKE 'FIRST ABU DHABI%'
-          AND t2.party_name NOT LIKE 'MASHREQ%'
-          AND t2.party_name NOT LIKE 'HSBC%'
-          AND t2.party_name NOT LIKE 'RAK BANK%'
-          AND t2.party_name NOT LIKE 'NATIONAL BANK%'
+          AND ${BANK_SQL_NOT_CONDITIONS}
       )
     ORDER BY u.unit_number
   `).all(projectId, projectId);

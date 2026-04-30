@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { expectedSfUnit, applyUnitTransforms } = require('./project-mapping');
 const { getOverridesMapForProject } = require('./overrides');
+const { BANK_PREFIX_RE } = require('./common');
 
 function csvEscape(v) {
   if (v == null) return '';
@@ -57,7 +58,6 @@ const MARKET_PRICE_TX = new Set([
 const PURCHASE_TX_TYPES = new Set([
   ...MARKET_PRICE_TX, 'Grant', 'Lease to Own Registration'
 ]);
-const BANK_PREFIX_RE = /^(BANK|COMMERCIAL|EMIRATES|DUBAI|ABU DHABI|AJMAN|SHARJAH|AL\s|HSBC|MASHREQ|UNION NATIONAL|FIRST ABU DHABI|FAB|RAK BANK|NATIONAL BANK OF|ENBD|SAMBA|SABB|RIYAD|ARAB |EMIRATES NBD|EMIRATES ISLAMIC)/i;
 
 function pickLatestOfTypes(dldTxs, typeSet) {
   const hits = dldTxs.filter(t => typeSet.has(t.tx_type));
