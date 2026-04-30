@@ -81,6 +81,37 @@ function pickLatestMarketPrice(dldTxs) {
   return pickLatestOfTypes(dldTxs, MARKET_PRICE_TX);
 }
 
+function findLatestNonBankParty(dldTxs) {
+  if (!dldTxs || !dldTxs.length) return null;
+  const sorted = dldTxs.slice().sort((a, b) => (b.tx_date_iso || '').localeCompare(a.tx_date_iso || ''));
+  for (const t of sorted) {
+    if (t.party_name && !BANK_PREFIX_RE.test(t.party_name)) return t.party_name;
+  }
+  return null;
+}
+
+const GENERIC_COMMERCIAL_TOKENS = new Set([
+  'INVESTMENT','INVESTMENTS','HOLDING','HOLDINGS','TRADING','PROPERTIES','PROPERTY',
+  'REAL','ESTATE','DEVELOPMENT','DEVELOPERS','GENERAL','GROUP','COMPANY','CO',
+  'INTERNATIONAL','GLOBAL','BUSINESS','SERVICES','MANAGEMENT','CORPORATION'
+]);
+
+function plotNormalizeName(s) {
+  if (!s) return '';
+  return String(s).toUpperCase()
+    .replace(/[^A-Z ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function plotTokenJaccard(aKey, bKey) {
+  const a = new Set(aKey.split(' ').filter(w => w.length > 2 && !GENERIC_COMMERCIAL_TOKENS.has(w)));
+  const b = new Set(bKey.split(' ').filter(w => w.length > 2 && !GENERIC_COMMERCIAL_TOKENS.has(w)));
+  if (a.size === 0 || b.size === 0) return 0;
+  let inter = 0; for (const t of a) if (b.has(t)) inter++;
+  return inter / new Set([...a, ...b]).size;
+}
+
 // Stopwords removed before token comparison. Includes English titles and
 // Arabic naming particles that frequently appear across unrelated names
 // and must not be treated as a matching signal.
@@ -213,48 +244,145 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
 function compareProject(db, projectId, cachedConfig) {
   const project = db.prepare('SELECT * FROM dld_project WHERE project_id=?').get(projectId);
   if (!project) throw new Error(`project ${projectId} not found`);
-  if (!project.sf_sub_project || !project.sf_unit_prefix) {
+
+  const mappingRow   = db.prepare('SELECT * FROM project_mapping WHERE project_id=?').get(projectId) || {};
+  const scope        = mappingRow.match_scope    || 'sub_project';
+  const sfSubProject = mappingRow.sf_sub_project || project.sf_sub_project;
+  const sfProject    = mappingRow.sf_project     || null;
+  const sfPrefix     = mappingRow.sf_unit_prefix != null ? mappingRow.sf_unit_prefix : project.sf_unit_prefix;
+
+  const overridesData = cachedConfig
+    ? (cachedConfig.overrides || {})
+    : (function () {
+        try { return JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config', 'project-mapping.json'), 'utf8')).overrides || {}; }
+        catch (_) { return {}; }
+      })();
+  const ov = overridesData[project.project_name] || {};
+  const transforms          = Array.isArray(ov.unitTransforms) ? ov.unitTransforms : [];
+  const buildingTransforms  = ov.buildingTransforms || null;
+  const hasBuildingTransforms = !!buildingTransforms && Object.keys(buildingTransforms).length > 0;
+  const hasUnitTransforms     = transforms.length > 0;
+
+  if (sfPrefix == null && !hasBuildingTransforms && !hasUnitTransforms) {
     return { project, status: 'no-mapping', rows: [] };
   }
+  if (scope === 'sub_project' && !sfSubProject) return { project, status: 'no-mapping', rows: [] };
+  if (scope === 'project'     && !sfProject)    return { project, status: 'no-mapping', rows: [] };
 
   const dldSnap = getLatestSnapshotForProject(db, projectId);
   if (!dldSnap) return { project, status: 'no-dld-snapshot', rows: [] };
   const sfSnap  = getLatestSfSnapshot(db);
   if (!sfSnap)  return { project, status: 'no-sf-snapshot', rows: [] };
 
-  // Use pre-loaded config if passed in; otherwise load from disk (backwards compat)
-  const overrides = cachedConfig
-    ? (cachedConfig.overrides || {})
-    : (JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config', 'project-mapping.json'), 'utf8')).overrides || {});
-  const transforms = overrides[project.project_name]?.unitTransforms || [];
-
   const dldUnits = getUnitsForSnapshot(db, dldSnap.snapshot_id);
-  const sfBookings = getSfBookingsForSub(db, sfSnap.sf_snapshot_id, project.sf_sub_project);
+  let sfBookings;
+  if (scope === 'project') {
+    sfBookings = db.prepare(`SELECT * FROM sf_booking WHERE sf_snapshot_id=? AND project=?`)
+      .all(sfSnap.sf_snapshot_id, sfProject);
+  } else {
+    sfBookings = getSfBookingsForSub(db, sfSnap.sf_snapshot_id, sfSubProject);
+  }
   const sfByUnit = new Map();
   for (const b of sfBookings) {
     if (b.unit_norm) sfByUnit.set(b.unit_norm, b);
   }
-  const overrideMap = getOverridesMapForProject(db, projectId);
 
+  const landShare = dldUnits.length
+    ? dldUnits.filter(u => (u.unit_type === 'Land' || u.building_name === 'Land')).length / dldUnits.length
+    : 0;
+  const bareMapping = (sfPrefix === '' && !hasUnitTransforms && !hasBuildingTransforms);
+  const isPlotProject = landShare >= 0.3 || (bareMapping && landShare >= 0.05);
+
+  const sfByBuyer = new Map();
+  if (isPlotProject) {
+    const addTokens = (key, b) => {
+      if (!key) return;
+      for (const tok of new Set(key.split(' ').filter(w => w.length > 2))) {
+        if (!sfByBuyer.has(tok)) sfByBuyer.set(tok, []);
+        sfByBuyer.get(tok).push(b);
+      }
+    };
+    for (const b of sfBookings) {
+      addTokens(plotNormalizeName(b.applicant_name), b);
+      if (b.applicant_2_name)  addTokens(plotNormalizeName(b.applicant_2_name),  b);
+      if (b.applicant_3_name)  addTokens(plotNormalizeName(b.applicant_3_name),  b);
+      if (b.applicant_4_name)  addTokens(plotNormalizeName(b.applicant_4_name),  b);
+      if (b.applicant_details) addTokens(plotNormalizeName(b.applicant_details), b);
+    }
+  }
+
+  function findSfByBuyerPrice(buyer, dldPrice, alreadyMatchedSet) {
+    if (!buyer) return null;
+    const key = plotNormalizeName(buyer);
+    if (!key) return null;
+    const keyTokens = key.split(' ').filter(w => w.length > 2 && !GENERIC_COMMERCIAL_TOKENS.has(w));
+    if (keyTokens.length === 0) return null;
+    const candidates = new Map();
+    for (const tok of new Set(keyTokens)) {
+      const list = sfByBuyer.get(tok) || [];
+      for (const b of list) candidates.set(b.sf_booking_id, b);
+    }
+    if (candidates.size === 0) return null;
+    let best = null, bestScore = -Infinity;
+    for (const b of candidates.values()) {
+      if (alreadyMatchedSet.has(b.unit_norm)) continue;
+      const sfKeys = [
+        plotNormalizeName(b.applicant_name),
+        b.applicant_2_name  ? plotNormalizeName(b.applicant_2_name)  : null,
+        b.applicant_3_name  ? plotNormalizeName(b.applicant_3_name)  : null,
+        b.applicant_4_name  ? plotNormalizeName(b.applicant_4_name)  : null,
+        b.applicant_details ? plotNormalizeName(b.applicant_details) : null
+      ].filter(Boolean);
+      let bestJac = 0, matched = false;
+      for (const sfKey of sfKeys) {
+        const jac = plotTokenJaccard(key, sfKey);
+        if (jac >= 0.5 || key === sfKey) { matched = true; if (jac > bestJac) bestJac = jac; }
+      }
+      if (!matched) continue;
+      const priceDiff = (dldPrice != null && b.purchase_price)
+        ? Math.abs((b.purchase_price - dldPrice) / b.purchase_price) : 1;
+      if (priceDiff > 0.05) continue;
+      const score = bestJac * 2 + (1 - Math.min(priceDiff, 1));
+      if (score > bestScore) { bestScore = score; best = b; }
+    }
+    return best;
+  }
+
+  const overrideMap = getOverridesMapForProject(db, projectId);
   const rows = [];
   const matchedSfUnits = new Set();
 
   for (const u of dldUnits) {
     const expected = expectedSfUnit(u.unit_number_norm, {
-      sf_unit_prefix: project.sf_unit_prefix,
-      unitTransforms: transforms
-    });
-    const sfRow = expected ? sfByUnit.get(expected) : null;
+      sf_unit_prefix:    sfPrefix,
+      unitTransforms:    transforms,
+      buildingTransforms: buildingTransforms
+    }, u.building_name);
+    let sfRow = expected ? sfByUnit.get(expected) : null;
     const dldTxs = getTxForUnit(db, u.unit_id);
     const purchase = pickLatestPurchase(dldTxs) || dldTxs[dldTxs.length - 1] || {};
     const latestTx = dldTxs[dldTxs.length - 1] || {};
+
+    let matchedViaBuyer = false;
+    if (!sfRow && isPlotProject) {
+      const realBuyer = purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name)
+        ? purchase.party_name
+        : findLatestNonBankParty(dldTxs);
+      if (realBuyer) {
+        const marketPrice = pickLatestMarketPrice(dldTxs);
+        const fb = findSfByBuyerPrice(realBuyer, marketPrice ? marketPrice.amount_aed : null, matchedSfUnits);
+        if (fb) { sfRow = fb; matchedViaBuyer = true; }
+      }
+    }
+
     const overrideBuyer = overrideMap.get(u.unit_number_norm) || null;
     const cls = classifyMatch(u, dldTxs, sfRow, overrideBuyer);
+    if (matchedViaBuyer) cls.reasons = (cls.reasons || []).concat(['plot match']);
     if (sfRow) matchedSfUnits.add(sfRow.unit_norm);
 
     rows.push({
       dld_project:              project.project_name,
-      sf_sub_project:           project.sf_sub_project,
+      sf_sub_project:           sfSubProject || sfProject || '(' + scope + ')',
       dld_unit_number:          u.unit_number,
       expected_sf_unit:         expected,
       sf_unit:                  sfRow?.unit || null,
@@ -283,7 +411,7 @@ function compareProject(db, projectId, cachedConfig) {
       sf_procedure_number:      sfRow?.procedure_number || null,
       sf_booking_name:          sfRow?.booking_name || null,
       match_status:             cls.status,
-      match_reasons:            cls.reasons.join('; ')
+      match_reasons:            (cls.reasons || []).join('; ')
     });
   }
 
@@ -291,7 +419,7 @@ function compareProject(db, projectId, cachedConfig) {
     if (!matchedSfUnits.has(b.unit_norm)) {
       rows.push({
         dld_project:         project.project_name,
-        sf_sub_project:      project.sf_sub_project,
+        sf_sub_project:      sfSubProject || sfProject || '(' + scope + ')',
         dld_unit_number:     null,
         expected_sf_unit:    b.unit_norm,
         sf_unit:             b.unit,
