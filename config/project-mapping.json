@@ -1,13 +1,226 @@
 {
-  "_note": "Override auto-inferred DLD<->SF mapping per project. Keys = DLD project_name (exact). unitTransforms: custom regex rules for unit number translation when default 'prefix + normalized unit number' doesn't work.",
+  "_note": "Override auto-inferred DLD<->SF mapping per project. Keys = DLD project_name (exact). match_scope: 'sub_project' (default) | 'project'. unitTransforms: regex rewrites applied to the DLD unit_number. buildingTransforms: same, keyed by DLD building.name so multi-tower projects can translate per tower. If sf_unit_prefix is empty, the transform output is used as-is (used when SF includes the prefix like 'SO-A1001' or 'CGA1001').",
   "overrides": {
     "Sobha Hartland Waves": {
       "sf_project": "Sobha Hartland",
       "sf_sub_project": "Waves",
       "sf_unit_prefix": "W",
+      "match_scope": "sub_project",
       "unitTransforms": [
         { "match": "^RETAIL\\s*(\\d+)$", "replace": "R$1" }
       ]
+    },
+    "Sobha Central Phase I": {
+      "sf_project": "Sobha Central",
+      "sf_unit_prefix": "SC",
+      "match_scope": "project",
+      "buildingTransforms": {
+        "The Eden at Sobha Central":    [ { "match": "^C(\\d+)$", "replace": "TE-$1" } ],
+        "The Horizon at Sobha Central": [ { "match": "^D(\\d+)$", "replace": "TH-$1" } ]
+      }
+    },
+    "Sobha Central Phase II": {
+      "sf_project": "Sobha Central",
+      "sf_unit_prefix": "SC",
+      "match_scope": "project",
+      "buildingTransforms": {
+        "The Tranquil at Sobha Central": [ { "match": "^A(\\d+)$", "replace": "TQ-$1" } ],
+        "The Serene at Sobha Central":   [ { "match": "^B(\\d+)$", "replace": "TS-$1" } ]
+      }
+    },
+    "Sobha Central": {
+      "sf_project": "Sobha Central",
+      "sf_unit_prefix": "SC",
+      "match_scope": "project",
+      "buildingTransforms": {
+        "The Pinnacle at Sobha Central": [ { "match": "^E-(\\d+)$", "replace": "PL-$1" } ],
+        "The Mirage at Sobha Central":   [ { "match": "^F-(\\d+)$", "replace": "MG-$1" } ],
+        "Sobha Central Mall":            [ { "match": "^R-(\\d+)$", "replace": "R-$1" } ]
+      }
+    },
+    "Sobha Seahaven Tower B & C": {
+      "sf_project": "Sobha SeaHaven",
+      "sf_sub_project": "Sobha SeaHaven",
+      "sf_unit_prefix": "SSH",
+      "match_scope": "sub_project",
+      "unitTransforms": []
+    },
+    "SKYSCAPE": {
+      "sf_project": "Sobha Hartland -II",
+      "match_scope": "project",
+      "sf_unit_prefix": "",
+      "buildingTransforms": {
+        "Skyscape Altius": [ { "match": "^A(\\d+)$", "replace": "SAL-$1" } ],
+        "Skyscape Aura":   [ { "match": "^C(\\d+)$", "replace": "SAR-$1" } ],
+        "Skyscape Avenue": [ { "match": "^B(\\d+)$", "replace": "SAV-$1" } ]
+      }
+    },
+    "Sobha Hartland - Crest Grande": {
+      "sf_project": "Sobha Hartland",
+      "sf_sub_project": "Crest Grande",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "unitTransforms": [
+        { "match": "^([ABC])(\\d+)$", "replace": "CG$1$2" }
+      ]
+    },
+    "SOBHA ONE": {
+      "sf_project": "Sobha One",
+      "match_scope": "project",
+      "sf_unit_prefix": "",
+      "buildingTransforms": {
+        "Sobha One - A":      [ { "match": "^A(\\d+)$",         "replace": "SO-A$1"  } ],
+        "Sobha One - B":      [ { "match": "^B(\\d+)$",         "replace": "SO-B$1"  } ],
+        "Sobha One - C":      [ { "match": "^C(\\d+)$",         "replace": "SO-C$1"  } ],
+        "Sobha One - D":      [ { "match": "^D(\\d+)$",         "replace": "SO-D$1"  } ],
+        "Sobha One - E":      [ { "match": "^E(\\d+)$",         "replace": "SO-E$1"  } ],
+        "Sobha One - Podium": [ { "match": "^([A-Z])(\\d+)$",   "replace": "SO-$1$2" } ]
+      }
+    },
+    "Sobha Solis": {
+      "sf_project": "Sobha Solis",
+      "sf_sub_project": "Sobha Solis",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "buildingTransforms": {
+        "Sobha Solis Tower A": [ { "match": "^A(\\d+)$", "replace": "SOL-A$1" } ],
+        "Sobha Solis Tower B": [ { "match": "^B(\\d+)$", "replace": "SOL-B$1" } ],
+        "Sobha Solis Tower C": [ { "match": "^C(\\d+)$", "replace": "SOL-C$1" } ],
+        "Sobha Solis Tower D": [ { "match": "^D(\\d+)$", "replace": "SOL-D$1" } ]
+      }
+    },
+
+    "310 Riverside Crescent": {
+      "sf_project": "Sobha Hartland -II",
+      "sf_sub_project": "310 Riverside Crescent",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "unitTransforms": [
+        { "match": "^(\\d+)$",      "replace": "310 RSC-$1"   },
+        { "match": "^310-R(\\d+)$", "replace": "310 RSC-R$1"  }
+      ]
+    },
+    "320 Riverside Crescent": {
+      "sf_project": "Sobha Hartland -II",
+      "sf_sub_project": "320 Riverside Crescent",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "unitTransforms": [
+        { "match": "^(\\d+)$",      "replace": "320 RSC-$1"   },
+        { "match": "^320-R(\\d+)$", "replace": "320 RSC-R$1"  }
+      ]
+    },
+    "330 Riverside Crescent": {
+      "sf_project": "Sobha Hartland -II",
+      "sf_sub_project": "330 Riverside Crescent",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "unitTransforms": [
+        { "match": "^(\\d+)$",      "replace": "330 RSC-$1"   },
+        { "match": "^330-R(\\d+)$", "replace": "330 RSC-R$1"  }
+      ]
+    },
+    "340 Riverside Crescent": {
+      "sf_project": "Sobha Hartland -II",
+      "sf_sub_project": "340 Riverside Crescent",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "unitTransforms": [
+        { "match": "^(\\d+)$",      "replace": "340 RSC-$1"   },
+        { "match": "^340-R(\\d+)$", "replace": "340 RSC-R$1"  }
+      ]
+    },
+    "350 Riverside Crescent": {
+      "sf_project": "Sobha Hartland -II",
+      "sf_sub_project": "350 Riverside Crescent",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "unitTransforms": [
+        { "match": "^(\\d+)$",      "replace": "350 RSC-$1"   },
+        { "match": "^350-R(\\d+)$", "replace": "350 RSC-R$1"  }
+      ]
+    },
+    "360 Riverside Crescent": {
+      "sf_project": "Sobha Hartland -II",
+      "sf_sub_project": "360 Riverside Crescent",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "unitTransforms": [
+        { "match": "^(\\d+)$",      "replace": "360 RSC-$1"   },
+        { "match": "^360-R(\\d+)$", "replace": "360 RSC-R$1"  }
+      ]
+    },
+
+    "Sobha Creek Vistas Heights": {
+      "sf_project": "Sobha Hartland",
+      "sf_sub_project": "Sobha Creek Vista Heights",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "buildingTransforms": {
+        "Sobha Creek Vista Heights - Tower A": [ { "match": "^(\\d+)$", "replace": "CVH-A$1" } ],
+        "Sobha Creek Vista Heights - Tower B": [ { "match": "^(\\d+)$", "replace": "CVH-B$1" } ]
+      }
+    },
+    "Sobha Creek vistas Reserve": {
+      "sf_project": "Sobha Hartland",
+      "sf_sub_project": "Sobha Creek vistas Reserve",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "unitTransforms": [
+        { "match": "^A(\\d+)$", "replace": "RA-$1" },
+        { "match": "^B(\\d+)$", "replace": "RB-$1" }
+      ]
+    },
+    "Sobha Hartland Waves Opulence": {
+      "sf_project": "Sobha Hartland",
+      "sf_sub_project": "Sobha Waves Opulence",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "unitTransforms": [
+        { "match": "^(\\d+)$", "replace": "WO-$1" },
+        { "match": "^RETAIL\\s*(\\d+)$", "replace": "WO-R$1" }
+      ]
+    },
+    "The Element at Sobha One": {
+      "sf_project": "Sobha One",
+      "sf_sub_project": "The Element at Sobha One",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project",
+      "unitTransforms": [
+        { "match": "^(\\d+)$", "replace": "SO-EL-$1" }
+      ]
+    },
+
+    "_villa_note": "Projects below are villa/land-based. DLD uses plot numbers, SF uses villa numbers — they don't align by formula. Empty prefix + no transforms triggers plot-based compare (buyer + price fuzzy match).",
+    "Sobha Reserve": {
+      "sf_project": "Sobha Reserve",
+      "sf_sub_project": "Sobha Reserve",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project"
+    },
+    "Elwood Estates": {
+      "sf_project": "Sobha Elwood",
+      "sf_sub_project": "Sobha Elwood",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project"
+    },
+    "Sobha Hartland Estates - Townhouses": {
+      "sf_project": "Sobha Hartland",
+      "sf_sub_project": "Townhouses",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project"
+    },
+    "SOBHA HARTLAND VILLAS-PHASE 1": {
+      "sf_project": "Sobha Hartland",
+      "sf_sub_project": "Villas - Phase I",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project"
+    },
+    "Sobha Hartland Villas - Phase II": {
+      "sf_project": "Sobha Hartland",
+      "sf_sub_project": "Villas - Phase II",
+      "sf_unit_prefix": "",
+      "match_scope": "sub_project"
     }
   }
 }

@@ -7,7 +7,12 @@ function loadOverrides() {
   if (!fs.existsSync(CONFIG_PATH)) return {};
   try {
     const raw = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8'));
-    return raw.overrides || {};
+    const all = raw.overrides || {};
+    const out = {};
+    for (const [k, v] of Object.entries(all)) {
+      if (!k.startsWith('_')) out[k] = v;
+    }
+    return out;
   } catch (e) {
     console.warn('[mapping] could not read', CONFIG_PATH, '-', e.message);
     return {};
