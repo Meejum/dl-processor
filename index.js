@@ -154,10 +154,14 @@ function cmdCompare(filterProjectName) {
     db.close();
     return;
   }
+  // Load project-mapping.json once for all projects (avoids repeated disk reads per project)
+  const configPath = path.join(__dirname, 'config', 'project-mapping.json');
+  let cachedConfig = {};
+  try { cachedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (_) {}
   fs.mkdirSync(OUTPUT_DIR, { recursive: true });
   for (const p of projects) {
     console.log(`  -> ${p.project_name}`);
-    const result = compareProject(db, p.project_id);
+    const result = compareProject(db, p.project_id, cachedConfig);
     if (result.status !== 'ok') {
       console.log(`     skipped: ${result.status}`);
       continue;

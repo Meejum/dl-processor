@@ -35,7 +35,7 @@ function getUnitsForSnapshot(db, snapshotId) {
     FROM dld_unit u
     LEFT JOIN dld_building b ON b.building_id = u.building_id
     WHERE u.snapshot_id = ?
-    ORDER BY u.unit_number
+    ORDER BY CAST(u.unit_number AS INTEGER), u.unit_number
   `).all(snapshotId);
 }
 
@@ -162,7 +162,7 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
   return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride };
 }
 
-function compareProject(db, projectId) {
+function compareProject(db, projectId, cachedConfig) {
   const project = db.prepare('SELECT * FROM dld_project WHERE project_id=?').get(projectId);
   if (!project) throw new Error(`project ${projectId} not found`);
   if (!project.sf_sub_project || !project.sf_unit_prefix) {
@@ -174,8 +174,10 @@ function compareProject(db, projectId) {
   const sfSnap  = getLatestSfSnapshot(db);
   if (!sfSnap)  return { project, status: 'no-sf-snapshot', rows: [] };
 
-  const mapping = db.prepare('SELECT * FROM project_mapping WHERE project_id=?').get(projectId);
-  const overrides = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config', 'project-mapping.json'), 'utf8')).overrides || {};
+  // Use pre-loaded config if passed in; otherwise load from disk (backwards compat)
+  const overrides = cachedConfig
+    ? (cachedConfig.overrides || {})
+    : (JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'config', 'project-mapping.json'), 'utf8')).overrides || {});
   const transforms = overrides[project.project_name]?.unitTransforms || [];
 
   const dldUnits = getUnitsForSnapshot(db, dldSnap.snapshot_id);
@@ -203,36 +205,37 @@ function compareProject(db, projectId) {
     if (sfRow) matchedSfUnits.add(sfRow.unit_norm);
 
     rows.push({
-      dld_project:         project.project_name,
-      sf_sub_project:      project.sf_sub_project,
-      dld_unit_number:     u.unit_number,
-      expected_sf_unit:    expected,
-      sf_unit:             sfRow?.unit || null,
-      dld_unit_id:         u.dld_unit_id,
-      dld_unit_type:       u.unit_type,
-      dld_building:        u.building_name,
-      dld_net_area:        u.net_area,
-      dld_tx_count:        dldTxs.length,
-      dld_purchase_type:   purchase.tx_type || null,
-      dld_purchase_date:   purchase.tx_date || null,
-      dld_purchase_amount: purchase.amount_aed || null,
-      dld_purchase_party:  purchase.party_name || null,
-      price_diff_aed:      cls.priceDelta.diff != null ? Math.round(cls.priceDelta.diff) : null,
-      price_diff_pct:      cls.priceDelta.pct != null ? +cls.priceDelta.pct.toFixed(2) : null,
-      price_direction:     cls.priceDelta.direction,
-      dld_last_tx_type:    latestTx.tx_type || null,
-      dld_last_tx_date:    latestTx.tx_date || null,
-      dld_last_amount_aed: latestTx.amount_aed || null,
-      dld_last_party:      latestTx.party_name || null,
-      sf_applicant:        sfRow?.applicant_name || null,
-      sf_purchase_price:   sfRow?.purchase_price || null,
-      sf_dld_amount:       sfRow?.dld_amount || null,
-      sf_status:           sfRow?.status || null,
-      sf_pre_reg_status:   sfRow?.pre_reg_status || null,
-      sf_procedure_number: sfRow?.procedure_number || null,
-      sf_booking_name:     sfRow?.booking_name || null,
-      match_status:        cls.status,
-      match_reasons:       cls.reasons.join('; ')
+      dld_project:              project.project_name,
+      sf_sub_project:           project.sf_sub_project,
+      dld_unit_number:          u.unit_number,
+      expected_sf_unit:         expected,
+      sf_unit:                  sfRow?.unit || null,
+      dld_unit_id:              u.dld_unit_id,
+      dld_unit_type:            u.unit_type,
+      dld_building:             u.building_name,
+      dld_net_area:             u.net_area,
+      dld_tx_count:             dldTxs.length,
+      dld_purchase_type:        purchase.tx_type || null,
+      dld_purchase_date:        purchase.tx_date || null,
+      dld_purchase_date_iso:    purchase.tx_date_iso || null,
+      dld_purchase_amount:      purchase.amount_aed || null,
+      dld_purchase_party:       purchase.party_name || null,
+      price_diff_aed:           cls.priceDelta.diff != null ? Math.round(cls.priceDelta.diff) : null,
+      price_diff_pct:           cls.priceDelta.pct != null ? +cls.priceDelta.pct.toFixed(2) : null,
+      price_direction:          cls.priceDelta.direction,
+      dld_last_tx_type:         latestTx.tx_type || null,
+      dld_last_tx_date:         latestTx.tx_date || null,
+      dld_last_amount_aed:      latestTx.amount_aed || null,
+      dld_last_party:           latestTx.party_name || null,
+      sf_applicant:             sfRow?.applicant_name || null,
+      sf_purchase_price:        sfRow?.purchase_price || null,
+      sf_dld_amount:            sfRow?.dld_amount || null,
+      sf_status:                sfRow?.status || null,
+      sf_pre_reg_status:        sfRow?.pre_reg_status || null,
+      sf_procedure_number:      sfRow?.procedure_number || null,
+      sf_booking_name:          sfRow?.booking_name || null,
+      match_status:             cls.status,
+      match_reasons:            cls.reasons.join('; ')
     });
   }
 
@@ -272,6 +275,21 @@ function compareProject(db, projectId) {
       });
     }
   }
+
+  // Sort rows by status priority, then numeric unit number within each group
+  const STATUS_PRIORITY = {
+    BUYER_MISMATCH: 0,
+    DLD_ONLY:       1,
+    SF_ONLY:        2,
+    PRICE_DOWN:     3,
+    PRICE_UP:       4,
+    MATCH:          5
+  };
+  rows.sort((a, b) => {
+    const pd = (STATUS_PRIORITY[a.match_status] ?? 9) - (STATUS_PRIORITY[b.match_status] ?? 9);
+    if (pd !== 0) return pd;
+    return (a.dld_unit_number || '').localeCompare(b.dld_unit_number || '', undefined, { numeric: true });
+  });
 
   return { project, status: 'ok', rows, dldSnapshotId: dldSnap.snapshot_id, sfSnapshotId: sfSnap.sf_snapshot_id };
 }
@@ -340,6 +358,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
     { key: 'dld_unit_type',       label: 'Type',             align: 'left' },
     { key: 'dld_purchase_type',   label: 'DLD Tx',           align: 'left' },
     { key: 'dld_purchase_date',   label: 'DLD Date',         align: 'left' },
+    { key: 'days_outstanding',    label: 'Days',             align: 'num'  },
     { key: 'dld_purchase_amount', label: 'DLD Price',        align: 'num'  },
     { key: 'dld_purchase_party',  label: 'DLD Buyer',        align: 'left' },
     { key: 'sf_applicant',        label: 'SF Applicant',     align: 'left' },
@@ -350,6 +369,17 @@ function writeCompareHtml(outPath, project, rows, counts) {
     { key: 'match_status',        label: 'Match',            align: 'left' },
     { key: 'match_reasons',       label: 'Reason',           align: 'left' }
   ];
+
+  // Pre-compute days_outstanding for each row (non-MATCH rows only)
+  const nowMs = Date.now();
+  for (const r of rows) {
+    if (r.match_status !== 'MATCH' && r.dld_purchase_date_iso) {
+      const ms = new Date(r.dld_purchase_date_iso).getTime();
+      r.days_outstanding = isNaN(ms) ? null : Math.floor((nowMs - ms) / 86400000);
+    } else {
+      r.days_outstanding = null;
+    }
+  }
 
   const renderCell = (col, r) => {
     const raw = r[col.key];
@@ -382,6 +412,16 @@ function writeCompareHtml(outPath, project, rows, counts) {
       if (raw) {
         const m = String(raw).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
         sortVal = m ? `${m[3]}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` : String(raw);
+      }
+    } else if (col.key === 'days_outstanding') {
+      // Numeric days since DLD purchase; blank for MATCH rows
+      sortVal = raw == null ? '99999' : String(raw);
+      if (raw == null) { html = ''; }
+      else {
+        html = String(raw);
+        // Colour-code: red >180d, amber >90d, else normal
+        if (raw > 180) cls.push('down');
+        else if (raw > 90) cls.push('warn-days');
       }
     }
     return `<td class="${cls.join(' ')}" data-sort-val="${escHtml(sortVal)}">${html}</td>`;
@@ -441,6 +481,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
   tbody td.up{color:#4ce38e;font-weight:600}
   tbody td.down{color:#ff6b88;font-weight:600}
   tbody td.flat{color:#666}
+  tbody td.warn-days{color:#ffcc55;font-weight:600}
   tbody tr.ok td{background:rgba(76,227,142,.04)}
   tbody tr.up td{background:rgba(92,240,170,.06)}
   tbody tr.down td{background:rgba(255,127,166,.06)}
@@ -470,7 +511,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
 </div>
 <div class="controls">
   <input class="search" id="q" placeholder="Filter: unit, buyer, status, any text…" autocomplete="off">
-  <span class="chip ok"   data-status="MATCH">MATCH ${counts.MATCH || 0} (${pct(counts.MATCH || 0)})</span>
+  <span class="chip ok off" data-status="MATCH">MATCH ${counts.MATCH || 0} (${pct(counts.MATCH || 0)})</span>
   <span class="chip up"   data-status="PRICE_UP">PRICE ↑ ${counts.PRICE_UP || 0} (${pct(counts.PRICE_UP || 0)})</span>
   <span class="chip down" data-status="PRICE_DOWN">PRICE ↓ ${counts.PRICE_DOWN || 0} (${pct(counts.PRICE_DOWN || 0)})</span>
   <span class="chip warn" data-status="BUYER_MISMATCH">BUYER ${counts.BUYER_MISMATCH || 0} (${pct(counts.BUYER_MISMATCH || 0)})</span>
@@ -498,7 +539,8 @@ ${bodyHtml}
   const countEl = document.getElementById('count');
   const reset   = document.getElementById('reset');
   const rows    = [...tbody.querySelectorAll('tr')];
-  const active  = new Set(chips.map(c => c.dataset.status));
+  // MATCH is off by default — registrars want to see issues first
+  const active  = new Set(chips.filter(c => !c.classList.contains('off')).map(c => c.dataset.status));
   let sortCol = null, sortDir = 1;
 
   function applyFilter(){
