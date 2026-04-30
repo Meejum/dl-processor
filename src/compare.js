@@ -3,6 +3,7 @@ const path = require('path');
 const { expectedSfUnit, applyUnitTransforms } = require('./project-mapping');
 const { getOverridesMapForProject } = require('./overrides');
 const { BANK_PREFIX_RE } = require('./common');
+const { SOBHA_STYLE_CSS, brandBar } = require('./html-styles');
 
 function csvEscape(v) {
   if (v == null) return '';
@@ -532,6 +533,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
     { key: 'expected_sf_unit',    label: 'Expected SF Unit', align: 'left' },
     { key: 'sf_unit',             label: 'SF Unit (actual)', align: 'left' },
     { key: 'dld_unit_type',       label: 'Type',             align: 'left' },
+    { key: 'dld_net_area',        label: 'SQM',              align: 'num'  },
     { key: 'dld_purchase_type',   label: 'DLD Tx',           align: 'left' },
     { key: 'dld_purchase_date',   label: 'DLD Date',         align: 'left' },
     { key: 'days_outstanding',    label: 'Days',             align: 'num'  },
@@ -599,6 +601,14 @@ function writeCompareHtml(outPath, project, rows, counts) {
         if (raw > 180) cls.push('down');
         else if (raw > 90) cls.push('warn-days');
       }
+    } else if (col.key === 'dld_net_area') {
+      // SQM — display with up to 2 decimals, trim trailing zeros
+      sortVal = raw == null ? '-1' : String(raw);
+      if (raw == null) { html = ''; }
+      else {
+        const n = +raw;
+        html = isFinite(n) ? n.toFixed(2).replace(/\.?0+$/, '') : '';
+      }
     }
     return `<td class="${cls.join(' ')}" data-sort-val="${escHtml(sortVal)}">${html}</td>`;
   };
@@ -622,68 +632,17 @@ function writeCompareHtml(outPath, project, rows, counts) {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>${escHtml(project.project_name)} — DLD vs SF</title>
-<style>
-  *{box-sizing:border-box}
-  body{font:13px/1.4 system-ui,Segoe UI,Arial,sans-serif;margin:0;padding:20px 24px;background:#0b0f14;color:#e6e6e6}
-  h1{margin:0 0 4px;color:#fff;font-size:22px;letter-spacing:.3px}
-  .meta{color:#888;margin-bottom:14px;font-size:12px}
-  .meta b{color:#ccc}
-  .controls{display:flex;gap:10px;margin:12px 0 14px;align-items:center;flex-wrap:wrap}
-  .search{background:#0f141b;color:#fff;border:1px solid #222;padding:8px 12px;border-radius:6px;min-width:320px;font:inherit;outline:none}
-  .search:focus{border-color:#3ea1ff;box-shadow:0 0 0 2px rgba(62,161,255,.18)}
-  .chip{padding:6px 12px;border-radius:20px;font-weight:600;cursor:pointer;border:2px solid transparent;transition:filter .15s,opacity .15s;user-select:none;font-size:12px}
-  .chip:hover{filter:brightness(1.25)}
-  .chip.off{opacity:.28;filter:grayscale(.4)}
-  .chip.ok{background:#0d3a1d;color:#4ce38e}
-  .chip.up{background:#0f3a2f;color:#5cf0aa}
-  .chip.down{background:#3a0f1a;color:#ff7fa6}
-  .chip.warn{background:#3a2a0d;color:#ffcc55}
-  .chip.dld{background:#0d2d3a;color:#5ad4ff}
-  .chip.sf{background:#2d0d3a;color:#d88eff}
-  .count{color:#888;margin-left:auto;font-variant-numeric:tabular-nums;font-size:12px}
-  .count b{color:#fff}
-  .btn-reset{background:#11161d;color:#aaa;border:1px solid #222;padding:6px 10px;border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
-  .btn-reset:hover{color:#fff;border-color:#333}
-  .table-wrap{overflow-x:auto;border:1px solid #1b2028;border-radius:8px;background:#0d1218}
-  table{width:100%;border-collapse:collapse;font-size:12px;min-width:1400px}
-  thead th{background:#11161d;color:#aaa;font-weight:600;text-align:left;padding:8px 10px;border-bottom:2px solid #1f252e;cursor:pointer;position:sticky;top:0;user-select:none;white-space:nowrap}
-  thead th:hover{color:#fff;background:#151b24}
-  thead th.sort-asc::after{content:"  ↑";color:#4ce38e}
-  thead th.sort-desc::after{content:"  ↓";color:#ffcc55}
-  thead th[data-align="num"]{text-align:right}
-  tbody td{padding:6px 10px;border-bottom:1px solid #1a1f27;vertical-align:top;white-space:nowrap}
-  tbody td.num{text-align:right;font-variant-numeric:tabular-nums}
-  tbody td.up{color:#4ce38e;font-weight:600}
-  tbody td.down{color:#ff6b88;font-weight:600}
-  tbody td.flat{color:#666}
-  tbody td.warn-days{color:#ffcc55;font-weight:600}
-  tbody tr.ok td{background:rgba(76,227,142,.04)}
-  tbody tr.up td{background:rgba(92,240,170,.06)}
-  tbody tr.down td{background:rgba(255,127,166,.06)}
-  tbody tr.warn td{background:rgba(255,204,85,.05)}
-  tbody tr.dld td{background:rgba(90,212,255,.05)}
-  tbody tr.sf td{background:rgba(216,142,255,.05)}
-  tbody tr:hover td{background:#151b24 !important}
-  tbody tr.hidden{display:none}
-  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-  .badge.ok{background:#0d3a1d;color:#4ce38e}
-  .badge.up{background:#0f3a2f;color:#5cf0aa}
-  .badge.down{background:#3a0f1a;color:#ff7fa6}
-  .badge.warn{background:#3a2a0d;color:#ffcc55}
-  .badge.dld{background:#0d2d3a;color:#5ad4ff}
-  .badge.sf{background:#2d0d3a;color:#d88eff}
-  .empty{color:#666;padding:24px;text-align:center}
-  footer{margin-top:14px;color:#555;font-size:11px;text-align:right}
-  code{background:#11161d;color:#bcd;padding:1px 5px;border-radius:3px;font-size:11px}
-</style>
+<title>${escHtml(project.project_name)} — DLD vs SF · Sobha Realty</title>
+<style>${SOBHA_STYLE_CSS}</style>
 </head>
 <body>
-<h1>${escHtml(project.project_name)}</h1>
+${brandBar(generatedAt)}
+<div class="page">
+<div class="title-row"><h1>${escHtml(project.project_name)}</h1></div>
 <div class="meta">
   Salesforce sub-project: <b>${escHtml(project.sf_sub_project || '-')}</b>
-  &nbsp;·&nbsp; Unit prefix: <b>${escHtml(project.sf_unit_prefix || '-')}-</b>
-  &nbsp;·&nbsp; ${total.toLocaleString()} units compared
+  <span class="sep">·</span> Unit prefix: <b>${escHtml(project.sf_unit_prefix ? project.sf_unit_prefix + '-' : '-')}</b>
+  <span class="sep">·</span> <b>${total.toLocaleString()}</b> units compared
 </div>
 <div class="controls">
   <input class="search" id="q" placeholder="Filter: unit, buyer, status, any text…" autocomplete="off">
@@ -696,15 +655,16 @@ function writeCompareHtml(outPath, project, rows, counts) {
   <button class="btn-reset" id="reset">Reset</button>
   <span class="count" id="count">— rows</span>
 </div>
-<div class="table-wrap">
+<div class="table-wrap"><div class="table-scroll">
 <table id="tbl">
 <thead><tr>${headHtml}</tr></thead>
 <tbody>
 ${bodyHtml}
 </tbody>
 </table>
+</div></div>
+<footer>generated ${escHtml(generatedAt)} · click column headers to sort · click status chips to toggle · Δ% = (DLD − SF) / SF<span class="sig">Sobha Realty · Registration / DLD</span></footer>
 </div>
-<footer>generated ${escHtml(generatedAt)} · click column headers to sort · click status chips to toggle · Δ% = (DLD − SF) / SF</footer>
 <script>
 (function(){
   const tbl     = document.getElementById('tbl');

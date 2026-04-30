@@ -1,6 +1,7 @@
 const fs = require('fs');
 const path = require('path');
 const { compareProject } = require('./compare');
+const { SOBHA_STYLE_CSS, brandBar } = require('./html-styles');
 
 const CATEGORY_LABEL = {
   AGREE_MATCH:    'Agree · match',
@@ -49,6 +50,7 @@ function makeDeltaRow(m, t) {
     m_price_match:    m ? m.price_match : null,
     m_sf_applicant:   m ? m.sf_applicant : null,
     m_sf_price:       m ? m.sf_price : null,
+    m_size:           m ? m.size : null,
     m_details:        m ? m.details : null,
     m_procedure:      m ? m.procedure_type : null,
     m_booking_name:   m ? m.sf_booking_name : null,
@@ -154,7 +156,8 @@ function writeAuditDeltaHtml(outPath, projectName, rows, manualSnapshot) {
   const generatedAt = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
 
   const renderCell = v => v == null ? '' : escHtml(v);
-  const renderFlag = v => v == null ? '<span class="flat">—</span>' : (v === 1 ? '<span class="ok">✓</span>' : '<span class="down">✗</span>');
+  const renderFlag = v => v == null ? '<span class="flag-blank">—</span>' : (v === 1 ? '<span class="flag-ok">✓</span>' : '<span class="flag-no">✗</span>');
+  const renderSqm = v => v == null || v === '' ? '' : (+v).toFixed(2).replace(/\.?0+$/, '');
 
   const bodyHtml = rows.map(r => {
     const search = [r.sf_unit, r.dld_unit, r.m_sf_applicant, r.t_dld_buyer, r.t_sf_applicant, r.t_match_reasons, r.delta_category]
@@ -163,6 +166,7 @@ function writeAuditDeltaHtml(outPath, projectName, rows, manualSnapshot) {
       `<td><span class="badge ${CATEGORY_CLASS[r.delta_category] || ''}">${escHtml(CATEGORY_LABEL[r.delta_category] || r.delta_category)}</span></td>` +
       `<td>${renderCell(r.sf_unit)}</td>` +
       `<td>${renderCell(r.dld_unit)}</td>` +
+      `<td class="num">${renderSqm(r.m_size)}</td>` +
       `<td class="num">${renderFlag(r.m_name_match)}</td>` +
       `<td class="num">${renderFlag(r.m_price_match)}</td>` +
       `<td>${renderCell(r.m_sf_applicant)}</td>` +
@@ -180,59 +184,17 @@ function writeAuditDeltaHtml(outPath, projectName, rows, manualSnapshot) {
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>${escHtml(projectName)} — Audit Delta</title>
-<style>
-  *{box-sizing:border-box}
-  body{font:13px/1.4 system-ui,Segoe UI,Arial,sans-serif;margin:0;padding:20px 24px;background:#0b0f14;color:#e6e6e6}
-  h1{margin:0 0 4px;color:#fff;font-size:22px}
-  .meta{color:#888;margin-bottom:14px;font-size:12px}
-  .meta b{color:#ccc}
-  .controls{display:flex;gap:8px;margin:12px 0 14px;align-items:center;flex-wrap:wrap}
-  .search{background:#0f141b;color:#fff;border:1px solid #222;padding:8px 12px;border-radius:6px;min-width:320px;font:inherit;outline:none}
-  .chip{padding:6px 12px;border-radius:20px;font-weight:600;cursor:pointer;border:2px solid transparent;font-size:12px;user-select:none}
-  .chip:hover{filter:brightness(1.25)}
-  .chip.off{opacity:.28;filter:grayscale(.4)}
-  .chip.ok{background:#0d3a1d;color:#4ce38e}
-  .chip.up{background:#0f3a2f;color:#5cf0aa}
-  .chip.down{background:#3a0f1a;color:#ff7fa6}
-  .chip.warn{background:#3a2a0d;color:#ffcc55}
-  .chip.dld{background:#0d2d3a;color:#5ad4ff}
-  .chip.sf{background:#2d0d3a;color:#d88eff}
-  .chip.flat{background:#1c1f25;color:#888}
-  .count{color:#888;margin-left:auto;font-size:12px}
-  .count b{color:#fff}
-  .table-wrap{overflow-x:auto;border:1px solid #1b2028;border-radius:8px;background:#0d1218}
-  table{width:100%;border-collapse:collapse;font-size:12px;min-width:1400px}
-  thead th{background:#11161d;color:#aaa;font-weight:600;text-align:left;padding:8px 10px;border-bottom:2px solid #1f252e;position:sticky;top:0}
-  tbody td{padding:6px 10px;border-bottom:1px solid #1a1f27;vertical-align:top;white-space:nowrap}
-  tbody td.num{text-align:right;font-variant-numeric:tabular-nums}
-  tbody tr.hidden{display:none}
-  tbody tr.ok td{background:rgba(76,227,142,.04)}
-  tbody tr.up td{background:rgba(92,240,170,.06)}
-  tbody tr.down td{background:rgba(255,127,166,.06)}
-  tbody tr.warn td{background:rgba(255,204,85,.05)}
-  tbody tr.dld td{background:rgba(90,212,255,.05)}
-  tbody tr.sf td{background:rgba(216,142,255,.05)}
-  tbody tr.flat td{background:rgba(140,140,140,.04)}
-  tbody tr:hover td{background:#151b24 !important}
-  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-  .badge.ok{background:#0d3a1d;color:#4ce38e}
-  .badge.up{background:#0f3a2f;color:#5cf0aa}
-  .badge.down{background:#3a0f1a;color:#ff7fa6}
-  .badge.warn{background:#3a2a0d;color:#ffcc55}
-  .badge.dld{background:#0d2d3a;color:#5ad4ff}
-  .badge.sf{background:#2d0d3a;color:#d88eff}
-  .badge.flat{background:#1c1f25;color:#aaa}
-  .ok{color:#4ce38e}.down{color:#ff6b88}.flat{color:#666}
-  footer{margin-top:14px;color:#555;font-size:11px;text-align:right}
-</style>
+<title>${escHtml(projectName)} — Audit Delta · Sobha Realty</title>
+<style>${SOBHA_STYLE_CSS}</style>
 </head>
 <body>
-<h1>${escHtml(projectName)} — Audit Delta</h1>
+${brandBar(generatedAt)}
+<div class="page">
+<div class="title-row"><h1>${escHtml(projectName)}<span class="sub" style="font-size:14px;color:var(--accent-dark);margin-left:10px">— Audit Delta</span></h1></div>
 <div class="meta">
   <b>As-of ${escHtml(manualSnapshot.as_of_month || '')}</b>
-  &nbsp;·&nbsp; Source: <b>${escHtml(manualSnapshot.source_file || '')}</b>
-  &nbsp;·&nbsp; ${total.toLocaleString()} unit-level deltas
+  <span class="sep">·</span> Source: <b>${escHtml(manualSnapshot.source_file || '')}</b>
+  <span class="sep">·</span> <b>${total.toLocaleString()}</b> unit-level deltas
 </div>
 <div class="controls">
   <input class="search" id="q" placeholder="Filter: unit, buyer, status, any text…" autocomplete="off">
@@ -245,22 +207,24 @@ function writeAuditDeltaHtml(outPath, projectName, rows, manualSnapshot) {
   <span class="chip flat"     data-cat="MANUAL_BLANK">BLANK ${counts.MANUAL_BLANK} (${pct(counts.MANUAL_BLANK)})</span>
   <span class="count" id="count">— rows</span>
 </div>
-<div class="table-wrap">
+<div class="table-wrap"><div class="table-scroll">
 <table>
 <thead><tr>
   <th>Category</th><th>SF Unit</th><th>DLD Unit</th>
-  <th class="num">Name?</th><th class="num">Price?</th>
-  <th>Manual SF Applicant</th><th class="num">Manual SF Price</th>
+  <th data-align="num">SQM</th>
+  <th data-align="num">Name?</th><th data-align="num">Price?</th>
+  <th>Manual SF Applicant</th><th data-align="num">Manual SF Price</th>
   <th>Tool Status</th><th>Tool Reasons</th>
   <th>Tool DLD Buyer</th><th>Tool SF Applicant</th>
-  <th class="num">Tool DLD Price</th><th class="num">Tool SF Price</th>
+  <th data-align="num">Tool DLD Price</th><th data-align="num">Tool SF Price</th>
 </tr></thead>
 <tbody>
 ${bodyHtml}
 </tbody>
 </table>
+</div></div>
+<footer>generated ${escHtml(generatedAt)} · click chips to toggle · TOOL FLAGGED ⚠ = likely false-positive worth reviewing<span class="sig">Sobha Realty · Registration / DLD</span></footer>
 </div>
-<footer>generated ${escHtml(generatedAt)} · click chips to toggle · TOOL FLAGGED ⚠ = likely false-positive worth reviewing</footer>
 <script>
 (function(){
   const tbody = document.querySelector('tbody');
