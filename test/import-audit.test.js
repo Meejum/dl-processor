@@ -116,3 +116,86 @@ test('inferProjectId returns null projectId when no match', () => {
   const r = inferProjectId(db, 'Sobha Reserve 123');
   assert.equal(r.projectId, null);
 });
+
+const path = require('path');
+const os = require('os');
+const XLSX = require('xlsx');
+const { importAuditWorkbook } = require('../src/import-audit');
+
+function makeAuditFixture(tmpPath) {
+  const wb = XLSX.utils.book_new();
+  const aoa = [
+    ['Salesforce', null, null, null, null, 'Oqood Data', null, null, 'Checked by Registrations Team', null],
+    ['Sub Project', 'Unit', 'Booking Name', 'Primary Applicant Name', 'Purchase Price', 'DLD Unit', 'Roons', 'All Details', 'Name in SF Compared to DLD System', 'Purchase Price in SF Compared to DLD System'],
+    ['Test Sub', 'A-1', 'B-1', 'JOHN DOE', 1000000, '1', '1 B/R', 'JOHN DOE (50.0 F.T.) ...', 'TRUE', 'TRUE'],
+    ['Test Sub', 'A-2', 'B-2', 'JANE DOE', 2000000, '2', '2 B/R', 'JANE DOE (80.0 F.T.) ...', 'FALSE', 'TRUE']
+  ];
+  const ws = XLSX.utils.aoa_to_sheet(aoa);
+  XLSX.utils.book_append_sheet(wb, ws, 'Test Project 99');
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([['ignored']]), 'Report');
+  XLSX.writeFile(wb, tmpPath);
+}
+
+test('importAuditWorkbook writes snapshot/project/row tables and skips the Report sheet', () => {
+  const db = new Database(':memory:');
+  db.exec(fs.readFileSync('db/schema.sql', 'utf8'));
+  db.prepare("INSERT INTO dld_project (project_id, project_name) VALUES (1, 'Test Project')").run();
+
+  const tmp = path.join(os.tmpdir(), 'dlp-audit-test-' + Date.now() + '.xlsx');
+  makeAuditFixture(tmp);
+  try {
+    const res = importAuditWorkbook({ db, filePath: tmp, asOfMonth: '2026-04', note: 'unit-test' });
+    assert.equal(res.status, 'ok');
+    assert.equal(res.projects, 1, 'expected 1 project (Report sheet skipped)');
+    assert.equal(res.matchedProjects, 1);
+    assert.equal(res.inserted, 2);
+
+    const snap = db.prepare('SELECT * FROM manual_audit_snapshot WHERE manual_audit_snapshot_id = ?').get(res.manualAuditSnapshotId);
+    assert.equal(snap.as_of_month, '2026-04');
+    assert.equal(snap.total_rows, 2);
+
+    const rows = db.prepare('SELECT * FROM manual_audit_row ORDER BY manual_audit_row_id').all();
+    assert.equal(rows.length, 2);
+    assert.equal(rows[0].sf_applicant, 'JOHN DOE');
+    assert.equal(rows[0].name_match, 1);
+    assert.equal(rows[0].price_match, 1);
+    assert.equal(rows[1].name_match, 0, 'expected FALSE → 0');
+    assert.equal(rows[1].price_match, 1);
+  } finally {
+    fs.unlinkSync(tmp);
+  }
+});
+
+test('importAuditWorkbook returns duplicate when same file re-imported', () => {
+  const db = new Database(':memory:');
+  db.exec(fs.readFileSync('db/schema.sql', 'utf8'));
+  const tmp = path.join(os.tmpdir(), 'dlp-audit-test-' + Date.now() + '.xlsx');
+  makeAuditFixture(tmp);
+  try {
+    const r1 = importAuditWorkbook({ db, filePath: tmp, asOfMonth: '2026-04' });
+    assert.equal(r1.status, 'ok');
+    const r2 = importAuditWorkbook({ db, filePath: tmp, asOfMonth: '2026-04' });
+    assert.equal(r2.status, 'duplicate');
+    assert.equal(r2.manualAuditSnapshotId, r1.manualAuditSnapshotId);
+  } finally {
+    fs.unlinkSync(tmp);
+  }
+});
+
+test('importAuditWorkbook computes name_false_count / price_false_count / both_true_count', () => {
+  const db = new Database(':memory:');
+  db.exec(fs.readFileSync('db/schema.sql', 'utf8'));
+  const tmp = path.join(os.tmpdir(), 'dlp-audit-test-' + Date.now() + '.xlsx');
+  makeAuditFixture(tmp);
+  try {
+    const res = importAuditWorkbook({ db, filePath: tmp, asOfMonth: '2026-04' });
+    const proj = db.prepare('SELECT * FROM manual_audit_project WHERE manual_audit_snapshot_id = ?').get(res.manualAuditSnapshotId);
+    assert.equal(proj.row_count, 2);
+    assert.equal(proj.name_false_count, 1);
+    assert.equal(proj.price_false_count, 0);
+    assert.equal(proj.both_true_count, 1);
+    assert.equal(proj.blank_count, 0);
+  } finally {
+    fs.unlinkSync(tmp);
+  }
+});

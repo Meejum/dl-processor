@@ -191,8 +191,116 @@ function parseProjectSheet(ws) {
   };
 }
 
+function defaultLastMonth() {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return d.getUTCFullYear() + '-' + String(d.getUTCMonth() + 1).padStart(2, '0');
+}
+
+function summarizeAuditFlags(rows) {
+  let nameFalse = 0, priceFalse = 0, bothTrue = 0, blank = 0;
+  for (const r of rows) {
+    const nm = r.name_match, pm = r.price_match;
+    if (nm == null && pm == null) blank++;
+    if (nm === 0) nameFalse++;
+    if (pm === 0) priceFalse++;
+    if (nm === 1 && pm === 1) bothTrue++;
+  }
+  return { name_false_count: nameFalse, price_false_count: priceFalse, both_true_count: bothTrue, blank_count: blank };
+}
+
+function importAuditWorkbook({ db, filePath, asOfMonth, note, replace }) {
+  if (!fs.existsSync(filePath)) throw new Error('file not found: ' + filePath);
+  const sha = sha256OfFile(filePath);
+  const wb = XLSX.readFile(filePath, { cellDates: true });
+  const props = wb.Props || {};
+  const workbookModifiedAt = props.ModifiedDate ? new Date(props.ModifiedDate).toISOString() : null;
+  const workbookModifiedBy = props.LastAuthor || null;
+  const month = asOfMonth || defaultLastMonth();
+
+  const existing = db.prepare('SELECT manual_audit_snapshot_id FROM manual_audit_snapshot WHERE as_of_month = ? AND source_sha256 = ?')
+    .get(month, sha);
+  if (existing) {
+    if (!replace) {
+      return { status: 'duplicate', manualAuditSnapshotId: existing.manual_audit_snapshot_id, asOfMonth: month };
+    }
+    db.prepare('DELETE FROM manual_audit_snapshot WHERE manual_audit_snapshot_id = ?').run(existing.manual_audit_snapshot_id);
+  }
+
+  const projectResults = [];
+  for (const sheetName of wb.SheetNames) {
+    if (sheetName === 'Report') continue;
+    const ws = wb.Sheets[sheetName];
+    const { rows, headerDiagnostic } = parseProjectSheet(ws);
+    projectResults.push({
+      sheetName, rows, headerDiagnostic,
+      counts: { row_count: rows.length, ...summarizeAuditFlags(rows) }
+    });
+  }
+
+  const totalRows = projectResults.reduce((n, p) => n + p.rows.length, 0);
+
+  const insertSnapshot = db.prepare(`
+    INSERT INTO manual_audit_snapshot (source_file, source_sha256, as_of_month, workbook_modified_at, workbook_modified_by, total_rows, note)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertProject = db.prepare(`
+    INSERT INTO manual_audit_project (manual_audit_snapshot_id, sheet_name, project_name_inferred, project_id, auditor, row_count, name_false_count, price_false_count, both_true_count, blank_count)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  const insertRow = db.prepare(`
+    INSERT INTO manual_audit_row (manual_audit_project_id, sub_project, sf_unit, unit_number_norm, sf_booking_name, sf_applicant, sf_price, dld_unit, size, rooms, details, name_match, price_match, count_customers, procedure_type)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+
+  const summary = { inserted: 0, projects: 0, matchedProjects: 0, unmatchedProjects: 0 };
+
+  const tx = db.transaction(() => {
+    const snapRes = insertSnapshot.run(path.basename(filePath), sha, month, workbookModifiedAt, workbookModifiedBy, totalRows, note || null);
+    const snapId = snapRes.lastInsertRowid;
+
+    for (const pr of projectResults) {
+      const { projectId, inferred, prefix } = inferProjectId(db, pr.sheetName);
+      pr.projectId = projectId;
+      pr.projectName = inferred;
+
+      const pres = insertProject.run(snapId, pr.sheetName, inferred, projectId, null,
+        pr.counts.row_count, pr.counts.name_false_count, pr.counts.price_false_count,
+        pr.counts.both_true_count, pr.counts.blank_count);
+      const pid = pres.lastInsertRowid;
+
+      summary.projects++;
+      if (projectId) summary.matchedProjects++; else summary.unmatchedProjects++;
+
+      for (const r of pr.rows) {
+        const unitNorm = stripProjectPrefix(r.sf_unit, prefix);
+        insertRow.run(pid, r.sub_project || null, r.sf_unit ? String(r.sf_unit) : null, unitNorm,
+          r.sf_booking_name || null, r.sf_applicant || null, r.sf_price, r.dld_unit, r.size, r.rooms || null,
+          r.details, r.name_match, r.price_match, r.count_customers, r.procedure_type || null);
+        summary.inserted++;
+      }
+    }
+
+    return snapId;
+  });
+
+  const snapshotId = tx();
+
+  return {
+    status: 'ok',
+    manualAuditSnapshotId: snapshotId,
+    asOfMonth: month,
+    workbookModifiedAt,
+    workbookModifiedBy,
+    ...summary,
+    projectResults
+  };
+}
+
 module.exports = {
   sha256OfFile, normName, normNameStripSobha, normUnit, stripProjectPrefix,
   toNum, toInt, asAuditFlag, inferProjectId, hnorm, buildHeaderIndex,
-  parseProjectSheet, HEADER_MAP, AUDIT_HEADER_PATTERNS
+  parseProjectSheet, HEADER_MAP, AUDIT_HEADER_PATTERNS,
+  importAuditWorkbook, summarizeAuditFlags
 };

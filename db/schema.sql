@@ -160,6 +160,56 @@ CREATE TABLE IF NOT EXISTS project_mapping (
   updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS manual_audit_snapshot (
+  manual_audit_snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
+  source_file              TEXT NOT NULL,
+  source_sha256            TEXT NOT NULL,
+  as_of_month              TEXT NOT NULL,
+  workbook_modified_at     TEXT,
+  workbook_modified_by     TEXT,
+  total_rows               INTEGER,
+  note                     TEXT,
+  imported_at              TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(as_of_month, source_sha256)
+);
+
+CREATE TABLE IF NOT EXISTS manual_audit_project (
+  manual_audit_project_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+  manual_audit_snapshot_id INTEGER NOT NULL REFERENCES manual_audit_snapshot ON DELETE CASCADE,
+  sheet_name               TEXT NOT NULL,
+  project_name_inferred    TEXT,
+  project_id               INTEGER REFERENCES dld_project ON DELETE SET NULL,
+  auditor                  TEXT,
+  row_count                INTEGER NOT NULL DEFAULT 0,
+  name_false_count         INTEGER NOT NULL DEFAULT 0,
+  price_false_count        INTEGER NOT NULL DEFAULT 0,
+  both_true_count          INTEGER NOT NULL DEFAULT 0,
+  blank_count              INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_map_snapshot ON manual_audit_project(manual_audit_snapshot_id);
+
+CREATE TABLE IF NOT EXISTS manual_audit_row (
+  manual_audit_row_id      INTEGER PRIMARY KEY AUTOINCREMENT,
+  manual_audit_project_id  INTEGER NOT NULL REFERENCES manual_audit_project ON DELETE CASCADE,
+  sub_project              TEXT,
+  sf_unit                  TEXT,
+  unit_number_norm         TEXT,
+  sf_booking_name          TEXT,
+  sf_applicant             TEXT,
+  sf_price                 REAL,
+  dld_unit                 TEXT,
+  size                     REAL,
+  rooms                    TEXT,
+  details                  TEXT,
+  name_match               INTEGER,
+  price_match              INTEGER,
+  count_customers          INTEGER,
+  procedure_type           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_mar_project ON manual_audit_row(manual_audit_project_id);
+
 CREATE VIEW IF NOT EXISTS v_latest_dld_snapshot AS
   SELECT s.*
   FROM dld_snapshot s
