@@ -34,6 +34,8 @@ function usage() {
   console.log('  node index.js diff     [name]  month-over-month DLD snapshot diff');
   console.log('  node index.js projects         list projects stored in DB');
   console.log('  node index.js status           overview');
+  console.log('  node index.js import-audit <xlsx>   import the team\'s audit workbook');
+  console.log('  node index.js audit-delta [name]    cross-check tool vs auditor');
   console.log('');
   console.log('Drop DLD .xps/.csv into input/ and SF .xlsx into sf-input/, then run with no args.');
 }
@@ -324,6 +326,45 @@ function main() {
 
   if (cmd === 'projects') { cmdProjects(); return; }
   if (cmd === 'status')   { cmdStatus();   return; }
+
+  if (cmd === 'import-audit') {
+    const filePath = process.argv[3];
+    if (!filePath) { console.error('usage: import-audit <xlsx-file>'); process.exit(1); }
+    const { importAuditWorkbook } = require('./src/import-audit');
+    const { openDb } = require('./src/db');
+    const db = openDb();
+    try {
+      const res = importAuditWorkbook({ db, filePath });
+      if (res.status === 'duplicate') {
+        console.log('  -> already imported (snapshot #' + res.manualAuditSnapshotId + ', as-of ' + res.asOfMonth + ')');
+      } else {
+        console.log('  -> snapshot #' + res.manualAuditSnapshotId + ' (as-of ' + res.asOfMonth + ')');
+        console.log('     projects: ' + res.projects + '  (matched ' + res.matchedProjects + ', unmatched ' + res.unmatchedProjects + ')');
+        console.log('     rows imported: ' + res.inserted);
+      }
+    } finally { db.close(); }
+    return;
+  }
+
+  if (cmd === 'audit-delta') {
+    const filter = process.argv[3] || null;
+    const { runAuditDelta } = require('./src/audit-delta');
+    const { openDb } = require('./src/db');
+    const db = openDb();
+    try {
+      const res = runAuditDelta({ db, projectFilter: filter });
+      console.log('  -> ' + res.projectsRun + ' projects with audit data');
+      for (const w of res.written) {
+        if (w.status === 'ok') {
+          console.log('     ' + w.project + ': agree ' + w.counts.AGREE_MATCH + ' / ⚠ tool-flagged ' + w.counts.TOOL_STRICTER + ' / total ' + w.total);
+        } else {
+          console.log('     ' + w.project + ': skipped (' + w.status + ')');
+        }
+      }
+      console.log('     totals — agree:' + res.summary.AGREE_MATCH + '  tool-flagged:' + res.summary.TOOL_STRICTER + '  manual-only:' + res.summary.MANUAL_ONLY + '  tool-only:' + res.summary.DL_ONLY);
+    } finally { db.close(); }
+    return;
+  }
 
   console.log('unknown command: ' + cmd);
   usage();

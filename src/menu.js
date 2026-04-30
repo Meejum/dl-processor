@@ -152,6 +152,8 @@ async function showMenu() {
   menuLine('7', 'QUICK AUDIT',                   'pick DLD + SF files, run everything');
   console.log('');
   menuLine('A', 'Audit Report',                 'reconciliation summary + per-project mapping');
+  menuLine('U', 'Import Audit Workbook',        'pick the team verification xlsx');
+  menuLine('D', 'Audit Delta',                  'tool vs auditor cross-check (HTML + CSV per project)');
   menuLine('P', 'Projects list',                '');
   menuLine('S', 'Status',                       '');
   menuLine('O', 'Open latest HTML report',       '');
@@ -287,6 +289,65 @@ async function doAuditReport() {
   } finally {
     db.close();
   }
+  await pause();
+}
+
+async function doImportAudit() {
+  await showHeader(); sectionHeader('IMPORT AUDIT WORKBOOK');
+  const { pickAuditFile } = require('./file-picker');
+  const picks = await pickAuditFile();
+  if (!picks || picks.length === 0) { console.log('  no file selected.'); await pause(); return; }
+  const { importAuditWorkbook } = require('./import-audit');
+  const { openDb } = require('./db');
+  const db = openDb();
+  try {
+    const res = importAuditWorkbook({ db, filePath: picks[0] });
+    if (res.status === 'duplicate') {
+      console.log('  already imported (snapshot #' + res.manualAuditSnapshotId + ', as-of ' + res.asOfMonth + ')');
+    } else {
+      console.log('  snapshot #' + res.manualAuditSnapshotId + '  (as-of ' + res.asOfMonth + ')');
+      console.log('  projects: ' + res.projects + '  (matched ' + res.matchedProjects + ', unmatched ' + res.unmatchedProjects + ')');
+      console.log('  rows imported: ' + res.inserted);
+      const unmatched = (res.projectResults || []).filter(p => !p.projectId);
+      if (unmatched.length) {
+        console.log('');
+        console.log('  unmatched sheets (no DLD project found):');
+        for (const u of unmatched) console.log('    - ' + u.sheetName + '  (' + u.rows.length + ' rows)');
+      }
+    }
+  } finally { db.close(); }
+  await pause();
+}
+
+async function doAuditDeltaMenu() {
+  await showHeader(); sectionHeader('AUDIT DELTA');
+  const { runAuditDelta } = require('./audit-delta');
+  const { openDb } = require('./db');
+  const db = openDb();
+  try {
+    const res = runAuditDelta({ db });
+    console.log('  ' + res.projectsRun + ' projects with audit data');
+    console.log('  ' + '-'.repeat(73));
+    for (const w of res.written) {
+      if (w.status === 'ok') {
+        console.log('  ' + w.project.padEnd(45).slice(0, 45) +
+          '  agree:' + String(w.counts.AGREE_MATCH).padStart(5) +
+          '  ⚠:' + String(w.counts.TOOL_STRICTER).padStart(4) +
+          '  total:' + String(w.total).padStart(5));
+      } else {
+        console.log('  ' + w.project + '  (' + w.status + ')');
+      }
+    }
+    console.log('  ' + '-'.repeat(73));
+    console.log('  totals — agree:' + res.summary.AGREE_MATCH +
+      '  tool-flagged:' + res.summary.TOOL_STRICTER +
+      '  manual-only:' + res.summary.MANUAL_ONLY +
+      '  tool-only:' + res.summary.DL_ONLY);
+    console.log('');
+    console.log('  HTML files written to output/<project>.audit-delta.html');
+  } catch (e) {
+    console.log('  error: ' + e.message);
+  } finally { db.close(); }
   await pause();
 }
 
@@ -451,8 +512,10 @@ async function mainLoop() {
         case '5': await doOverrides();   break;
         case '6': await doFull();        break;
         case '7': await doQuickAudit();  break;
-        case 'a': await doAuditReport(); break;
-        case 'p': await doProjects();    break;
+        case 'a': await doAuditReport();    break;
+        case 'u': await doImportAudit();    break;
+        case 'd': await doAuditDeltaMenu(); break;
+        case 'p': await doProjects();       break;
         case 's': await doStatus();      break;
         case 'o': await doOpenReport();  break;
         case 'r': await doReveal();      break;
