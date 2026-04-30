@@ -156,9 +156,16 @@ function applyUnitTransforms(normalizedDldUnit, transforms) {
   return normalizedDldUnit;
 }
 
-function expectedSfUnit(dldUnitNumberNorm, mapping) {
-  if (!dldUnitNumberNorm || !mapping.sf_unit_prefix) return null;
-  const transformed = applyUnitTransforms(dldUnitNumberNorm, mapping.unitTransforms);
+function expectedSfUnit(dldUnitNumberNorm, mapping, buildingName) {
+  if (!dldUnitNumberNorm) return null;
+  let transformed = dldUnitNumberNorm;
+  if (buildingName && mapping.buildingTransforms && mapping.buildingTransforms[buildingName]) {
+    transformed = applyUnitTransforms(dldUnitNumberNorm, mapping.buildingTransforms[buildingName]);
+  } else if (mapping.unitTransforms && mapping.unitTransforms.length > 0) {
+    transformed = applyUnitTransforms(dldUnitNumberNorm, mapping.unitTransforms);
+  }
+  // Empty string is meaningful: "transform produced the full SF unit name, do not prepend".
+  if (!mapping.sf_unit_prefix) return transformed;
   return `${mapping.sf_unit_prefix}-${transformed}`;
 }
 
