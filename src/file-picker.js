@@ -142,4 +142,15 @@ function pickSfFile() {
   });
 }
 
-module.exports = { pickFile, pickDldFiles, pickSfFile, listFilesInDir, parseSelection };
+function pickAuditFile() {
+  return pickFile({
+    title: 'Select audit workbook (xlsx) — team verification',
+    filter: 'Audit workbook (*.xlsx)|*.xlsx|All files (*.*)|*.*',
+    initialDir: DLD_INPUT_DIR,
+    searchDir:  DLD_INPUT_DIR,
+    extensions: ['.xlsx'],
+    multi: false
+  });
+}
+
+module.exports = { pickFile, pickDldFiles, pickSfFile, pickAuditFile, listFilesInDir, parseSelection };
