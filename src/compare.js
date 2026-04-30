@@ -81,15 +81,63 @@ function pickLatestMarketPrice(dldTxs) {
   return pickLatestOfTypes(dldTxs, MARKET_PRICE_TX);
 }
 
+// Stopwords removed before token comparison. Includes English titles and
+// Arabic naming particles that frequently appear across unrelated names
+// and must not be treated as a matching signal.
+const NAME_STOPWORDS = new Set([
+  'MR', 'MRS', 'MS', 'MISS', 'DR',
+  'BIN', 'BINT', 'IBN', 'AL', 'EL', 'ABU', 'UMM', 'UM'
+]);
+
+// Transliteration normalization map: variants → canonical form.
+// Applied per-token after stopword removal, before set comparison.
+const TRANSLIT_MAP = {
+  MOHAMMAD:  'MOHAMMED',
+  MUHAMMED:  'MOHAMMED',
+  MUHAMMAD:  'MOHAMMED',
+  MOHAMAD:   'MOHAMMED',
+  MOHAMED:   'MOHAMMED',
+  EBRAHIM:   'IBRAHIM',
+  KHALED:    'KHALID',
+  YUSUF:     'YOUSEF',
+  YOUSIF:    'YOUSEF',
+  YOUSSEF:   'YOUSEF',
+  FATHIMA:   'FATIMA',
+  FATHIMAH:  'FATIMA',
+  AHMAD:     'AHMED',
+  HUSSAIN:   'HUSSEIN',
+  HUSAIN:    'HUSSEIN',
+  HASAN:     'HASSAN',
+  UMAR:      'OMAR'
+};
+
+function tokenizeName(s) {
+  if (!s) return new Set();
+  const upper = String(s).toUpperCase()
+    .replace(/^(MR|MRS|MS|MISS|DR)\.?\s+/, '')
+    .replace(/[^A-Z ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  if (!upper) return new Set();
+  const tokens = new Set();
+  for (const w of upper.split(' ')) {
+    if (w.length <= 2) continue;
+    if (NAME_STOPWORDS.has(w)) continue;
+    tokens.add(TRANSLIT_MAP[w] || w);
+  }
+  return tokens;
+}
+
+function isSubsetOf(small, big) {
+  for (const x of small) if (!big.has(x)) return false;
+  return small.size > 0;
+}
+
 function namesOverlap(a, b) {
-  if (!a || !b) return false;
-  const norm = s => s.toUpperCase().replace(/^(MR|MRS|MS|MISS|DR)\.?\s*/, '').replace(/[^A-Z ]/g, '').trim();
-  const A = norm(a), B = norm(b);
-  if (!A || !B) return false;
-  const aW = new Set(A.split(/\s+/).filter(w => w.length > 2));
-  const bW = new Set(B.split(/\s+/).filter(w => w.length > 2));
-  for (const w of aW) if (bW.has(w)) return true;
-  return false;
+  const A = tokenizeName(a);
+  const B = tokenizeName(b);
+  if (A.size === 0 || B.size === 0) return false;
+  return isSubsetOf(A, B) || isSubsetOf(B, A);
 }
 
 function computePriceDelta(dldPrice, sfPrice) {
@@ -649,4 +697,4 @@ function writeAuditTasks(outPath, project, rows) {
   return tasks;
 }
 
-module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks };
+module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap };
