@@ -10,7 +10,7 @@ test('falls back to unitTransforms when buildingName is not in buildingTransform
   assert.equal(expectedSfUnit('RETAIL 5', mapping, 'Some Building'), 'W-R5');
 });
 
-test('uses buildingTransforms[buildingName] when key matches', () => {
+test('uses buildingTransforms[buildingName] for tower A', () => {
   const mapping = {
     sf_unit_prefix: '',
     buildingTransforms: {
@@ -19,7 +19,26 @@ test('uses buildingTransforms[buildingName] when key matches', () => {
     }
   };
   assert.equal(expectedSfUnit('A1001', mapping, 'Sobha One - A'), 'SO-A1001');
+});
+
+test('uses buildingTransforms[buildingName] for tower B', () => {
+  const mapping = {
+    sf_unit_prefix: '',
+    buildingTransforms: {
+      'Sobha One - A': [{ match: '^A(\\d+)$', replace: 'SO-A$1' }],
+      'Sobha One - B': [{ match: '^B(\\d+)$', replace: 'SO-B$1' }]
+    }
+  };
   assert.equal(expectedSfUnit('B1001', mapping, 'Sobha One - B'), 'SO-B1001');
+});
+
+test('falls back to unitTransforms when buildingName is not a key in buildingTransforms (object present)', () => {
+  const mapping = {
+    sf_unit_prefix: 'W',
+    unitTransforms: [{ match: '^RETAIL\\s*(\\d+)$', replace: 'R$1' }],
+    buildingTransforms: { 'Other Tower': [{ match: '^RETAIL\\s*(\\d+)$', replace: 'OT-R$1' }] }
+  };
+  assert.equal(expectedSfUnit('RETAIL 5', mapping, 'Some Other Name'), 'W-R5');
 });
 
 test('empty sf_unit_prefix returns transform output verbatim (no prepend)', () => {
