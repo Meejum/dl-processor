@@ -151,6 +151,7 @@ async function showMenu() {
   menuLine('6', 'FULL PIPELINE (folders)',       'process everything in input/ & sf-input/');
   menuLine('7', 'QUICK AUDIT',                   'pick DLD + SF files, run everything');
   console.log('');
+  menuLine('A', 'Audit Report',                 'reconciliation summary + per-project mapping');
   menuLine('P', 'Projects list',                '');
   menuLine('S', 'Status',                       '');
   menuLine('O', 'Open latest HTML report',       '');
@@ -273,6 +274,19 @@ async function doProjects() {
 async function doStatus() {
   await showHeader(); sectionHeader('SYSTEM STATUS');
   runNode(['status']);
+  await pause();
+}
+
+async function doAuditReport() {
+  await showHeader(); sectionHeader('AUDIT REPORT');
+  const { openDb } = require('./db');
+  const { runAudit } = require('./audit-report');
+  const db = openDb();
+  try {
+    runAudit({ db });
+  } finally {
+    db.close();
+  }
   await pause();
 }
 
@@ -437,6 +451,7 @@ async function mainLoop() {
         case '5': await doOverrides();   break;
         case '6': await doFull();        break;
         case '7': await doQuickAudit();  break;
+        case 'a': await doAuditReport(); break;
         case 'p': await doProjects();    break;
         case 's': await doStatus();      break;
         case 'o': await doOpenReport();  break;
