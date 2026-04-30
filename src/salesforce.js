@@ -5,32 +5,70 @@ const { sha256OfFile } = require('./db');
 const HEADER_ROW_INDEX = 9;
 const DATA_START_INDEX = 10;
 
-const SF_COLS = {
-  BP_NAME: 1,
-  SUB_PROJECT: 3,
-  UNIT: 4,
-  BOOKING_NAME: 5,
-  PROJECT: 6,
-  TOWER_NAME: 7,
-  APPLICANT_NAME: 8,
-  PURCHASE_PRICE: 9,
-  DLD_AMOUNT: 10,
-  BP_CREATED_DATE: 12,
-  PRE_REG_STATUS: 13,
-  CURRENT_STEP_NAME: 14,
-  STATUS: 15,
-  RM_PROCESS_STATUS: 16,
-  DLD_PROCESS_STATUS: 17,
-  TOTAL_DLD_PAID: 23,
-  DLD_SHORTFALL: 24,
-  DLD_BALANCE: 25,
-  BOOKING_RECORD_ID: 28,
-  END_DATE: 29,
-  PRE_REG_COMPLETION_DATE: 30,
-  PROCEDURE_NUMBER: 31,
-  PAYMENT_REFERENCE_NUMBER: 32,
-  PAYMENT_DATE: 33
+// Map SF_COLS key → expected header text in the workbook header row.
+// Confirmed against DLD-ALL-2026-04-21 export. Whitespace is trimmed during lookup.
+// If Salesforce reorders columns these stay correct; if Salesforce renames a header,
+// resolveSfColumns throws on import with a clear list of which headers are missing.
+const HEADER_LABELS = {
+  BP_NAME:                  'Business Process: Business Process Name',
+  SUB_PROJECT:              'Booking: Sub Project',
+  UNIT:                     'Unit',
+  BOOKING_NAME:             'Booking: Booking Name',
+  PROJECT:                  'Project',
+  TOWER_NAME:               'Booking: Tower Name',
+  APPLICANT_NAME:           'Booking: Primary Applicant Name',
+  PURCHASE_PRICE:           'Booking: Purchase Price',
+  DLD_AMOUNT:               'Booking: DLD Amount',
+  BP_CREATED_DATE:          'Business Process: Created Date',
+  PRE_REG_STATUS:           'Booking: Pre-registration',
+  CURRENT_STEP_NAME:        'Current Step Name',
+  STATUS:                   'Status',
+  RM_PROCESS_STATUS:        'RM Process Status',
+  DLD_PROCESS_STATUS:       'DLD Process Status',
+  TOTAL_DLD_PAID:           'Booking: Total DLD Amt Paid',
+  DLD_SHORTFALL:            'Booking: Shortfall Amount for DLD',
+  DLD_BALANCE:              'Booking: Total DLD Amt Balance',
+  BOOKING_RECORD_ID:        'Booking: Record ID',
+  END_DATE:                 'End Date',
+  PRE_REG_COMPLETION_DATE:  'Booking: Date of Pre-registration Completion',
+  PROCEDURE_NUMBER:         'Procedure Number',
+  PAYMENT_REFERENCE_NUMBER: 'Payment Reference Number',
+  PAYMENT_DATE:             'Payment Date'
 };
+
+const REQUIRED_HEADERS = Object.values(HEADER_LABELS);
+
+function resolveSfColumns(headerRow) {
+  if (!Array.isArray(headerRow)) {
+    throw new Error('resolveSfColumns: header row must be an array');
+  }
+  const labelToIndex = new Map();
+  for (let i = 0; i < headerRow.length; i++) {
+    const cell = headerRow[i];
+    if (cell == null) continue;
+    const label = String(cell).trim();
+    if (!label) continue;
+    if (!labelToIndex.has(label)) labelToIndex.set(label, i);
+  }
+  const cols = {};
+  const missing = [];
+  for (const [key, label] of Object.entries(HEADER_LABELS)) {
+    const idx = labelToIndex.get(label);
+    if (idx == null) {
+      missing.push(label);
+    } else {
+      cols[key] = idx;
+      cols[label] = idx;
+    }
+  }
+  if (missing.length > 0) {
+    throw new Error(
+      `missing required Salesforce header(s): ${missing.map(s => '"' + s + '"').join(', ')}. ` +
+      `Verify the workbook still has these columns at row ${HEADER_ROW_INDEX + 1}.`
+    );
+  }
+  return cols;
+}
 
 function cellOrNull(v) {
   if (v == null) return null;
@@ -55,6 +93,8 @@ function readSfWorkbook(filePath) {
   finally { console.error = origErr; }
   const sheetName = wb.SheetNames[0];
   const aoa = XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { header: 1, defval: null });
+  const headerRow = aoa[HEADER_ROW_INDEX] || [];
+  const cols = resolveSfColumns(headerRow);
   const titleRow = aoa[1] || [];
   const timeRow  = aoa[2] || [];
   const generatedAt = cellOrNull(timeRow.find(v => typeof v === 'string' && /As of/i.test(v)));
@@ -62,34 +102,34 @@ function readSfWorkbook(filePath) {
   for (let i = DATA_START_INDEX; i < aoa.length; i++) {
     const r = aoa[i];
     if (!r) continue;
-    const bpName = cellOrNull(r[SF_COLS.BP_NAME]);
-    const unit   = cellOrNull(r[SF_COLS.UNIT]);
+    const bpName = cellOrNull(r[cols.BP_NAME]);
+    const unit   = cellOrNull(r[cols.UNIT]);
     if (!bpName && !unit) continue;
     rows.push({
       bpName:               bpName,
-      subProject:           cellOrNull(r[SF_COLS.SUB_PROJECT]),
+      subProject:           cellOrNull(r[cols.SUB_PROJECT]),
       unit:                 unit,
-      bookingName:          cellOrNull(r[SF_COLS.BOOKING_NAME]),
-      project:              cellOrNull(r[SF_COLS.PROJECT]),
-      towerName:            cellOrNull(r[SF_COLS.TOWER_NAME]),
-      applicantName:        cellOrNull(r[SF_COLS.APPLICANT_NAME]),
-      purchasePrice:        asNumberOrNull(r[SF_COLS.PURCHASE_PRICE]),
-      dldAmount:            asNumberOrNull(r[SF_COLS.DLD_AMOUNT]),
-      bpCreatedDate:        cellOrNull(r[SF_COLS.BP_CREATED_DATE]),
-      preRegStatus:         cellOrNull(r[SF_COLS.PRE_REG_STATUS]),
-      currentStepName:      cellOrNull(r[SF_COLS.CURRENT_STEP_NAME]),
-      status:               cellOrNull(r[SF_COLS.STATUS]),
-      rmProcessStatus:      cellOrNull(r[SF_COLS.RM_PROCESS_STATUS]),
-      dldProcessStatus:     cellOrNull(r[SF_COLS.DLD_PROCESS_STATUS]),
-      totalDldPaid:         asNumberOrNull(r[SF_COLS.TOTAL_DLD_PAID]),
-      dldShortfall:         asNumberOrNull(r[SF_COLS.DLD_SHORTFALL]),
-      dldBalance:           asNumberOrNull(r[SF_COLS.DLD_BALANCE]),
-      bookingRecordId:      cellOrNull(r[SF_COLS.BOOKING_RECORD_ID]),
-      endDate:              cellOrNull(r[SF_COLS.END_DATE]),
-      preRegCompletionDate: cellOrNull(r[SF_COLS.PRE_REG_COMPLETION_DATE]),
-      procedureNumber:      cellOrNull(r[SF_COLS.PROCEDURE_NUMBER]),
-      paymentReferenceNumber: cellOrNull(r[SF_COLS.PAYMENT_REFERENCE_NUMBER]),
-      paymentDate:          cellOrNull(r[SF_COLS.PAYMENT_DATE])
+      bookingName:          cellOrNull(r[cols.BOOKING_NAME]),
+      project:              cellOrNull(r[cols.PROJECT]),
+      towerName:            cellOrNull(r[cols.TOWER_NAME]),
+      applicantName:        cellOrNull(r[cols.APPLICANT_NAME]),
+      purchasePrice:        asNumberOrNull(r[cols.PURCHASE_PRICE]),
+      dldAmount:            asNumberOrNull(r[cols.DLD_AMOUNT]),
+      bpCreatedDate:        cellOrNull(r[cols.BP_CREATED_DATE]),
+      preRegStatus:         cellOrNull(r[cols.PRE_REG_STATUS]),
+      currentStepName:      cellOrNull(r[cols.CURRENT_STEP_NAME]),
+      status:               cellOrNull(r[cols.STATUS]),
+      rmProcessStatus:      cellOrNull(r[cols.RM_PROCESS_STATUS]),
+      dldProcessStatus:     cellOrNull(r[cols.DLD_PROCESS_STATUS]),
+      totalDldPaid:         asNumberOrNull(r[cols.TOTAL_DLD_PAID]),
+      dldShortfall:         asNumberOrNull(r[cols.DLD_SHORTFALL]),
+      dldBalance:           asNumberOrNull(r[cols.DLD_BALANCE]),
+      bookingRecordId:      cellOrNull(r[cols.BOOKING_RECORD_ID]),
+      endDate:              cellOrNull(r[cols.END_DATE]),
+      preRegCompletionDate: cellOrNull(r[cols.PRE_REG_COMPLETION_DATE]),
+      procedureNumber:      cellOrNull(r[cols.PROCEDURE_NUMBER]),
+      paymentReferenceNumber: cellOrNull(r[cols.PAYMENT_REFERENCE_NUMBER]),
+      paymentDate:          cellOrNull(r[cols.PAYMENT_DATE])
     });
   }
   return { generatedAt, rows };
@@ -132,4 +172,4 @@ function importSfSnapshot({ db, filePath }) {
   return run();
 }
 
-module.exports = { readSfWorkbook, importSfSnapshot, SF_COLS };
+module.exports = { readSfWorkbook, importSfSnapshot, resolveSfColumns, REQUIRED_HEADERS, HEADER_LABELS };
