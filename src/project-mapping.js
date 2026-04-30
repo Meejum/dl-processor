@@ -38,9 +38,32 @@ function inferSubProjectPrefixes(sfRows) {
   return out;
 }
 
+// Tokenize a project name into lower-case alphanumeric words ≥3 chars long.
+// Drops generic real-estate words that appear in many project names and would
+// otherwise produce spurious matches.
+const PROJECT_STOPWORDS = new Set([
+  'sobha', 'tower', 'towers', 'building', 'phase', 'plot',
+  'block', 'residence', 'residences', 'community', 'project'
+]);
+
+function projectTokens(name) {
+  const out = new Set();
+  if (!name) return out;
+  const cleaned = String(name).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  if (!cleaned) return out;
+  const words = cleaned.split(/\s+/).filter(w => w.length >= 3 && !PROJECT_STOPWORDS.has(w));
+  for (const w of words) out.add(w);
+  // Add the no-space concatenation as a pseudo-token so "Sea Haven" can
+  // match a DLD form like "Seahaven" (and vice versa).
+  if (words.length >= 2) out.add(words.join(''));
+  return out;
+}
+
 function guessSubProjectFromDldName(dldName, inferred) {
   if (!dldName) return null;
   const lc = dldName.toLowerCase();
+
+  // Pass 1: exact substring (preserves existing behaviour).
   let best = null, bestLen = 0;
   for (const [sub] of inferred.entries()) {
     const subLc = sub.toLowerCase();
@@ -48,7 +71,40 @@ function guessSubProjectFromDldName(dldName, inferred) {
       best = sub; bestLen = subLc.length;
     }
   }
-  return best;
+  if (best) return best;
+
+  // Pass 2: token-overlap fallback.
+  const dldTokens = projectTokens(dldName);
+  if (dldTokens.size === 0) return null;
+  let bestSub = null, bestScore = 0;
+  for (const [sub] of inferred.entries()) {
+    const subTokens = projectTokens(sub);
+    if (subTokens.size === 0) continue;
+    let shared = 0;
+    for (const t of subTokens) if (dldTokens.has(t)) shared++;
+    if (shared === 0) continue;
+    // Prefer candidates that share more tokens; tie-break on subTokens.size
+    // so longer SF names (e.g. "Creek Vistas Grande") beat shorter prefixes.
+    const score = shared * 1000 + subTokens.size;
+    if (score > bestScore) { bestSub = sub; bestScore = score; }
+  }
+  if (!bestSub) return null;
+  // Accept the match if either:
+  //   (a) shared tokens cover at least half of the SF candidate's tokens, OR
+  //   (b) at least one shared token is long enough (≥6 chars) to be distinctive
+  //       on its own — handles spacing variants like "Seahaven" vs "Sea Haven"
+  //       which share a single concatenation pseudo-token.
+  const bestTokens = projectTokens(bestSub);
+  let sharedCount = 0;
+  let hasLongShared = false;
+  for (const t of bestTokens) {
+    if (dldTokens.has(t)) {
+      sharedCount++;
+      if (t.length >= 6) hasLongShared = true;
+    }
+  }
+  if (sharedCount * 2 < bestTokens.size && !hasLongShared) return null;
+  return bestSub;
 }
 
 function buildMappingFor(dldProjectName, sfRows) {
@@ -134,5 +190,6 @@ module.exports = {
   applyUnitTransforms,
   expectedSfUnit,
   saveMappingToDb,
-  loadOverrides
+  loadOverrides,
+  guessSubProjectFromDldName
 };
