@@ -45,6 +45,20 @@ function runAudit({ db, out = process.stdout }) {
   println('  unmapped projects:     ' + unmappedCount + '  (compare will skip these)');
   println('');
 
+  const auditSnap = db.prepare('SELECT * FROM manual_audit_snapshot ORDER BY manual_audit_snapshot_id DESC LIMIT 1').get();
+  println('▸ AUDIT WORKBOOK');
+  if (auditSnap) {
+    println('  Imported snapshot:     #' + auditSnap.manual_audit_snapshot_id + ' — ' + auditSnap.source_file);
+    println('  As-of month:           ' + auditSnap.as_of_month);
+    println('  Audit rows:            ' + (auditSnap.total_rows || 0).toLocaleString());
+    if (auditSnap.workbook_modified_by) {
+      println('  Workbook modified:     ' + (auditSnap.workbook_modified_at || '-') + ' by ' + auditSnap.workbook_modified_by);
+    }
+  } else {
+    println('  (none yet — run import-audit)');
+  }
+  println('');
+
   const projectRows = db.prepare(`
     SELECT p.project_name, p.project_id,
            pm.sf_sub_project, pm.sf_project, pm.match_scope, pm.source
@@ -88,7 +102,9 @@ function runAudit({ db, out = process.stdout }) {
     dldUnits:         dldUnit,
     sfBookings:       sfRows,
     mappedProjects:   mappedCount,
-    unmappedProjects: unmappedCount
+    unmappedProjects: unmappedCount,
+    auditSnapshotId:  auditSnap ? auditSnap.manual_audit_snapshot_id : null,
+    auditRows:        auditSnap ? (auditSnap.total_rows || 0) : 0
   };
 }
 

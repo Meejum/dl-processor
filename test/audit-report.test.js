@@ -43,3 +43,18 @@ test('runAudit reports DLD project count and SF booking count', () => {
   const text = out.toString();
   assert.ok(text.includes('1 projects'));
 });
+
+test('runAudit reports the latest audit snapshot when one exists', () => {
+  const db = setupDb();
+  db.prepare(`INSERT INTO manual_audit_snapshot (manual_audit_snapshot_id, source_file, source_sha256, as_of_month, total_rows) VALUES (1, 'audit.xlsx', 'abc123', '2026-04', 6128)`).run();
+
+  const out = captureStream();
+  const result = runAudit({ db, out });
+  const text = out.toString();
+  assert.ok(text.includes('AUDIT WORKBOOK'), 'expected AUDIT WORKBOOK section');
+  assert.ok(text.includes('audit.xlsx'));
+  assert.ok(text.includes('2026-04'));
+  assert.ok(text.includes('6,128'));
+  assert.equal(result.auditSnapshotId, 1);
+  assert.equal(result.auditRows, 6128);
+});
