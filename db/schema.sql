@@ -124,7 +124,13 @@ CREATE TABLE IF NOT EXISTS sf_booking (
   dld_shortfall  REAL,
   dld_balance    REAL,
   current_step_name TEXT,
-  end_date       TEXT
+  end_date       TEXT,
+  nationality       TEXT,
+  applicant_details TEXT,
+  applicant_2_name  TEXT,
+  applicant_3_name  TEXT,
+  applicant_4_name  TEXT,
+  docusign_complete TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sfb_snapshot ON sf_booking(sf_snapshot_id);
@@ -145,9 +151,10 @@ CREATE INDEX IF NOT EXISTS idx_override_proj_unit ON manual_override(project_id,
 
 CREATE TABLE IF NOT EXISTS project_mapping (
   project_id     INTEGER PRIMARY KEY REFERENCES dld_project ON DELETE CASCADE,
-  sf_sub_project TEXT NOT NULL,
-  sf_unit_prefix TEXT NOT NULL,
+  sf_sub_project TEXT,
+  sf_unit_prefix TEXT,
   sf_project     TEXT,
+  match_scope    TEXT NOT NULL DEFAULT 'sub_project',
   source         TEXT NOT NULL DEFAULT 'auto',
   notes          TEXT,
   updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
