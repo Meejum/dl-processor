@@ -116,8 +116,10 @@ function buildMappingFor(dldProjectName, sfRows) {
     return {
       source: 'override',
       sf_project:     o.sf_project || null,
-      sf_sub_project: o.sf_sub_project,
-      sf_unit_prefix: o.sf_unit_prefix,
+      sf_sub_project: o.sf_sub_project || null,
+      // Preserve empty string — meaningful: "no prefix to prepend, use transforms only"
+      sf_unit_prefix: o.sf_unit_prefix != null ? o.sf_unit_prefix : null,
+      match_scope:    o.match_scope || 'sub_project',
       unitTransforms: Array.isArray(o.unitTransforms) ? o.unitTransforms : []
     };
   }
@@ -130,15 +132,17 @@ function buildMappingFor(dldProjectName, sfRows) {
       sf_project:     info.project || null,
       sf_sub_project: guess,
       sf_unit_prefix: info.prefix,
+      match_scope:    'sub_project',
       unitTransforms: []
     };
   }
 
   return {
     source: 'unknown',
-    sf_project: null,
+    sf_project:     null,
     sf_sub_project: null,
     sf_unit_prefix: null,
+    match_scope:    'sub_project',
     unitTransforms: []
   };
 }
@@ -171,23 +175,30 @@ function expectedSfUnit(dldUnitNumberNorm, mapping, buildingName) {
 
 function saveMappingToDb(db, projectId, mapping) {
   // Skip projects with no inferred mapping. project_mapping.sf_sub_project is
-  // NOT NULL; an INSERT with null would crash. compareProject() already handles
-  // unmapped projects by returning status:'no-mapping' and skipping them.
-  if (!mapping.sf_sub_project) return;
+  // NOT NULL in the schema; an INSERT with null would crash. compareProject()
+  // already handles unmapped projects by returning status:'no-mapping'.
+  if (!mapping.sf_sub_project && mapping.match_scope !== 'project') return;
+  // For match_scope='project' the row keys off sf_project, not sf_sub_project,
+  // so it's allowed to have a null sub_project. The schema permits this only
+  // when match_scope='project'; check before insert.
+  if (mapping.match_scope === 'project' && !mapping.sf_project) return;
+
   db.prepare(`
-    INSERT INTO project_mapping (project_id, sf_sub_project, sf_unit_prefix, sf_project, source, updated_at)
-    VALUES (@pid, @sub, @prefix, @proj, @source, datetime('now'))
+    INSERT INTO project_mapping (project_id, sf_sub_project, sf_unit_prefix, sf_project, match_scope, source, updated_at)
+    VALUES (@pid, @sub, @prefix, @proj, @scope, @source, datetime('now'))
     ON CONFLICT(project_id) DO UPDATE SET
       sf_sub_project = excluded.sf_sub_project,
       sf_unit_prefix = excluded.sf_unit_prefix,
       sf_project     = excluded.sf_project,
+      match_scope    = excluded.match_scope,
       source         = excluded.source,
       updated_at     = datetime('now')
   `).run({
-    pid: projectId,
-    sub: mapping.sf_sub_project,
+    pid:    projectId,
+    sub:    mapping.sf_sub_project,
     prefix: mapping.sf_unit_prefix,
-    proj: mapping.sf_project,
+    proj:   mapping.sf_project,
+    scope:  mapping.match_scope || 'sub_project',
     source: mapping.source
   });
   db.prepare(`
