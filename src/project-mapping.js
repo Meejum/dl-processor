@@ -163,6 +163,10 @@ function expectedSfUnit(dldUnitNumberNorm, mapping) {
 }
 
 function saveMappingToDb(db, projectId, mapping) {
+  // Skip projects with no inferred mapping. project_mapping.sf_sub_project is
+  // NOT NULL; an INSERT with null would crash. compareProject() already handles
+  // unmapped projects by returning status:'no-mapping' and skipping them.
+  if (!mapping.sf_sub_project) return;
   db.prepare(`
     INSERT INTO project_mapping (project_id, sf_sub_project, sf_unit_prefix, sf_project, source, updated_at)
     VALUES (@pid, @sub, @prefix, @proj, @source, datetime('now'))
