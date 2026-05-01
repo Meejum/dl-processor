@@ -1,6 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 const { parse } = require('csv-parse/sync');
+const { expectedSfUnit } = require('./project-mapping');
+const { pickLatestPurchase, findLatestNonBankParty } = require('./compare');
+const { normalizeUnitNumber, BANK_PREFIX_RE } = require('./common');
 
 const TEMPLATE_HEADER = [
   'project',
@@ -34,6 +37,12 @@ function generateAreaTemplate({ db, projectFilter, outPath }) {
     return { rowCount: 0, projects: 0, outPath };
   }
 
+  // Load project-mapping.json once for transform-aware sf_unit calculation
+  const configPath = path.join(__dirname, '..', 'config', 'project-mapping.json');
+  let cachedConfig = {};
+  try { cachedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (_) {}
+  const configOverrides = cachedConfig.overrides || {};
+
   const lines = [TEMPLATE_HEADER.join(',')];
   let rowCount = 0;
 
@@ -46,23 +55,50 @@ function generateAreaTemplate({ db, projectFilter, outPath }) {
         .all(p.project_id)
         .map(r => [r.unit_number_norm, r])
     );
+
+    // Load the project-level mapping row so we have sf_unit_prefix from the DB
+    const mappingRow = db.prepare(`SELECT * FROM project_mapping WHERE project_id = ?`).get(p.project_id) || {};
+    const sfPrefix = mappingRow.sf_unit_prefix != null ? mappingRow.sf_unit_prefix : (p.sf_unit_prefix != null ? p.sf_unit_prefix : null);
+
+    // Load unitTransforms + buildingTransforms from config (same logic as compareProject)
+    const ov = configOverrides[p.project_name] || {};
+    const unitTransforms     = Array.isArray(ov.unitTransforms) ? ov.unitTransforms : [];
+    const buildingTransforms = ov.buildingTransforms || null;
+
+    // Determine the sf_sub_project to use (prefer mapping row)
+    const sfSubProject = mappingRow.sf_sub_project || p.sf_sub_project || null;
+
     let sfByUnitNorm = new Map();
-    if (p.sf_sub_project) {
+    if (sfSubProject) {
       const sfBookings = db.prepare(`
         SELECT b.unit_norm, b.unit, b.applicant_name
         FROM sf_booking b
         JOIN sf_snapshot s ON s.sf_snapshot_id = b.sf_snapshot_id
         WHERE s.imported_at = (SELECT MAX(imported_at) FROM sf_snapshot)
           AND b.sub_project = ?
-      `).all(p.sf_sub_project);
+      `).all(sfSubProject);
       sfByUnitNorm = new Map(sfBookings.map(b => [b.unit_norm, b]));
     }
 
+    // Prepare statement for fetching all transactions per unit (for buyer lookup)
+    const txStmt = db.prepare(`SELECT * FROM dld_transaction WHERE unit_id = ? ORDER BY tx_id`);
+
     for (const u of units) {
-      const tx = db.prepare(`SELECT party_name FROM dld_transaction WHERE unit_id = ? ORDER BY tx_id DESC LIMIT 1`).get(u.unit_id);
-      const dldBuyer = tx ? (tx.party_name || '') : '';
-      const expectedSfUnit = (p.sf_unit_prefix || '') + (p.sf_unit_prefix ? '-' : '') + u.unit_number_norm;
-      const sfRow = sfByUnitNorm.get(expectedSfUnit) || null;
+      // Fix 4: use pickLatestPurchase + findLatestNonBankParty to avoid bank-party misidentification
+      const dldTxs = txStmt.all(u.unit_id);
+      const purchase = pickLatestPurchase(dldTxs);
+      const naturalBuyer = purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name)
+        ? purchase.party_name
+        : findLatestNonBankParty(dldTxs);
+      const dldBuyer = naturalBuyer || '';
+
+      // Fix 3: use mapping-aware expectedSfUnit (handles unitTransforms + buildingTransforms)
+      const sfUnitKey = expectedSfUnit(u.unit_number_norm, {
+        sf_unit_prefix:     sfPrefix,
+        unitTransforms,
+        buildingTransforms
+      }, u.building_name);
+      const sfRow = sfUnitKey ? (sfByUnitNorm.get(sfUnitKey) || null) : null;
       const ma = areaMap.get(u.unit_number_norm) || {};
       const row = [
         p.project_name,
@@ -117,7 +153,8 @@ function applyAreaTemplate({ db, csvPath }) {
       const area = Number(areaRaw);
       if (!Number.isFinite(area) || area <= 0) { skipped++; continue; }
       const note = (r.source_note || '').trim() || null;
-      upsert.run(proj.project_id, unit.toUpperCase(), area, note);
+      // Fix 5: normalizeUnitNumber matches the same normalisation applied during DLD import
+      upsert.run(proj.project_id, normalizeUnitNumber(unit), area, note);
       applied++;
     }
   });

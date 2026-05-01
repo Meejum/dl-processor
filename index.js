@@ -172,7 +172,7 @@ function cmdCompare(filterProjectName) {
       continue;
     }
     const counts = summarize(result.rows);
-    console.log(`     MATCH:${counts.MATCH||0}  PRICE↑:${counts.PRICE_UP||0}  PRICE↓:${counts.PRICE_DOWN||0}  BUYER:${counts.BUYER_MISMATCH||0}  DLD-only:${counts.DLD_ONLY||0}  SF-only:${counts.SF_ONLY||0}`);
+    console.log(`     MATCH:${counts.MATCH||0}  PRICE↑:${counts.PRICE_UP||0}  PRICE↓:${counts.PRICE_DOWN||0}  BUYER:${counts.BUYER_MISMATCH||0}  AREA:${counts.AREA_MISMATCH||0}  DLD-only:${counts.DLD_ONLY||0}  SF-only:${counts.SF_ONLY||0}`);
     const base   = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
     const csvOut = path.join(OUTPUT_DIR, base + '.compare.csv');
     const htmlOut= path.join(OUTPUT_DIR, base + '.compare.html');
@@ -401,6 +401,20 @@ function main() {
       const res = applyAreaTemplate({ db, csvPath });
       console.log('  -> applied ' + res.applied + ' rows; skipped ' + res.skipped);
       for (const w of res.warnings.slice(0, 20)) console.log('     warn: ' + w);
+      // Append an audit-log entry so the monthly audit trail stays complete.
+      try {
+        const logsDir = path.join(__dirname, 'logs');
+        fs.mkdirSync(logsDir, { recursive: true });
+        const entry = JSON.stringify({
+          ts:      new Date().toISOString(),
+          command: 'apply-areas',
+          source:  csvPath,
+          applied: res.applied,
+          skipped: res.skipped,
+          warnings: res.warnings.length
+        });
+        fs.appendFileSync(path.join(logsDir, 'audit.jsonl'), entry + '\n', 'utf8');
+      } catch (_) { /* never let audit-log failure break the user-facing command */ }
     } finally { db.close(); }
     return;
   }
