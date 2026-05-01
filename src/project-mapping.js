@@ -211,6 +211,23 @@ function saveMappingToDb(db, projectId, mapping) {
   `).run(mapping.sf_project, mapping.sf_sub_project, mapping.sf_unit_prefix, projectId);
 }
 
+const HARD_DEFAULT_AREA_THRESHOLD_PCT = 5;
+
+function getAreaThreshold(mappingRow, config, projectName) {
+  const dbVal = mappingRow && mappingRow.area_threshold_pct;
+  if (typeof dbVal === 'number' && dbVal > 0) return dbVal;
+  const overrides = (config && config.overrides) || {};
+  const projOverride = overrides[projectName];
+  if (projOverride && typeof projOverride.areaThresholdPct === 'number' && projOverride.areaThresholdPct > 0) {
+    return projOverride.areaThresholdPct;
+  }
+  const defaults = (config && config.defaults) || {};
+  if (typeof defaults.areaThresholdPct === 'number' && defaults.areaThresholdPct > 0) {
+    return defaults.areaThresholdPct;
+  }
+  return HARD_DEFAULT_AREA_THRESHOLD_PCT;
+}
+
 module.exports = {
   buildMappingFor,
   inferSubProjectPrefixes,
@@ -218,5 +235,7 @@ module.exports = {
   expectedSfUnit,
   saveMappingToDb,
   loadOverrides,
-  guessSubProjectFromDldName
+  guessSubProjectFromDldName,
+  getAreaThreshold,
+  HARD_DEFAULT_AREA_THRESHOLD_PCT
 };
