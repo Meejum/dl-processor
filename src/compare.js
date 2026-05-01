@@ -201,6 +201,23 @@ function computePriceDelta(dldPrice, sfPrice) {
   return { diff, pct, direction };
 }
 
+// Classify the area difference between DLD and the manually-recorded SF area.
+// Returns { kind, diff, pct } where:
+//   kind = 'none'  — insufficient data or difference below noise floor (< 0.5%)
+//   kind = 'flag'  — difference is meaningful but below the per-project threshold
+//   kind = 'hard'  — difference meets or exceeds the per-project threshold (AREA_MISMATCH)
+// diff = dldArea - manualArea (sq m), pct = (diff / manualArea) * 100
+function computeAreaSignal(dldArea, manualArea, thresholdPct) {
+  if (dldArea == null || manualArea == null) return { kind: 'none', diff: null, pct: null };
+  if (!(dldArea > 0) || !(manualArea > 0))   return { kind: 'none', diff: null, pct: null };
+  const diff = dldArea - manualArea;
+  const pct  = (diff / manualArea) * 100;
+  const absPct = Math.abs(pct);
+  if (absPct < 0.5)          return { kind: 'none', diff, pct };
+  if (absPct < thresholdPct) return { kind: 'flag', diff, pct };
+  return { kind: 'hard', diff, pct };
+}
+
 function shortAed(n) {
   const abs = Math.abs(n);
   if (abs >= 1e6) return (Math.round(abs / 1e5) / 10) + 'M';
@@ -819,4 +836,4 @@ function writeAuditTasks(outPath, project, rows) {
   return tasks;
 }
 
-module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS };
+module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal };
