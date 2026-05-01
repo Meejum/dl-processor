@@ -81,6 +81,46 @@ function runAudit({ db, out = process.stdout }) {
     println('');
   }
 
+  // ── Area cross-check coverage ─────────────────────────────────────────────
+  // Shows per-project how many DLD units (latest snapshot) have a manual_area
+  // row, so registrars can see which projects still need area templates filled.
+  const areaCoverageRows = (function () {
+    try {
+      return db.prepare(`
+        SELECT p.project_id,
+               p.project_name,
+               (SELECT COUNT(DISTINCT u.unit_number_norm)
+                  FROM v_dld_unit_latest u
+                  WHERE u.project_id = p.project_id
+               ) AS dld_units,
+               (SELECT COUNT(*) FROM manual_area ma WHERE ma.project_id = p.project_id) AS area_rows
+        FROM dld_project p
+        ORDER BY p.project_name
+      `).all();
+    } catch (_) { return []; }
+  })();
+
+  if (areaCoverageRows.length > 0) {
+    println('▸ AREA CROSS-CHECK COVERAGE');
+    println('  ' + 'project'.padEnd(45) + '  area rows / DLD units');
+    println('  ' + '-'.repeat(73));
+    let totalDld = 0, totalArea = 0;
+    for (const r of areaCoverageRows) {
+      totalDld  += (r.dld_units || 0);
+      totalArea += (r.area_rows || 0);
+      const pct = r.dld_units > 0 ? Math.round((r.area_rows / r.dld_units) * 100) : 0;
+      println('  ' + (r.project_name || '').padEnd(45).slice(0, 45) + '  '
+        + String(r.area_rows).padStart(5) + ' / ' + String(r.dld_units).padEnd(5)
+        + '  (' + pct + '%)');
+    }
+    println('  ' + '-'.repeat(73));
+    const totalPct = totalDld > 0 ? Math.round((totalArea / totalDld) * 100) : 0;
+    println('  ' + 'TOTAL'.padEnd(45) + '  '
+      + String(totalArea).padStart(5) + ' / ' + String(totalDld).padEnd(5)
+      + '  (' + totalPct + '%)');
+    println('');
+  }
+
   const allSf = db.prepare('SELECT COUNT(*) n FROM sf_snapshot').get().n;
   if (allSf > 3) {
     println('▸ SF SNAPSHOT HISTORY');

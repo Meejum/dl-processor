@@ -34,6 +34,7 @@ function usage() {
   console.log('  node index.js diff     [name]  month-over-month DLD snapshot diff');
   console.log('  node index.js projects         list projects stored in DB');
   console.log('  node index.js status           overview');
+  console.log('  node index.js audit                audit DB state + area coverage');
   console.log('  node index.js import-audit <xlsx>   import the team\'s audit workbook');
   console.log('  node index.js audit-delta [name]    cross-check tool vs auditor');
   console.log('');
@@ -326,6 +327,13 @@ function main() {
 
   if (cmd === 'projects') { cmdProjects(); return; }
   if (cmd === 'status')   { cmdStatus();   return; }
+
+  if (cmd === 'audit') {
+    const { runAudit } = require('./src/audit-report');
+    const db = openDb();
+    try { runAudit({ db }); } finally { db.close(); }
+    return;
+  }
 
   if (cmd === 'import-audit') {
     const filePath = process.argv[3];
