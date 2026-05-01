@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { expectedSfUnit, applyUnitTransforms } = require('./project-mapping');
+const { expectedSfUnit, applyUnitTransforms, getAreaThreshold } = require('./project-mapping');
 const { getOverridesMapForProject } = require('./overrides');
 const { BANK_PREFIX_RE } = require('./common');
 const { SOBHA_STYLE_CSS, brandBar } = require('./html-styles');
@@ -316,6 +316,10 @@ function compareProject(db, projectId, cachedConfig) {
   if (!sfSnap)  return { project, status: 'no-sf-snapshot', rows: [] };
 
   const dldUnits = getUnitsForSnapshot(db, dldSnap.snapshot_id);
+  const areaThresholdPct = getAreaThreshold(mappingRow, cachedConfig, project.project_name);
+  const manualAreaRows = db.prepare(`SELECT unit_number_norm, area_sqm FROM manual_area WHERE project_id = ?`).all(projectId);
+  const manualAreaMap = new Map();
+  for (const r of manualAreaRows) manualAreaMap.set(r.unit_number_norm, r.area_sqm);
   let sfBookings;
   if (scope === 'project') {
     sfBookings = db.prepare(`SELECT * FROM sf_booking WHERE sf_snapshot_id=? AND project=?`)
@@ -428,6 +432,21 @@ function compareProject(db, projectId, cachedConfig) {
       cls.reasons = (cls.reasons || []).concat(['co-applicant:' + cls.matchedApplicantField]);
     }
 
+    // A11: area cross-check against staff-recorded area in manual_area.
+    const manualAreaSqm = manualAreaMap.get(u.unit_number_norm) ?? null;
+    const areaSig = computeAreaSignal(u.net_area, manualAreaSqm, areaThresholdPct);
+    let finalStatus = cls.status;
+    if (areaSig.kind === 'flag') {
+      auditFlags.push('A11');
+      const sign = areaSig.pct >= 0 ? '+' : '';
+      cls.reasons = (cls.reasons || []).concat(['area Δ ' + sign + areaSig.pct.toFixed(1) + '% (' + sign + Math.round(areaSig.diff) + ' sqm)']);
+    } else if (areaSig.kind === 'hard') {
+      auditFlags.push('A11');
+      const sign = areaSig.pct >= 0 ? '+' : '';
+      cls.reasons = (cls.reasons || []).concat(['area Δ ' + sign + areaSig.pct.toFixed(1) + '% (' + sign + Math.round(areaSig.diff) + ' sqm)']);
+      if (cls.status === 'MATCH') finalStatus = 'AREA_MISMATCH';
+    }
+
     rows.push({
       dld_project:              project.project_name,
       sf_sub_project:           sfSubProject || sfProject || '(' + scope + ')',
@@ -458,7 +477,10 @@ function compareProject(db, projectId, cachedConfig) {
       sf_pre_reg_status:        sfRow?.pre_reg_status || null,
       sf_procedure_number:      sfRow?.procedure_number || null,
       sf_booking_name:          sfRow?.booking_name || null,
-      match_status:             cls.status,
+      manual_area_sqm:          manualAreaSqm,
+      area_diff_sqm:            areaSig.diff != null ? Math.round(areaSig.diff * 100) / 100 : null,
+      area_diff_pct:            areaSig.pct  != null ? +areaSig.pct.toFixed(2)             : null,
+      match_status:             finalStatus,
       match_reasons:            (cls.reasons || []).join('; '),
       audit_flags:              auditFlags.join('|'),
       matched_applicant_field:  cls.matchedApplicantField || null
@@ -496,6 +518,9 @@ function compareProject(db, projectId, cachedConfig) {
         sf_pre_reg_status:   b.pre_reg_status,
         sf_procedure_number: b.procedure_number,
         sf_booking_name:     b.booking_name,
+        manual_area_sqm:         null,
+        area_diff_sqm:           null,
+        area_diff_pct:           null,
         match_status:            'SF_ONLY',
         match_reasons:           'no DLD',
         audit_flags:             '',
@@ -507,11 +532,12 @@ function compareProject(db, projectId, cachedConfig) {
   // Sort rows by status priority, then numeric unit number within each group
   const STATUS_PRIORITY = {
     BUYER_MISMATCH: 0,
-    DLD_ONLY:       1,
-    SF_ONLY:        2,
-    PRICE_DOWN:     3,
-    PRICE_UP:       4,
-    MATCH:          5
+    AREA_MISMATCH:  1,
+    DLD_ONLY:       2,
+    SF_ONLY:        3,
+    PRICE_DOWN:     4,
+    PRICE_UP:       5,
+    MATCH:          6
   };
   rows.sort((a, b) => {
     const pd = (STATUS_PRIORITY[a.match_status] ?? 9) - (STATUS_PRIORITY[b.match_status] ?? 9);
@@ -522,7 +548,7 @@ function compareProject(db, projectId, cachedConfig) {
   return { project, status: 'ok', rows, dldSnapshotId: dldSnap.snapshot_id, sfSnapshotId: sfSnap.sf_snapshot_id };
 }
 
-const STATUS_ORDER = ['MATCH', 'PRICE_UP', 'PRICE_DOWN', 'BUYER_MISMATCH', 'DLD_ONLY', 'SF_ONLY'];
+const STATUS_ORDER = ['MATCH', 'PRICE_UP', 'PRICE_DOWN', 'BUYER_MISMATCH', 'AREA_MISMATCH', 'DLD_ONLY', 'SF_ONLY'];
 
 function summarize(rows) {
   const counts = {};
@@ -806,6 +832,10 @@ function writeAuditTasks(outPath, project, rows) {
       case 'BUYER_MISMATCH':
         priority = 'high';
         action = `Reconcile ${r.expected_sf_unit}: ${r.match_reasons}`;
+        break;
+      case 'AREA_MISMATCH':
+        priority = 'medium';
+        action = `Verify area for ${r.expected_sf_unit}: DLD ${r.dld_net_area} sqm vs recorded ${r.manual_area_sqm} sqm (${r.area_diff_pct >= 0 ? '+' : ''}${(r.area_diff_pct ?? 0).toFixed(1)}%). Confirm the unit number is correct.`;
         break;
       case 'DLD_ONLY':
         priority = 'high';
