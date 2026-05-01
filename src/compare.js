@@ -593,6 +593,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
     PRICE_UP:       'up',
     PRICE_DOWN:     'down',
     BUYER_MISMATCH: 'warn',
+    AREA_MISMATCH:  'area',
     DLD_ONLY:       'dld',
     SF_ONLY:        'sf'
   };
@@ -601,6 +602,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
     PRICE_UP:       'PRICE ↑',
     PRICE_DOWN:     'PRICE ↓',
     BUYER_MISMATCH: 'BUYER MISMATCH',
+    AREA_MISMATCH:  'AREA',
     DLD_ONLY:       'DLD-only',
     SF_ONLY:        'SF-only'
   };
@@ -611,6 +613,9 @@ function writeCompareHtml(outPath, project, rows, counts) {
     { key: 'sf_unit',             label: 'SF Unit (actual)', align: 'left' },
     { key: 'dld_unit_type',       label: 'Type',             align: 'left' },
     { key: 'dld_net_area',        label: 'SQM',              align: 'num'  },
+    { key: 'manual_area_sqm',     label: 'Manual SQM',       align: 'num'  },
+    { key: 'area_diff_pct',       label: 'Area Δ %',    align: 'num'  },
+    { key: 'area_diff_sqm',       label: 'Area Δ sqm',  align: 'num'  },
     { key: 'dld_purchase_type',   label: 'DLD Tx',           align: 'left' },
     { key: 'dld_purchase_date',   label: 'DLD Date',         align: 'left' },
     { key: 'days_outstanding',    label: 'Days',             align: 'num'  },
@@ -622,7 +627,8 @@ function writeCompareHtml(outPath, project, rows, counts) {
     { key: 'price_diff_aed',      label: 'Δ AED',            align: 'num'  },
     { key: 'sf_status',           label: 'SF Status',        align: 'left' },
     { key: 'match_status',        label: 'Match',            align: 'left' },
-    { key: 'match_reasons',       label: 'Reason',           align: 'left' }
+    { key: 'match_reasons',       label: 'Reason',           align: 'left' },
+    { key: 'audit_flags',         label: 'Flags',            align: 'left' }
   ];
 
   // Pre-compute days_outstanding for each row (non-MATCH rows only)
@@ -686,6 +692,23 @@ function writeCompareHtml(outPath, project, rows, counts) {
         const n = +raw;
         html = isFinite(n) ? n.toFixed(2).replace(/\.?0+$/, '') : '';
       }
+    } else if (col.key === 'manual_area_sqm') {
+      sortVal = raw == null ? '-1' : String(raw);
+      if (raw == null) { html = ''; }
+      else { const n = +raw; html = isFinite(n) ? n.toFixed(2).replace(/\.?0+$/, '') : ''; }
+    } else if (col.key === 'area_diff_pct') {
+      sortVal = raw == null ? '-99999' : String(raw);
+      if (raw == null || Math.abs(raw) < 0.5) { html = ''; cls.push('flat'); }
+      else { html = (raw > 0 ? '+' : '') + raw.toFixed(1) + '%'; cls.push(raw > 0 ? 'up' : 'down'); }
+    } else if (col.key === 'area_diff_sqm') {
+      sortVal = raw == null ? '-99999' : String(raw);
+      if (raw == null || Math.abs(raw) < 0.01) { html = ''; }
+      else { html = (raw > 0 ? '+' : '') + raw.toFixed(2).replace(/\.?0+$/, ''); cls.push(raw > 0 ? 'up' : 'down'); }
+    } else if (col.key === 'audit_flags') {
+      if (raw) {
+        const flags = String(raw).split('|').filter(Boolean);
+        html = flags.map(f => `<span class="flag-chip">${escHtml(f)}</span>`).join(' ');
+      } else { html = ''; }
     }
     return `<td class="${cls.join(' ')}" data-sort-val="${escHtml(sortVal)}">${html}</td>`;
   };
@@ -727,6 +750,7 @@ ${brandBar(generatedAt)}
   <span class="chip up"   data-status="PRICE_UP">PRICE ↑ ${counts.PRICE_UP || 0} (${pct(counts.PRICE_UP || 0)})</span>
   <span class="chip down" data-status="PRICE_DOWN">PRICE ↓ ${counts.PRICE_DOWN || 0} (${pct(counts.PRICE_DOWN || 0)})</span>
   <span class="chip warn" data-status="BUYER_MISMATCH">BUYER ${counts.BUYER_MISMATCH || 0} (${pct(counts.BUYER_MISMATCH || 0)})</span>
+  <span class="chip area" data-status="AREA_MISMATCH">AREA ${counts.AREA_MISMATCH || 0} (${pct(counts.AREA_MISMATCH || 0)})</span>
   <span class="chip dld"  data-status="DLD_ONLY">DLD-only ${counts.DLD_ONLY || 0} (${pct(counts.DLD_ONLY || 0)})</span>
   <span class="chip sf"   data-status="SF_ONLY">SF-only ${counts.SF_ONLY || 0} (${pct(counts.SF_ONLY || 0)})</span>
   <button class="btn-reset" id="reset">Reset</button>
