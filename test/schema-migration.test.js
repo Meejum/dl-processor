@@ -95,6 +95,29 @@ test('migrateSchema is idempotent (running twice leaves DB unchanged)', () => {
   assert.equal(colNotNull(db, 'project_mapping', 'sf_sub_project'), false);
 });
 
+test('migrateSchema adds manual_area table', () => {
+  const db = new Database(':memory:');
+  db.exec(OLD_SCHEMA);
+  // Pre-condition: table absent
+  const before = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='manual_area'`).get();
+  assert.equal(before, undefined);
+  migrateSchema(db);
+  const after = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='manual_area'`).get();
+  assert.ok(after, 'expected manual_area table to be created');
+  const cols = colNames(db, 'manual_area');
+  for (const c of ['manual_area_id','project_id','unit_number_norm','area_sqm','source_note','entered_by','created_at','updated_at']) {
+    assert.ok(cols.has(c), 'manual_area missing column ' + c);
+  }
+});
+
+test('migrateSchema adds area_threshold_pct to project_mapping', () => {
+  const db = new Database(':memory:');
+  db.exec(OLD_SCHEMA);
+  assert.equal(colNames(db, 'project_mapping').has('area_threshold_pct'), false);
+  migrateSchema(db);
+  assert.ok(colNames(db, 'project_mapping').has('area_threshold_pct'));
+});
+
 test('openDb on a fresh path produces a schema with all expected columns', () => {
   const { openDb } = require('../src/db');
   const tmpPath = require('path').join(require('os').tmpdir(), 'dlp-schema-test-' + Date.now() + '.sqlite');
