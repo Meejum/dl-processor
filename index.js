@@ -37,6 +37,8 @@ function usage() {
   console.log('  node index.js audit                audit DB state + area coverage');
   console.log('  node index.js import-audit <xlsx>   import the team\'s audit workbook');
   console.log('  node index.js audit-delta [name]    cross-check tool vs auditor');
+  console.log('  node index.js area-template [project|all]   emit per-unit area CSV for staff to fill');
+  console.log('  node index.js apply-areas   <csv>            apply filled-in area CSV to manual_area');
   console.log('');
   console.log('Drop DLD .xps/.csv into input/ and SF .xlsx into sf-input/, then run with no args.');
 }
@@ -370,6 +372,35 @@ function main() {
         }
       }
       console.log('     totals — agree:' + res.summary.AGREE_MATCH + '  tool-flagged:' + res.summary.TOOL_STRICTER + '  manual-only:' + res.summary.MANUAL_ONLY + '  tool-only:' + res.summary.DL_ONLY);
+    } finally { db.close(); }
+    return;
+  }
+
+  if (cmd === 'area-template') {
+    const projectFilter = process.argv[3] && process.argv[3] !== 'all' ? process.argv[3] : null;
+    const { generateAreaTemplate } = require('./src/area-template');
+    const { openDb } = require('./src/db');
+    const db = openDb();
+    try {
+      const safe = (projectFilter || 'all').replace(/[^A-Za-z0-9_-]+/g, '_');
+      const outPath = path.join(OUTPUT_DIR, 'area-template-' + safe + '.csv');
+      const res = generateAreaTemplate({ db, projectFilter, outPath });
+      console.log('  -> wrote ' + path.relative(process.cwd(), outPath));
+      console.log('     ' + res.rowCount + ' rows across ' + res.projects + ' project(s)');
+    } finally { db.close(); }
+    return;
+  }
+
+  if (cmd === 'apply-areas') {
+    const csvPath = process.argv[3];
+    if (!csvPath) { console.error('usage: apply-areas <csv-file>'); process.exit(1); }
+    const { applyAreaTemplate } = require('./src/area-template');
+    const { openDb } = require('./src/db');
+    const db = openDb();
+    try {
+      const res = applyAreaTemplate({ db, csvPath });
+      console.log('  -> applied ' + res.applied + ' rows; skipped ' + res.skipped);
+      for (const w of res.warnings.slice(0, 20)) console.log('     warn: ' + w);
     } finally { db.close(); }
     return;
   }
