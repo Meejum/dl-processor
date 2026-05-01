@@ -172,6 +172,24 @@ function namesOverlap(a, b) {
   return isSubsetOf(A, B) || isSubsetOf(B, A);
 }
 
+const SF_APPLICANT_FIELDS = [
+  'applicant_name',
+  'applicant_2_name',
+  'applicant_3_name',
+  'applicant_4_name',
+  'applicant_details'
+];
+
+function findMatchingApplicant(dldBuyer, sfRow) {
+  if (!dldBuyer) return null;
+  for (const f of SF_APPLICANT_FIELDS) {
+    const v = sfRow ? sfRow[f] : null;
+    if (!v) continue;
+    if (namesOverlap(dldBuyer, v)) return f;
+  }
+  return null;
+}
+
 function computePriceDelta(dldPrice, sfPrice) {
   if (dldPrice == null || sfPrice == null) return { diff: null, pct: null, direction: null };
   const diff = dldPrice - sfPrice;
@@ -203,7 +221,8 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     reasons: ['no SF'],
     priceDelta: { diff: null, pct: null, direction: null },
     nameState: 'none',
-    usedOverride: false
+    usedOverride: false,
+    matchedApplicantField: null
   };
 
   const purchase    = pickLatestPurchase(dldTxs);
@@ -217,9 +236,13 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
   const dldBuyer = naturalBuyer || overrideBuyer || null;
   const usedOverride = !naturalBuyer && !!overrideBuyer;
 
-  let nameState;
-  if (!dldBuyer || !haveSfName) nameState = 'unknown';
-  else nameState = namesOverlap(dldBuyer, sfRow.applicant_name) ? 'match' : 'mismatch';
+  let nameState, matchedApplicantField = null;
+  if (!dldBuyer || !haveSfName) {
+    nameState = 'unknown';
+  } else {
+    matchedApplicantField = findMatchingApplicant(dldBuyer, sfRow);
+    nameState = matchedApplicantField ? 'match' : 'mismatch';
+  }
 
   const priceMeaningful = delta.pct != null && Math.abs(delta.pct) > 1;
   const reasons = [];
@@ -228,18 +251,18 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     if (priceMeaningful) reasons.push('buyer ' + priceTag(delta));
     else                 reasons.push('buyer');
     if (usedOverride) reasons.push('override');
-    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride };
+    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField: null };
   }
 
   if (priceMeaningful) {
     reasons.push(priceTag(delta));
     if (usedOverride) reasons.push('override');
     const status = delta.direction === 'up' ? 'PRICE_UP' : 'PRICE_DOWN';
-    return { status, reasons, priceDelta: delta, nameState, usedOverride };
+    return { status, reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField };
   }
 
-  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride };
-  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride };
+  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride, matchedApplicantField };
+  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride, matchedApplicantField };
 }
 
 function compareProject(db, projectId, cachedConfig) {
@@ -381,6 +404,13 @@ function compareProject(db, projectId, cachedConfig) {
     if (matchedViaBuyer) cls.reasons = (cls.reasons || []).concat(['plot match']);
     if (sfRow) matchedSfUnits.add(sfRow.unit_norm);
 
+    // A10: matched via a co-applicant slot (non-primary). Only fires when nameState === 'match'.
+    let auditFlags = [];
+    if (cls.matchedApplicantField && cls.matchedApplicantField !== 'applicant_name') {
+      auditFlags.push('A10');
+      cls.reasons = (cls.reasons || []).concat(['co-applicant:' + cls.matchedApplicantField]);
+    }
+
     rows.push({
       dld_project:              project.project_name,
       sf_sub_project:           sfSubProject || sfProject || '(' + scope + ')',
@@ -412,7 +442,9 @@ function compareProject(db, projectId, cachedConfig) {
       sf_procedure_number:      sfRow?.procedure_number || null,
       sf_booking_name:          sfRow?.booking_name || null,
       match_status:             cls.status,
-      match_reasons:            (cls.reasons || []).join('; ')
+      match_reasons:            (cls.reasons || []).join('; '),
+      audit_flags:              auditFlags.join('|'),
+      matched_applicant_field:  cls.matchedApplicantField || null
     });
   }
 
@@ -447,8 +479,10 @@ function compareProject(db, projectId, cachedConfig) {
         sf_pre_reg_status:   b.pre_reg_status,
         sf_procedure_number: b.procedure_number,
         sf_booking_name:     b.booking_name,
-        match_status:        'SF_ONLY',
-        match_reasons:       'no DLD'
+        match_status:            'SF_ONLY',
+        match_reasons:           'no DLD',
+        audit_flags:             '',
+        matched_applicant_field: null
       });
     }
   }
@@ -785,4 +819,4 @@ function writeAuditTasks(outPath, project, rows) {
   return tasks;
 }
 
-module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap };
+module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS };
