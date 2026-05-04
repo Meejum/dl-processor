@@ -205,20 +205,23 @@ function collectDldBuyers(transactions) {
   // (classifyMatch in Task 3) can treat collectDldBuyers(...).filter(b => b.kind === 'buyer')[0]
   // as the "primary" without rebuilding context.
   const order = { buyer: 0, bank: 1, seller: 2 };
-  out.sort((a, b) => {
-    const k = order[a.kind] - order[b.kind];
+  // Stable tiebreak via captured input index — V8's sort is stable since Node 12,
+  // but recording the index makes the contract explicit. Important when a unit
+  // has joint co-buyers on the same Sell tx with identical tx_date_iso.
+  const indexed = out.map((entry, idx) => ({ entry, idx }));
+  indexed.sort((a, b) => {
+    const k = order[a.entry.kind] - order[b.entry.kind];
     if (k !== 0) return k;
-    if (a.kind !== 'buyer') return 0;
-    // Within buyer kind: prefer Sell-type, then most recent tx_date_iso desc.
-    const aSell = (a.txType || '').toLowerCase() === 'sell' ? 1 : 0;
-    const bSell = (b.txType || '').toLowerCase() === 'sell' ? 1 : 0;
+    if (a.entry.kind !== 'buyer') return a.idx - b.idx;
+    const aSell = (a.entry.txType || '').toLowerCase() === 'sell' ? 1 : 0;
+    const bSell = (b.entry.txType || '').toLowerCase() === 'sell' ? 1 : 0;
     if (aSell !== bSell) return bSell - aSell;
-    const aDate = a.dateIso || '';
-    const bDate = b.dateIso || '';
+    const aDate = a.entry.dateIso || '';
+    const bDate = b.entry.dateIso || '';
     if (aDate !== bDate) return bDate.localeCompare(aDate); // desc
-    return 0;
+    return a.idx - b.idx; // tiebreak: input order
   });
-  return out;
+  return indexed.map(x => x.entry);
 }
 
 // Iterate all 5 slots for forward-compatibility — applicant_2..4 and applicant_details
@@ -289,7 +292,6 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
   const haveSfName  = !!sfRow.applicant_name;
   const naturalBuyer = purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name) ? purchase.party_name : null;
   const dldBuyer = naturalBuyer || overrideBuyer || null;
-  const usedOverride = !naturalBuyer && !!overrideBuyer;
 
   // Multi-buyer ANY-MATCH: collect every DLD buyer and every populated SF applicant,
   // then check if any pairing matches. Emit A12 when the match was found via a
@@ -298,8 +300,15 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
   const dldBuyersAll  = collectDldBuyers(dldTxs).filter(b => b.kind === 'buyer');
   const sfApplicants  = collectSfApplicants(sfRow);
   const dldNamesForMatch = dldBuyersAll.map(b => b.name).filter(Boolean);
-  // Override-only path: when DLD has no natural buyer but an override is configured.
-  if (dldBuyersAll.length === 0 && overrideBuyer) dldNamesForMatch.push(overrideBuyer);
+  // Override-only path: when DLD has zero non-bank, non-empty party_names anywhere
+  // in the unit's transactions, fall back to the override buyer. This is a
+  // BEHAVIOR CHANGE from the pre-A12 logic, which fell back to override whenever
+  // there was no Sell-type purchase tx — even if a Mortgage-type tx had a
+  // non-bank mortgagor name. The new rule prefers any DLD party info over the
+  // override, on the theory that the mortgagor name is the actual buyer in those
+  // cases. See test/compare-multi-buyer.test.js for the pinned semantics.
+  const usedOverride = dldBuyersAll.length === 0 && !!overrideBuyer;
+  if (usedOverride) dldNamesForMatch.push(overrideBuyer);
   const flags = [];
 
   let nameState;
