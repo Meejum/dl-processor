@@ -59,3 +59,44 @@ test('diffProject emits MISSING_UNIT (not REMOVED_UNIT) when includeMissing is t
   assert.ok(types.has('MISSING_UNIT'), 'expected MISSING_UNIT, got: ' + [...types].join(','));
   assert.ok(!types.has('REMOVED_UNIT'), 'REMOVED_UNIT should no longer be emitted');
 });
+
+test('missing rows are hidden from rows and counted in hiddenMissingCount by default', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'Beta');
+  const oldSnap = insertSnapshot(db, pid, { snapshotDate: '2026-01-01', importedAt: '2026-01-01 10:00:00' });
+  const u = insertUnit(db, oldSnap, pid, { unitNumber: 'P-101', netArea: 100 });
+  insertTx(db, u, oldSnap, pid, { partyName: 'Alice' });
+  insertSnapshot(db, pid, { snapshotDate: '2026-02-01', importedAt: '2026-02-01 10:00:00' });
+
+  const result = diffProject(db, pid);
+  assert.equal(result.status, 'ok');
+  assert.equal(result.rows.length, 0, 'rows should be empty when missing are hidden');
+  assert.deepEqual(result.hiddenMissingCount, { units: 1, txs: 1 });
+});
+
+test('hiddenMissingCount is zero when includeMissing is true', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'Gamma');
+  const oldSnap = insertSnapshot(db, pid, { snapshotDate: '2026-01-01', importedAt: '2026-01-01 10:00:00' });
+  const u = insertUnit(db, oldSnap, pid, { unitNumber: 'P-101', netArea: 100 });
+  insertTx(db, u, oldSnap, pid, { partyName: 'Alice' });
+  insertSnapshot(db, pid, { snapshotDate: '2026-02-01', importedAt: '2026-02-01 10:00:00' });
+
+  const result = diffProject(db, pid, { includeMissing: true });
+  assert.equal(result.rows.length, 2, 'expected MISSING_UNIT + MISSING_TX rows');
+  assert.deepEqual(result.hiddenMissingCount, { units: 0, txs: 0 });
+});
+
+test('hiddenMissingCount is zero when there are no missing rows', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'Delta');
+  const oldSnap = insertSnapshot(db, pid, { snapshotDate: '2026-01-01', importedAt: '2026-01-01 10:00:00' });
+  insertUnit(db, oldSnap, pid, { unitNumber: 'P-101', netArea: 100 });
+  const newSnap = insertSnapshot(db, pid, { snapshotDate: '2026-02-01', importedAt: '2026-02-01 10:00:00' });
+  insertUnit(db, newSnap, pid, { unitNumber: 'P-101', netArea: 105 });
+
+  const result = diffProject(db, pid);
+  assert.deepEqual(result.hiddenMissingCount, { units: 0, txs: 0 });
+  assert.equal(result.rows.length, 1, 'expected one AREA_CHANGED row');
+  assert.equal(result.rows[0].change_type, 'AREA_CHANGED');
+});

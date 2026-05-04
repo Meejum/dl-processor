@@ -63,7 +63,7 @@ function txKey(t) {
   ].join('|');
 }
 
-function diffProject(db, projectId, { oldSnapshotId, newSnapshotId } = {}) {
+function diffProject(db, projectId, { oldSnapshotId, newSnapshotId, includeMissing = false } = {}) {
   const project = db.prepare('SELECT * FROM dld_project WHERE project_id = ?').get(projectId);
   if (!project) throw new Error('project not found');
 
@@ -73,7 +73,7 @@ function diffProject(db, projectId, { oldSnapshotId, newSnapshotId } = {}) {
     newSnap = db.prepare('SELECT * FROM dld_snapshot WHERE snapshot_id = ?').get(newSnapshotId);
   } else {
     const snaps = latestTwoSnapshots(db, projectId);
-    if (snaps.length < 2) return { project, status: 'not-enough-snapshots', snaps };
+    if (snaps.length < 2) return { project, status: 'not-enough-snapshots', snaps, hiddenMissingCount: { units: 0, txs: 0 } };
     newSnap = snaps[0];
     oldSnap = snaps[1];
   }
@@ -106,6 +106,17 @@ function diffProject(db, projectId, { oldSnapshotId, newSnapshotId } = {}) {
         new_value:   `${n.unit_type || ''} · ${n.net_area || ''} sqm · ${n.transactions.length} tx`,
         detail:      'unit not present in previous snapshot'
       });
+      // Still detect new transactions for this new unit
+      for (const t of n.transactions) {
+        push({
+          ...unitRow(key, null, n),
+          change_type: 'NEW_TX',
+          category:    'tx',
+          old_value:   '',
+          new_value:   `${t.tx_type} · ${t.tx_date || ''} · ${fmtMoney(t.amount_aed)} AED · ${t.party_name || ''}`,
+          detail:      'new transaction recorded'
+        });
+      }
       continue;
     }
     if (o && !n) {
@@ -117,6 +128,17 @@ function diffProject(db, projectId, { oldSnapshotId, newSnapshotId } = {}) {
         new_value:   '',
         detail:      'unit not present in latest snapshot (may be out of report scope)'
       });
+      // Still detect missing transactions for this missing unit
+      for (const t of o.transactions) {
+        push({
+          ...unitRow(key, o, null),
+          change_type: 'MISSING_TX',
+          category:    'tx',
+          old_value:   `${t.tx_type} · ${t.tx_date || ''} · ${fmtMoney(t.amount_aed)} AED · ${t.party_name || ''}`,
+          new_value:   '',
+          detail:      'transaction not present in latest snapshot (may be out of report scope)'
+        });
+      }
       continue;
     }
 
@@ -184,7 +206,26 @@ function diffProject(db, projectId, { oldSnapshotId, newSnapshotId } = {}) {
     }
   }
 
-  return { project, status: 'ok', oldSnapshot: oldSnap, newSnapshot: newSnap, rows };
+  let hiddenUnits = 0;
+  let hiddenTxs = 0;
+  let outRows = rows;
+  if (!includeMissing) {
+    outRows = [];
+    for (const r of rows) {
+      if (r.change_type === 'MISSING_UNIT') { hiddenUnits++; continue; }
+      if (r.change_type === 'MISSING_TX')   { hiddenTxs++;   continue; }
+      outRows.push(r);
+    }
+  }
+
+  return {
+    project,
+    status: 'ok',
+    oldSnapshot: oldSnap,
+    newSnapshot: newSnap,
+    rows: outRows,
+    hiddenMissingCount: { units: hiddenUnits, txs: hiddenTxs }
+  };
 }
 
 function summarizeDiff(rows) {
