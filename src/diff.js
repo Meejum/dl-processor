@@ -291,6 +291,7 @@ function writeDiffHtml(outPath, result, counts) {
   const project = result.project;
   const total   = result.rows.length;
   const oldDate = result.oldSnapshot.snapshot_date + ' (' + result.oldSnapshot.source_format + ')';
+  const sinceSuffix = result.sinceUsed ? ` <small style="color:#666">(--since ${escHtml(result.sinceUsed)})</small>` : '';
   const newDate = result.newSnapshot.snapshot_date + ' (' + result.newSnapshot.source_format + ')';
   const oldFile = result.oldSnapshot.source_file;
   const newFile = result.newSnapshot.source_file;
@@ -328,8 +329,14 @@ function writeDiffHtml(outPath, result, counts) {
     .map((c, i) => `<th data-col="${i}" data-align="${c.align}">${escHtml(c.label)}</th>`).join('');
   const bodyHtml = result.rows.map(renderRow).join('\n');
 
-  const knownChanges = ['NEW_UNIT','NEW_TX','AMOUNT_CHANGED','MISSING_UNIT','MISSING_TX','UNIT_TYPE_CHANGED','AREA_CHANGED'];
-  const chipsHtml = knownChanges.map(ct => {
+  const presentChanges = Array.from(new Set(result.rows.map(r => r.change_type)));
+  // Stable display order: NEW_*, AMOUNT_CHANGED, AREA_CHANGED, UNIT_TYPE_CHANGED, MISSING_*
+  const ORDER = ['NEW_UNIT','NEW_TX','AMOUNT_CHANGED','AREA_CHANGED','UNIT_TYPE_CHANGED','MISSING_UNIT','MISSING_TX'];
+  presentChanges.sort((a, b) => {
+    const ia = ORDER.indexOf(a); const ib = ORDER.indexOf(b);
+    return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+  });
+  const chipsHtml = presentChanges.map(ct => {
     const count = counts[ct] || 0;
     const cls = CHANGE_CLASS[ct] || '';
     return `<span class="chip ${cls}" data-change="${ct}">${ct.replace(/_/g,' ')} ${count}</span>`;
@@ -392,8 +399,17 @@ function writeDiffHtml(outPath, result, counts) {
 <body>
 <h1>${escHtml(project.project_name)} — Month-over-Month Diff</h1>
 <div class="meta">${total.toLocaleString()} change row(s) detected between snapshots</div>
+${(() => {
+  const hmc = result.hiddenMissingCount || { units: 0, txs: 0 };
+  const hidden = (hmc.units || 0) + (hmc.txs || 0);
+  if (hidden === 0) return '';
+  const parts = [];
+  if (hmc.units) parts.push(`${hmc.units} unit${hmc.units === 1 ? '' : 's'}`);
+  if (hmc.txs)   parts.push(`${hmc.txs} transaction${hmc.txs === 1 ? '' : 's'}`);
+  return `<div class="meta">${hidden} missing row(s) hidden (${parts.join(' · ')}) — re-run with --show-missing to include</div>`;
+})()}
 <div class="snaps">
-  <div class="snap">PREVIOUS<br><b>${escHtml(oldDate)}</b><br><small>${escHtml(oldFile)}</small></div>
+  <div class="snap">PREVIOUS<br><b>${escHtml(oldDate)}</b>${sinceSuffix}<br><small>${escHtml(oldFile)}</small></div>
   <div class="arrow">→</div>
   <div class="snap">LATEST<br><b>${escHtml(newDate)}</b><br><small>${escHtml(newFile)}</small></div>
 </div>
