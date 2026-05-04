@@ -312,26 +312,53 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     priceDelta: { diff: null, pct: null, direction: null },
     nameState: 'none',
     usedOverride: false,
-    matchedApplicantField: null
+    matchedApplicantField: null,
+    flags: []
   };
 
-  const purchase    = pickLatestPurchase(dldTxs);
   const marketPrice = pickLatestMarketPrice(dldTxs);
   const dldPrice    = marketPrice ? marketPrice.amount_aed : null;
   const sfPrice     = sfRow.purchase_price;
   const delta       = computePriceDelta(dldPrice, sfPrice);
 
-  const haveSfName  = !!sfRow.applicant_name;
-  const naturalBuyer = purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name) ? purchase.party_name : null;
-  const dldBuyer = naturalBuyer || overrideBuyer || null;
-  const usedOverride = !naturalBuyer && !!overrideBuyer;
+  // Multi-buyer ANY-MATCH: collect every DLD buyer and every populated SF applicant,
+  // then check if any pairing matches. Emit A12 when the match was found via a
+  // non-clean (i.e. not primary-vs-primary) pairing — see spec
+  // docs/superpowers/specs/2026-05-04-multi-buyer-matching-design.md.
+  const dldBuyersAll  = collectDldBuyers(dldTxs).filter(b => b.kind === 'buyer');
+  const sfApplicants  = collectSfApplicants(sfRow);
+  const dldNamesForMatch = dldBuyersAll.map(b => b.name).filter(Boolean);
 
-  let nameState, matchedApplicantField = null;
-  if (!dldBuyer || !haveSfName) {
+  // Override-only path: fall back to override only when DLD has zero non-bank, non-empty parties.
+  // Deliberate behavior change from pre-A12 logic — see test/compare-multi-buyer.test.js.
+  const usedOverride = dldBuyersAll.length === 0 && !!overrideBuyer;
+  if (usedOverride) dldNamesForMatch.push(overrideBuyer);
+
+  // A10 audit signal: which SF applicant slot did the effective DLD primary match?
+  const effectiveDldPrimary = dldNamesForMatch[0] || null;
+  const matchedApplicantField = effectiveDldPrimary ? findMatchingApplicant(effectiveDldPrimary, sfRow) : null;
+
+  const flags = [];
+
+  let nameState;
+  if (dldNamesForMatch.length === 0 || sfApplicants.length === 0) {
     nameState = 'unknown';
   } else {
-    matchedApplicantField = findMatchingApplicant(dldBuyer, sfRow);
-    nameState = matchedApplicantField ? 'match' : 'mismatch';
+    const cleanPair = namesOverlap(dldNamesForMatch[0], sfApplicants[0].name);
+    const anyPair   = dldNamesForMatch.some(d => sfApplicants.some(s => namesOverlap(d, s.name)));
+    if (cleanPair) {
+      nameState = 'match';
+    } else if (anyPair) {
+      nameState = 'match';
+      flags.push('A12');
+    } else {
+      nameState = 'mismatch';
+    }
+  }
+
+  // A10: DLD primary matched a non-primary SF applicant slot (independent of A12).
+  if (matchedApplicantField && matchedApplicantField !== 'applicant_name') {
+    flags.push('A10');
   }
 
   const priceMeaningful = delta.pct != null && Math.abs(delta.pct) > 1;
@@ -341,18 +368,18 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     if (priceMeaningful) reasons.push('buyer ' + priceTag(delta));
     else                 reasons.push('buyer');
     if (usedOverride) reasons.push('override');
-    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField: null };
+    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField, flags };
   }
 
   if (priceMeaningful) {
     reasons.push(priceTag(delta));
     if (usedOverride) reasons.push('override');
     const status = delta.direction === 'up' ? 'PRICE_UP' : 'PRICE_DOWN';
-    return { status, reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField };
+    return { status, reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField, flags };
   }
 
-  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride, matchedApplicantField };
-  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride, matchedApplicantField };
+  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride, matchedApplicantField, flags };
+  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride, matchedApplicantField, flags };
 }
 
 function compareProject(db, projectId, cachedConfig) {
@@ -963,4 +990,4 @@ function writeAuditTasks(outPath, project, rows) {
   return tasks;
 }
 
-module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty, collectDldBuyers, collectSfApplicants };
+module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty, collectDldBuyers, collectSfApplicants, classifyMatchPublic: classifyMatch };
