@@ -54,6 +54,9 @@ function pickBaseline(db, projectId, { since } = {}) {
     LIMIT 1
   `).get(projectId);
 
+  // imported_at is 'YYYY-MM-DD HH:MM:SS' and `since` is 'YYYY-MM-DD'. The longer
+  // string sorts after the shorter one in lexical TEXT comparison, so `<` here
+  // correctly excludes same-day imports — do not "fix" this to date(imported_at).
   const oldSnap = db.prepare(`
     SELECT * FROM dld_snapshot
     WHERE project_id = ? AND imported_at < ?
