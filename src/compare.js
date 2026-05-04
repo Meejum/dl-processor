@@ -518,7 +518,10 @@ function compareProject(db, projectId, cachedConfig) {
       sf_procedure_number:      sfRow?.procedure_number || null,
       sf_booking_name:          sfRow?.booking_name || null,
       match_status:             cls.status,
-      match_reasons:            (cls.reasons || []).join('; ')
+      match_reasons:            (cls.reasons || []).join('; '),
+      match_flags:              cls.flags || [],
+      dld_buyers:               collectDldBuyers(dldTxs),
+      sf_applicants:            collectSfApplicants(sfRow)
     });
   }
 
@@ -554,7 +557,10 @@ function compareProject(db, projectId, cachedConfig) {
         sf_procedure_number: b.procedure_number,
         sf_booking_name:     b.booking_name,
         match_status:        'SF_ONLY',
-        match_reasons:       'no DLD'
+        match_reasons:       'no DLD',
+        match_flags:         [],
+        dld_buyers:          [],
+        sf_applicants:       collectSfApplicants(b)
       });
     }
   }

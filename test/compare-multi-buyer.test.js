@@ -1,6 +1,19 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { collectDldBuyers, collectSfApplicants, classifyMatchPublic } = require('../src/compare');
+const { collectDldBuyers, collectSfApplicants, classifyMatchPublic, compareProject } = require('../src/compare');
+const Database = require('better-sqlite3');
+const fs = require('fs');
+const path = require('path');
+const { migrateSchema } = require('../src/db');
+
+const SCHEMA_SQL = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
+
+function buildDb() {
+  const db = new Database(':memory:');
+  db.exec(SCHEMA_SQL);
+  migrateSchema(db);
+  return db;
+}
 
 function tx(partyName, opts = {}) {
   return {
@@ -239,4 +252,29 @@ test('collectDldBuyers preserves input order for buyers with identical Sell-type
     tx('THIRD_BUYER',  { txType: 'Sell - Pre registration', txDateIso: '2024-06-01' }),
   ]);
   assert.deepEqual(rows.map(r => r.name), ['FIRST_BUYER', 'SECOND_BUYER', 'THIRD_BUYER']);
+});
+
+test('compareProject result rows expose dld_buyers, sf_applicants, match_flags', () => {
+  const db = buildDb();
+  const pid = db.prepare('INSERT INTO dld_project (project_name, sf_sub_project, sf_unit_prefix) VALUES (?, ?, ?)').run('Eps', 'Eps Sub', 'P').lastInsertRowid;
+  const snap = db.prepare(`INSERT INTO dld_snapshot (project_id, source_format, source_file, snapshot_date, imported_at, total_units, total_tx) VALUES (?, 'csv', 'fake.csv', '2026-01-01', '2026-01-01 10:00:00', 1, 1)`).run(pid).lastInsertRowid;
+  const uid  = db.prepare(`INSERT INTO dld_unit (snapshot_id, project_id, unit_number, unit_number_norm, net_area, unit_type) VALUES (?, ?, '1', '1', 100, 'Apt')`).run(snap, pid).lastInsertRowid;
+  db.prepare(`INSERT INTO dld_transaction (unit_id, snapshot_id, project_id, party_name, ft_share, share_unit, tx_type, tx_date, tx_date_iso, amount_aed) VALUES (?, ?, ?, 'ALICE', 50, 'F.T.', 'Sell - Pre registration', '04/02/2024', '2024-02-04', 1000000)`).run(uid, snap, pid);
+  db.prepare(`INSERT INTO dld_transaction (unit_id, snapshot_id, project_id, party_name, ft_share, share_unit, tx_type, tx_date, tx_date_iso, amount_aed) VALUES (?, ?, ?, 'BOB',   50, 'F.T.', 'Sell - Pre registration', '04/02/2024', '2024-02-04', 1000000)`).run(uid, snap, pid);
+
+  const sfSnap = db.prepare(`INSERT INTO sf_snapshot (source_file, total_rows) VALUES ('sf.xlsx', 1)`).run().lastInsertRowid;
+  db.prepare(`INSERT INTO sf_booking (sf_snapshot_id, sub_project, unit, unit_norm, applicant_name, purchase_price) VALUES (?, 'Eps Sub', 'P-1', 'P-1', 'BOB', 1000000)`).run(sfSnap);
+
+  const result = compareProject(db, pid);
+  assert.equal(result.status || 'ok', 'ok');
+  const row = result.rows.find(r => r.dld_unit_number === '1');
+  assert.ok(row, 'expected unit 1 in result rows');
+  assert.equal(row.match_status, 'MATCH', 'BOB matches in DLD co-buyer position');
+  assert.deepEqual(row.match_flags || [], ['A12']);
+  assert.ok(Array.isArray(row.dld_buyers), 'dld_buyers should be an array');
+  assert.equal(row.dld_buyers.length, 2);
+  assert.deepEqual(row.dld_buyers.map(b => b.name).sort(), ['ALICE', 'BOB']);
+  assert.ok(Array.isArray(row.sf_applicants), 'sf_applicants should be an array');
+  assert.equal(row.sf_applicants.length, 1);
+  assert.equal(row.sf_applicants[0].name, 'BOB');
 });
