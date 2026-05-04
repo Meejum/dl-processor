@@ -190,6 +190,39 @@ function findMatchingApplicant(dldBuyer, sfRow) {
   return null;
 }
 
+function splitTxType(raw) {
+  if (!raw) return { txType: '', txSubtype: '' };
+  const idx = raw.indexOf(' - ');
+  if (idx === -1) return { txType: raw.trim(), txSubtype: '' };
+  return { txType: raw.slice(0, idx).trim(), txSubtype: raw.slice(idx + 3).trim() };
+}
+
+function classifyDldKind(name) {
+  if (!name || !String(name).trim()) return 'seller';
+  if (BANK_PREFIX_RE.test(name)) return 'bank';
+  return 'buyer';
+}
+
+function collectDldBuyers(transactions) {
+  if (!Array.isArray(transactions)) return [];
+  const out = transactions.map(t => {
+    const { txType, txSubtype } = splitTxType(t.tx_type);
+    return {
+      name:      t.party_name || null,
+      areaSqm:   t.ft_share != null ? Number(t.ft_share) : null,
+      amountAed: t.amount_aed != null ? Number(t.amount_aed) : null,
+      txType,
+      txSubtype,
+      date:      t.tx_date || null,
+      kind:      classifyDldKind(t.party_name)
+    };
+  });
+  // Order: buyers first, then banks, then sellers. Within a kind, preserve input order.
+  const order = { buyer: 0, bank: 1, seller: 2 };
+  out.sort((a, b) => order[a.kind] - order[b.kind]);
+  return out;
+}
+
 function computePriceDelta(dldPrice, sfPrice) {
   if (dldPrice == null || sfPrice == null) return { diff: null, pct: null, direction: null };
   const diff = dldPrice - sfPrice;
@@ -890,4 +923,4 @@ function writeAuditTasks(outPath, project, rows) {
   return tasks;
 }
 
-module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty };
+module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty, collectDldBuyers };
