@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { collectDldBuyers } = require('../src/compare');
+const { collectDldBuyers, collectSfApplicants } = require('../src/compare');
 
 function tx(partyName, opts = {}) {
   return {
@@ -89,4 +89,41 @@ test('collectDldBuyers prefers Sell-type buyers over Owner entries at [0]', () =
 test('collectDldBuyers exposes dateIso on each entry', () => {
   const [r] = collectDldBuyers([tx('A', { txDateIso: '2024-02-04' })]);
   assert.equal(r.dateIso, '2024-02-04');
+});
+
+test('collectSfApplicants emits only populated slots, in canonical order', () => {
+  const rows = collectSfApplicants({
+    applicant_name:    'JOHN SMITH',
+    applicant_2_name:  'JANE SMITH',
+    applicant_3_name:  null,
+    applicant_4_name:  'KIDS SMITH',
+    applicant_details: 'GRANDMA SMITH'
+  });
+  assert.deepEqual(rows.map(r => r.role),
+    ['primary', 'applicant_2', 'applicant_4', 'applicant_details']);
+  assert.equal(rows[0].name, 'JOHN SMITH');
+  assert.equal(rows.length, 4);
+  assert.ok(rows.every(r => r.kind === 'applicant'));
+});
+
+test('collectSfApplicants returns one entry when only applicant_name populated (today\'s reality)', () => {
+  const rows = collectSfApplicants({ applicant_name: 'JOHN SMITH' });
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].name, 'JOHN SMITH');
+  assert.equal(rows[0].role, 'primary');
+});
+
+test('collectSfApplicants handles null booking', () => {
+  assert.deepEqual(collectSfApplicants(null), []);
+  assert.deepEqual(collectSfApplicants(undefined), []);
+});
+
+test('collectSfApplicants treats empty strings as missing slots', () => {
+  const rows = collectSfApplicants({
+    applicant_name:    'JOHN',
+    applicant_2_name:  '',
+    applicant_3_name:  '   ',
+    applicant_4_name:  null,
+  });
+  assert.deepEqual(rows.map(r => r.name), ['JOHN']);
 });
