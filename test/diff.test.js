@@ -1,0 +1,61 @@
+const test = require('node:test');
+const assert = require('node:assert/strict');
+const Database = require('better-sqlite3');
+const fs = require('fs');
+const path = require('path');
+const { migrateSchema } = require('../src/db');
+const { diffProject, pickBaseline } = require('../src/diff');
+
+const SCHEMA_SQL = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
+
+function buildDb() {
+  const db = new Database(':memory:');
+  db.exec(SCHEMA_SQL);
+  migrateSchema(db);
+  return db;
+}
+
+function insertProject(db, name) {
+  const info = db.prepare(
+    `INSERT INTO dld_project (project_name) VALUES (?)`
+  ).run(name);
+  return info.lastInsertRowid;
+}
+
+function insertSnapshot(db, projectId, { snapshotDate, importedAt, sourceFormat = 'csv', sourceFile = 'fake.csv' }) {
+  const info = db.prepare(
+    `INSERT INTO dld_snapshot (project_id, source_format, source_file, snapshot_date, imported_at, total_units, total_tx)
+     VALUES (?, ?, ?, ?, ?, 0, 0)`
+  ).run(projectId, sourceFormat, sourceFile, snapshotDate, importedAt);
+  return info.lastInsertRowid;
+}
+
+function insertUnit(db, snapshotId, projectId, { unitNumber, netArea = null, unitType = null }) {
+  const norm = String(unitNumber).toUpperCase().replace(/\s+/g, '');
+  const info = db.prepare(
+    `INSERT INTO dld_unit (snapshot_id, project_id, unit_number, unit_number_norm, net_area, unit_type)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(snapshotId, projectId, unitNumber, norm, netArea, unitType);
+  return info.lastInsertRowid;
+}
+
+function insertTx(db, unitId, snapshotId, projectId, { partyName, txType = 'Sell', txDate = '2026-01-01', amountAed = 1000000 }) {
+  db.prepare(
+    `INSERT INTO dld_transaction (unit_id, snapshot_id, project_id, party_name, tx_type, tx_date, amount_aed)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(unitId, snapshotId, projectId, partyName, txType, txDate, amountAed);
+}
+
+test('diffProject emits MISSING_UNIT (not REMOVED_UNIT) when includeMissing is true', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'Alpha');
+  const oldSnap = insertSnapshot(db, pid, { snapshotDate: '2026-01-01', importedAt: '2026-01-01 10:00:00' });
+  insertUnit(db, oldSnap, pid, { unitNumber: 'P-101', netArea: 100, unitType: 'Apt' });
+  insertSnapshot(db, pid, { snapshotDate: '2026-02-01', importedAt: '2026-02-01 10:00:00' });
+
+  const result = diffProject(db, pid, { includeMissing: true });
+  assert.equal(result.status, 'ok');
+  const types = new Set(result.rows.map(r => r.change_type));
+  assert.ok(types.has('MISSING_UNIT'), 'expected MISSING_UNIT, got: ' + [...types].join(','));
+  assert.ok(!types.has('REMOVED_UNIT'), 'REMOVED_UNIT should no longer be emitted');
+});

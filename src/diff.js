@@ -27,6 +27,17 @@ function latestTwoSnapshots(db, projectId) {
   `).all(projectId);
 }
 
+function pickBaseline(db, projectId, { since } = {}) {
+  if (since !== undefined) {
+    throw new Error('pickBaseline: since not yet implemented');
+  }
+  const snaps = latestTwoSnapshots(db, projectId);
+  if (snaps.length < 2) {
+    return { status: 'not-enough-snapshots', oldSnap: null, newSnap: null };
+  }
+  return { status: 'ok', oldSnap: snaps[1], newSnap: snaps[0] };
+}
+
 function loadUnitsWithTx(db, snapshotId) {
   const units = db.prepare(`
     SELECT u.*, b.name AS building_name, b.type AS building_type
@@ -100,11 +111,11 @@ function diffProject(db, projectId, { oldSnapshotId, newSnapshotId } = {}) {
     if (o && !n) {
       push({
         ...unitRow(key, o, null),
-        change_type: 'REMOVED_UNIT',
+        change_type: 'MISSING_UNIT',
         category:    'unit',
         old_value:   `${o.unit_type || ''} · ${o.net_area || ''} sqm · ${o.transactions.length} tx`,
         new_value:   '',
-        detail:      'unit disappeared from DLD snapshot'
+        detail:      'unit not present in latest snapshot (may be out of report scope)'
       });
       continue;
     }
@@ -163,11 +174,11 @@ function diffProject(db, projectId, { oldSnapshotId, newSnapshotId } = {}) {
       if (!nTx.has(k)) {
         push({
           ...unitRow(key, o, n),
-          change_type: 'REMOVED_TX',
+          change_type: 'MISSING_TX',
           category:    'tx',
           old_value:   `${t.tx_type} · ${t.tx_date || ''} · ${fmtMoney(t.amount_aed)} AED · ${t.party_name || ''}`,
           new_value:   '',
-          detail:      'transaction disappeared'
+          detail:      'transaction not present in latest snapshot (may be out of report scope)'
         });
       }
     }
@@ -194,8 +205,8 @@ function writeDiffCsv(outPath, result) {
 const CHANGE_CLASS = {
   NEW_UNIT:         'ok',
   NEW_TX:           'ok',
-  REMOVED_UNIT:     'warn',
-  REMOVED_TX:       'warn',
+  MISSING_UNIT:     'warn',
+  MISSING_TX:       'warn',
   AMOUNT_CHANGED:   'amt',
   UNIT_TYPE_CHANGED:'dld',
   AREA_CHANGED:     'dld'
@@ -242,7 +253,7 @@ function writeDiffHtml(outPath, result, counts) {
     .map((c, i) => `<th data-col="${i}" data-align="${c.align}">${escHtml(c.label)}</th>`).join('');
   const bodyHtml = result.rows.map(renderRow).join('\n');
 
-  const knownChanges = ['NEW_UNIT','NEW_TX','AMOUNT_CHANGED','REMOVED_UNIT','REMOVED_TX','UNIT_TYPE_CHANGED','AREA_CHANGED'];
+  const knownChanges = ['NEW_UNIT','NEW_TX','AMOUNT_CHANGED','MISSING_UNIT','MISSING_TX','UNIT_TYPE_CHANGED','AREA_CHANGED'];
   const chipsHtml = knownChanges.map(ct => {
     const count = counts[ct] || 0;
     const cls = CHANGE_CLASS[ct] || '';
@@ -387,4 +398,4 @@ ${bodyHtml}
   fs.writeFileSync(outPath, html, 'utf8');
 }
 
-module.exports = { diffProject, summarizeDiff, writeDiffCsv, writeDiffHtml };
+module.exports = { diffProject, summarizeDiff, writeDiffCsv, writeDiffHtml, pickBaseline };
