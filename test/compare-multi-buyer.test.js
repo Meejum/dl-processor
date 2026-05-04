@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { collectDldBuyers, collectSfApplicants } = require('../src/compare');
+const { collectDldBuyers, collectSfApplicants, classifyMatchPublic } = require('../src/compare');
 
 function tx(partyName, opts = {}) {
   return {
@@ -126,4 +126,71 @@ test('collectSfApplicants treats empty strings as missing slots', () => {
     applicant_4_name:  null,
   });
   assert.deepEqual(rows.map(r => r.name), ['JOHN']);
+});
+
+// ── classifyMatchPublic (Task 3) ─────────────────────────────────────────────
+
+function classify({ dldParties, sfApplicants }) {
+  const dldTxs = dldParties.map((name, i) => ({
+    party_name: name,
+    ft_share:   50,
+    share_unit: 'F.T.',
+    tx_type:    'Sell - Pre registration',
+    tx_date:    '04/02/2024',
+    tx_date_iso:'2024-02-04',
+    amount_aed: 1000000 + i,
+  }));
+  const sfRow = {};
+  if (sfApplicants[0]) sfRow.applicant_name    = sfApplicants[0];
+  if (sfApplicants[1]) sfRow.applicant_2_name  = sfApplicants[1];
+  if (sfApplicants[2]) sfRow.applicant_3_name  = sfApplicants[2];
+  if (sfApplicants[3]) sfRow.applicant_4_name  = sfApplicants[3];
+  if (sfApplicants[4]) sfRow.applicant_details = sfApplicants[4];
+  // dldUnit only used for status fallthrough; not relevant to buyer match.
+  return classifyMatchPublic({ unit_number: 'P-1' }, dldTxs, sfRow, null);
+}
+
+test('classifyMatch: clean primary-vs-primary match → MATCH, no flag', () => {
+  const r = classify({ dldParties: ['ALICE'], sfApplicants: ['ALICE'] });
+  assert.equal(r.status, 'MATCH');
+  assert.deepEqual(r.flags || [], []);
+});
+
+test('classifyMatch: DLD co-buyer matches SF primary → MATCH + A12', () => {
+  const r = classify({ dldParties: ['ALICE', 'BOB'], sfApplicants: ['BOB'] });
+  assert.equal(r.status, 'MATCH');
+  assert.ok((r.flags || []).includes('A12'), 'expected A12 flag, got: ' + JSON.stringify(r.flags));
+});
+
+test('classifyMatch: no overlap anywhere → BUYER_MISMATCH', () => {
+  const r = classify({ dldParties: ['ALICE', 'BOB'], sfApplicants: ['CAROL'] });
+  assert.equal(r.status, 'BUYER_MISMATCH');
+});
+
+test('classifyMatch: bank entries do not satisfy the match', () => {
+  const r = classify({
+    dldParties: ['EMIRATES NBD MORTGAGES', 'ALICE'],
+    sfApplicants: ['ALICE']
+  });
+  assert.equal(r.status, 'MATCH');
+  // Bank is filtered, so primary becomes ALICE; clean match → no A12.
+  assert.deepEqual(r.flags || [], []);
+});
+
+test('classifyMatch: empty-name DLD entries do not satisfy the match', () => {
+  const r = classify({
+    dldParties: [null, 'ALICE'],
+    sfApplicants: ['ALICE']
+  });
+  assert.equal(r.status, 'MATCH');
+  assert.deepEqual(r.flags || [], []);
+});
+
+test('classifyMatch: DLD primary matches SF co-applicant → MATCH + A12', () => {
+  const r = classify({
+    dldParties: ['ALICE'],
+    sfApplicants: ['BOB', 'ALICE']  // ALICE is in applicant_2_name
+  });
+  assert.equal(r.status, 'MATCH');
+  assert.ok((r.flags || []).includes('A12'));
 });

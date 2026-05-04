@@ -276,7 +276,8 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     reasons: ['no SF'],
     priceDelta: { diff: null, pct: null, direction: null },
     nameState: 'none',
-    usedOverride: false
+    usedOverride: false,
+    flags: []
   };
 
   const purchase    = pickLatestPurchase(dldTxs);
@@ -290,9 +291,32 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
   const dldBuyer = naturalBuyer || overrideBuyer || null;
   const usedOverride = !naturalBuyer && !!overrideBuyer;
 
+  // Multi-buyer ANY-MATCH: collect every DLD buyer and every populated SF applicant,
+  // then check if any pairing matches. Emit A12 when the match was found via a
+  // non-clean (i.e. not primary-vs-primary) pairing — see spec
+  // docs/superpowers/specs/2026-05-04-multi-buyer-matching-design.md.
+  const dldBuyersAll  = collectDldBuyers(dldTxs).filter(b => b.kind === 'buyer');
+  const sfApplicants  = collectSfApplicants(sfRow);
+  const dldNamesForMatch = dldBuyersAll.map(b => b.name).filter(Boolean);
+  // Override-only path: when DLD has no natural buyer but an override is configured.
+  if (dldBuyersAll.length === 0 && overrideBuyer) dldNamesForMatch.push(overrideBuyer);
+  const flags = [];
+
   let nameState;
-  if (!dldBuyer || !haveSfName) nameState = 'unknown';
-  else nameState = namesOverlap(dldBuyer, sfRow.applicant_name) ? 'match' : 'mismatch';
+  if (dldNamesForMatch.length === 0 || sfApplicants.length === 0) {
+    nameState = 'unknown';
+  } else {
+    const cleanPair = namesOverlap(dldNamesForMatch[0], sfApplicants[0].name);
+    const anyPair   = dldNamesForMatch.some(d => sfApplicants.some(s => namesOverlap(d, s.name)));
+    if (cleanPair) {
+      nameState = 'match';
+    } else if (anyPair) {
+      nameState = 'match';
+      flags.push('A12');
+    } else {
+      nameState = 'mismatch';
+    }
+  }
 
   const priceMeaningful = delta.pct != null && Math.abs(delta.pct) > 1;
   const reasons = [];
@@ -301,18 +325,18 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     if (priceMeaningful) reasons.push('buyer ' + priceTag(delta));
     else                 reasons.push('buyer');
     if (usedOverride) reasons.push('override');
-    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride };
+    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride, flags };
   }
 
   if (priceMeaningful) {
     reasons.push(priceTag(delta));
     if (usedOverride) reasons.push('override');
     const status = delta.direction === 'up' ? 'PRICE_UP' : 'PRICE_DOWN';
-    return { status, reasons, priceDelta: delta, nameState, usedOverride };
+    return { status, reasons, priceDelta: delta, nameState, usedOverride, flags };
   }
 
-  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride };
-  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride };
+  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride, flags };
+  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride, flags };
 }
 
 function compareProject(db, projectId, cachedConfig) {
@@ -858,4 +882,4 @@ function writeAuditTasks(outPath, project, rows) {
   return tasks;
 }
 
-module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, collectDldBuyers, collectSfApplicants };
+module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, collectDldBuyers, collectSfApplicants, classifyMatchPublic: classifyMatch };
