@@ -239,6 +239,30 @@ function collectDldBuyers(transactions) {
   return out;
 }
 
+// Iterate all 5 slots for forward-compatibility — applicant_2..4 and applicant_details
+// are usually empty today but ops may start populating them. The matching logic
+// and HTML dropdown auto-extend the day they're filled. Do NOT collapse this to
+// just applicant_name without revisiting the spec at
+// docs/superpowers/specs/2026-05-04-multi-buyer-matching-design.md.
+function collectSfApplicants(booking) {
+  if (!booking) return [];
+  const slots = [
+    { role: 'primary',           field: 'applicant_name'    },
+    { role: 'applicant_2',       field: 'applicant_2_name'  },
+    { role: 'applicant_3',       field: 'applicant_3_name'  },
+    { role: 'applicant_4',       field: 'applicant_4_name'  },
+    { role: 'applicant_details', field: 'applicant_details' },
+  ];
+  const out = [];
+  for (const { role, field } of slots) {
+    const raw = booking[field];
+    const name = raw != null ? String(raw).trim() : '';
+    if (!name) continue;
+    out.push({ name, role, kind: 'applicant' });
+  }
+  return out;
+}
+
 function computePriceDelta(dldPrice, sfPrice) {
   if (dldPrice == null || sfPrice == null) return { diff: null, pct: null, direction: null };
   const diff = dldPrice - sfPrice;
@@ -939,4 +963,4 @@ function writeAuditTasks(outPath, project, rows) {
   return tasks;
 }
 
-module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty, collectDldBuyers };
+module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty, collectDldBuyers, collectSfApplicants };
