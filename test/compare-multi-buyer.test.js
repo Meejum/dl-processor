@@ -194,3 +194,49 @@ test('classifyMatch: DLD primary matches SF co-applicant → MATCH + A12', () =>
   assert.equal(r.status, 'MATCH');
   assert.ok((r.flags || []).includes('A12'));
 });
+
+test('classifyMatch: override is consulted when DLD has only banks (no natural buyer)', () => {
+  // DLD has only a bank entry; override should kick in.
+  const dldTxs = [{
+    party_name: 'EMIRATES NBD MORTGAGES',
+    ft_share:   50,
+    share_unit: 'F.T.',
+    tx_type:    'Mortgage Registration',
+    tx_date:    '04/02/2024',
+    tx_date_iso:'2024-02-04',
+    amount_aed: 1000000,
+  }];
+  const sfRow = { applicant_name: 'ALICE' };
+  const r = classifyMatchPublic({ unit_number: 'P-1' }, dldTxs, sfRow, 'ALICE');
+  assert.equal(r.status, 'MATCH');
+  assert.equal(r.usedOverride, true, 'override should fire when only banks present');
+  assert.deepEqual(r.flags || [], []);
+});
+
+test('classifyMatch: override is NOT consulted when DLD has any non-bank party (new semantics)', () => {
+  // DLD has a non-bank Mortgage-type party (the mortgagor). Pre-A12 logic would
+  // have fallen back to override because pickLatestPurchase returns null for
+  // mortgage txs. New logic uses the mortgagor name directly.
+  const dldTxs = [{
+    party_name: 'BOB MORTGAGOR',
+    ft_share:   50,
+    share_unit: 'F.T.',
+    tx_type:    'Mortgage Registration',
+    tx_date:    '04/02/2024',
+    tx_date_iso:'2024-02-04',
+    amount_aed: 1000000,
+  }];
+  const sfRow = { applicant_name: 'BOB MORTGAGOR' };
+  const r = classifyMatchPublic({ unit_number: 'P-1' }, dldTxs, sfRow, 'WRONG OVERRIDE NAME');
+  assert.equal(r.status, 'MATCH', 'should match BOB MORTGAGOR directly, ignoring override');
+  assert.equal(r.usedOverride, false, 'override should not fire when natural party exists');
+});
+
+test('collectDldBuyers preserves input order for buyers with identical Sell-type and tx_date_iso', () => {
+  const rows = collectDldBuyers([
+    tx('FIRST_BUYER',  { txType: 'Sell - Pre registration', txDateIso: '2024-06-01' }),
+    tx('SECOND_BUYER', { txType: 'Sell - Pre registration', txDateIso: '2024-06-01' }),
+    tx('THIRD_BUYER',  { txType: 'Sell - Pre registration', txDateIso: '2024-06-01' }),
+  ]);
+  assert.deepEqual(rows.map(r => r.name), ['FIRST_BUYER', 'SECOND_BUYER', 'THIRD_BUYER']);
+});
