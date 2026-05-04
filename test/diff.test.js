@@ -4,7 +4,7 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 const { migrateSchema } = require('../src/db');
-const { diffProject, pickBaseline } = require('../src/diff');
+const { diffProject, pickBaseline, summarizeDiff } = require('../src/diff');
 
 const SCHEMA_SQL = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
 
@@ -153,4 +153,36 @@ test('pickBaseline with since returns no-baseline-before-date when project has n
   const pid = insertProject(db, 'PB-E');
   const r = pickBaseline(db, pid, { since: '2026-03-15' });
   assert.equal(r.status, 'no-baseline-before-date');
+});
+
+test('AREA_CHANGED and NEW_TX still emitted across snapshots', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'Eps');
+  const sOld = insertSnapshot(db, pid, { snapshotDate: '2026-01-01', importedAt: '2026-01-01 10:00:00' });
+  const uOld = insertUnit(db, sOld, pid, { unitNumber: 'P-101', netArea: 100, unitType: 'Apt' });
+  insertTx(db, uOld, sOld, pid, { partyName: 'Alice', txType: 'Sell', txDate: '2026-01-01', amountAed: 1000000 });
+
+  const sNew = insertSnapshot(db, pid, { snapshotDate: '2026-02-01', importedAt: '2026-02-01 10:00:00' });
+  const uNew = insertUnit(db, sNew, pid, { unitNumber: 'P-101', netArea: 110, unitType: 'Apt' });
+  insertTx(db, uNew, sNew, pid, { partyName: 'Alice', txType: 'Sell', txDate: '2026-01-01', amountAed: 1000000 });
+  insertTx(db, uNew, sNew, pid, { partyName: 'Bob',   txType: 'Sell', txDate: '2026-02-01', amountAed: 2000000 });
+
+  const result = diffProject(db, pid);
+  const types = result.rows.map(r => r.change_type).sort();
+  assert.deepEqual(types, ['AREA_CHANGED', 'NEW_TX']);
+  assert.deepEqual(result.hiddenMissingCount, { units: 0, txs: 0 });
+});
+
+test('summarizeDiff over hidden-missing result has no MISSING_* keys', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'Zeta');
+  const sOld = insertSnapshot(db, pid, { snapshotDate: '2026-01-01', importedAt: '2026-01-01 10:00:00' });
+  const u = insertUnit(db, sOld, pid, { unitNumber: 'P-101', netArea: 100 });
+  insertTx(db, u, sOld, pid, { partyName: 'Alice' });
+  insertSnapshot(db, pid, { snapshotDate: '2026-02-01', importedAt: '2026-02-01 10:00:00' });
+
+  const result = diffProject(db, pid);
+  const counts = summarizeDiff(result.rows);
+  assert.equal(counts.MISSING_UNIT, undefined);
+  assert.equal(counts.MISSING_TX, undefined);
 });
