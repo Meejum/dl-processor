@@ -223,20 +223,23 @@ function collectDldBuyers(transactions) {
   // (classifyMatch in Task 3) can treat collectDldBuyers(...).filter(b => b.kind === 'buyer')[0]
   // as the "primary" without rebuilding context.
   const order = { buyer: 0, bank: 1, seller: 2 };
-  out.sort((a, b) => {
-    const k = order[a.kind] - order[b.kind];
+  // Stable tiebreak via captured input index — V8's sort is stable since Node 12,
+  // but recording the index makes the contract explicit. Important when a unit
+  // has joint co-buyers on the same Sell tx with identical tx_date_iso.
+  const indexed = out.map((entry, idx) => ({ entry, idx }));
+  indexed.sort((a, b) => {
+    const k = order[a.entry.kind] - order[b.entry.kind];
     if (k !== 0) return k;
-    if (a.kind !== 'buyer') return 0;
-    // Within buyer kind: prefer Sell-type, then most recent tx_date_iso desc.
-    const aSell = (a.txType || '').toLowerCase() === 'sell' ? 1 : 0;
-    const bSell = (b.txType || '').toLowerCase() === 'sell' ? 1 : 0;
+    if (a.entry.kind !== 'buyer') return a.idx - b.idx;
+    const aSell = (a.entry.txType || '').toLowerCase() === 'sell' ? 1 : 0;
+    const bSell = (b.entry.txType || '').toLowerCase() === 'sell' ? 1 : 0;
     if (aSell !== bSell) return bSell - aSell;
-    const aDate = a.dateIso || '';
-    const bDate = b.dateIso || '';
+    const aDate = a.entry.dateIso || '';
+    const bDate = b.entry.dateIso || '';
     if (aDate !== bDate) return bDate.localeCompare(aDate); // desc
-    return 0;
+    return a.idx - b.idx; // tiebreak: input order
   });
-  return out;
+  return indexed.map(x => x.entry);
 }
 
 // Iterate all 5 slots for forward-compatibility — applicant_2..4 and applicant_details
