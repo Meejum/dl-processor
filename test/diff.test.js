@@ -100,3 +100,57 @@ test('hiddenMissingCount is zero when there are no missing rows', () => {
   assert.equal(result.rows.length, 1, 'expected one AREA_CHANGED row');
   assert.equal(result.rows[0].change_type, 'AREA_CHANGED');
 });
+
+test('pickBaseline with no since returns latest two', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'PB-A');
+  const s1 = insertSnapshot(db, pid, { snapshotDate: '2026-01-01', importedAt: '2026-01-01 10:00:00' });
+  const s2 = insertSnapshot(db, pid, { snapshotDate: '2026-02-01', importedAt: '2026-02-01 10:00:00' });
+
+  const r = pickBaseline(db, pid);
+  assert.equal(r.status, 'ok');
+  assert.equal(r.oldSnap.snapshot_id, s1);
+  assert.equal(r.newSnap.snapshot_id, s2);
+});
+
+test('pickBaseline with since picks newest snapshot before that date as old', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'PB-B');
+  const s1 = insertSnapshot(db, pid, { snapshotDate: '2026-02-01', importedAt: '2026-02-01 10:00:00' });
+  const s2 = insertSnapshot(db, pid, { snapshotDate: '2026-03-01', importedAt: '2026-03-01 10:00:00' });
+  const s3 = insertSnapshot(db, pid, { snapshotDate: '2026-04-01', importedAt: '2026-04-01 10:00:00' });
+
+  const r = pickBaseline(db, pid, { since: '2026-03-15' });
+  assert.equal(r.status, 'ok');
+  assert.equal(r.oldSnap.snapshot_id, s2, 'baseline should be the March snapshot');
+  assert.equal(r.newSnap.snapshot_id, s3, 'latest should still be the April snapshot');
+});
+
+test('pickBaseline with since returns no-baseline-before-date when nothing qualifies', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'PB-C');
+  insertSnapshot(db, pid, { snapshotDate: '2026-04-01', importedAt: '2026-04-01 10:00:00' });
+  insertSnapshot(db, pid, { snapshotDate: '2026-05-01', importedAt: '2026-05-01 10:00:00' });
+
+  const r = pickBaseline(db, pid, { since: '2026-01-01' });
+  assert.equal(r.status, 'no-baseline-before-date');
+  assert.equal(r.oldSnap, null);
+});
+
+test('pickBaseline throws on malformed since', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'PB-D');
+  insertSnapshot(db, pid, { snapshotDate: '2026-04-01', importedAt: '2026-04-01 10:00:00' });
+
+  assert.throws(
+    () => pickBaseline(db, pid, { since: 'not-a-date' }),
+    /invalid --since date/
+  );
+});
+
+test('pickBaseline with since returns no-baseline-before-date when project has no snapshots', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'PB-E');
+  const r = pickBaseline(db, pid, { since: '2026-03-15' });
+  assert.equal(r.status, 'no-baseline-before-date');
+});

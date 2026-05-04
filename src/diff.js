@@ -27,15 +27,44 @@ function latestTwoSnapshots(db, projectId) {
   `).all(projectId);
 }
 
+function isValidIsoDate(s) {
+  if (typeof s !== 'string') return false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const d = new Date(s + 'T00:00:00Z');
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s;
+}
+
 function pickBaseline(db, projectId, { since } = {}) {
-  if (since !== undefined) {
-    throw new Error('pickBaseline: since not yet implemented');
+  if (since === undefined || since === null) {
+    const snaps = latestTwoSnapshots(db, projectId);
+    if (snaps.length < 2) {
+      return { status: 'not-enough-snapshots', oldSnap: null, newSnap: null };
+    }
+    return { status: 'ok', oldSnap: snaps[1], newSnap: snaps[0] };
   }
-  const snaps = latestTwoSnapshots(db, projectId);
-  if (snaps.length < 2) {
-    return { status: 'not-enough-snapshots', oldSnap: null, newSnap: null };
+
+  if (!isValidIsoDate(since)) {
+    throw new Error('invalid --since date: "' + since + '" (expected YYYY-MM-DD)');
   }
-  return { status: 'ok', oldSnap: snaps[1], newSnap: snaps[0] };
+
+  const newSnap = db.prepare(`
+    SELECT * FROM dld_snapshot
+    WHERE project_id = ?
+    ORDER BY imported_at DESC
+    LIMIT 1
+  `).get(projectId);
+
+  const oldSnap = db.prepare(`
+    SELECT * FROM dld_snapshot
+    WHERE project_id = ? AND imported_at < ?
+    ORDER BY imported_at DESC
+    LIMIT 1
+  `).get(projectId, since);
+
+  if (!newSnap || !oldSnap) {
+    return { status: 'no-baseline-before-date', oldSnap: null, newSnap: null };
+  }
+  return { status: 'ok', oldSnap, newSnap };
 }
 
 function loadUnitsWithTx(db, snapshotId) {
@@ -63,7 +92,7 @@ function txKey(t) {
   ].join('|');
 }
 
-function diffProject(db, projectId, { oldSnapshotId, newSnapshotId, includeMissing = false } = {}) {
+function diffProject(db, projectId, { oldSnapshotId, newSnapshotId, includeMissing = false, since } = {}) {
   const project = db.prepare('SELECT * FROM dld_project WHERE project_id = ?').get(projectId);
   if (!project) throw new Error('project not found');
 
@@ -72,10 +101,12 @@ function diffProject(db, projectId, { oldSnapshotId, newSnapshotId, includeMissi
     oldSnap = db.prepare('SELECT * FROM dld_snapshot WHERE snapshot_id = ?').get(oldSnapshotId);
     newSnap = db.prepare('SELECT * FROM dld_snapshot WHERE snapshot_id = ?').get(newSnapshotId);
   } else {
-    const snaps = latestTwoSnapshots(db, projectId);
-    if (snaps.length < 2) return { project, status: 'not-enough-snapshots', snaps, hiddenMissingCount: { units: 0, txs: 0 } };
-    newSnap = snaps[0];
-    oldSnap = snaps[1];
+    const picked = pickBaseline(db, projectId, { since });
+    if (picked.status !== 'ok') {
+      return { project, status: picked.status, snaps: [], hiddenMissingCount: { units: 0, txs: 0 } };
+    }
+    oldSnap = picked.oldSnap;
+    newSnap = picked.newSnap;
   }
 
   const oldUnits = loadUnitsWithTx(db, oldSnap.snapshot_id);
