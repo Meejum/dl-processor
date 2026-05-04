@@ -214,12 +214,28 @@ function collectDldBuyers(transactions) {
       txType,
       txSubtype,
       date:      t.tx_date || null,
+      dateIso:   t.tx_date_iso || null,
       kind:      classifyDldKind(t.party_name)
     };
   });
-  // Order: buyers first, then banks, then sellers. Within a kind, preserve input order.
+  // Order: buyers first (primary = latest 'Sell'-type by tx_date_iso desc), then banks, then sellers.
+  // Within `buyer`, the spec requires the latest-Sell buyer at [0] so downstream consumers
+  // (classifyMatch in Task 3) can treat collectDldBuyers(...).filter(b => b.kind === 'buyer')[0]
+  // as the "primary" without rebuilding context.
   const order = { buyer: 0, bank: 1, seller: 2 };
-  out.sort((a, b) => order[a.kind] - order[b.kind]);
+  out.sort((a, b) => {
+    const k = order[a.kind] - order[b.kind];
+    if (k !== 0) return k;
+    if (a.kind !== 'buyer') return 0;
+    // Within buyer kind: prefer Sell-type, then most recent tx_date_iso desc.
+    const aSell = (a.txType || '').toLowerCase() === 'sell' ? 1 : 0;
+    const bSell = (b.txType || '').toLowerCase() === 'sell' ? 1 : 0;
+    if (aSell !== bSell) return bSell - aSell;
+    const aDate = a.dateIso || '';
+    const bDate = b.dateIso || '';
+    if (aDate !== bDate) return bDate.localeCompare(aDate); // desc
+    return 0;
+  });
   return out;
 }
 

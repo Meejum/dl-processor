@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { collectDldBuyers, collectSfApplicants } = require('../src/compare');
+const { collectDldBuyers } = require('../src/compare');
 
 function tx(partyName, opts = {}) {
   return {
@@ -66,4 +66,27 @@ test('collectDldBuyers handles tx_type with no " - " separator', () => {
   const [r] = collectDldBuyers([tx('A', { txType: 'Owner (no transaction)' })]);
   assert.equal(r.txType, 'Owner (no transaction)');
   assert.equal(r.txSubtype, '');
+});
+
+test('collectDldBuyers places latest Sell-type buyer at index [0]', () => {
+  const rows = collectDldBuyers([
+    tx('OLDER',   { txType: 'Sell - Pre registration', txDateIso: '2024-01-01' }),
+    tx('LATEST',  { txType: 'Sell - Pre registration', txDateIso: '2024-12-31' }),
+    tx('MIDDLE',  { txType: 'Sell - Pre registration', txDateIso: '2024-06-15' }),
+  ]);
+  assert.equal(rows[0].name, 'LATEST');
+  assert.equal(rows[0].kind, 'buyer');
+});
+
+test('collectDldBuyers prefers Sell-type buyers over Owner entries at [0]', () => {
+  const rows = collectDldBuyers([
+    tx('OWNER',   { txType: 'Owner (no transaction)', txDateIso: null }),
+    tx('SELLER',  { txType: 'Sell - Pre registration', txDateIso: '2024-06-01' }),
+  ]);
+  assert.equal(rows[0].name, 'SELLER');
+});
+
+test('collectDldBuyers exposes dateIso on each entry', () => {
+  const [r] = collectDldBuyers([tx('A', { txDateIso: '2024-02-04' })]);
+  assert.equal(r.dateIso, '2024-02-04');
 });
