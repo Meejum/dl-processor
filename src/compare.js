@@ -586,7 +586,10 @@ function compareProject(db, projectId, cachedConfig) {
       match_status:             finalStatus,
       match_reasons:            (cls.reasons || []).join('; '),
       audit_flags:              auditFlags.join('|'),
-      matched_applicant_field:  cls.matchedApplicantField || null
+      match_flags:              Array.from(new Set([...(cls.flags || []), ...auditFlags])),
+      matched_applicant_field:  cls.matchedApplicantField || null,
+      dld_buyers:               collectDldBuyers(dldTxs),
+      sf_applicants:            collectSfApplicants(sfRow)
     });
   }
 
@@ -627,7 +630,10 @@ function compareProject(db, projectId, cachedConfig) {
         match_status:            'SF_ONLY',
         match_reasons:           'no DLD',
         audit_flags:             '',
-        matched_applicant_field: null
+        match_flags:             [],
+        matched_applicant_field: null,
+        dld_buyers:              [],
+        sf_applicants:           collectSfApplicants(b)
       });
     }
   }
