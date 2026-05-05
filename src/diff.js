@@ -1,5 +1,7 @@
 const fs = require('fs');
 const path = require('path');
+const { renderDldBuyersCell, renderSfApplicantsCell, BUYER_CELLS_CSS } = require('./buyer-cells');
+const { collectDldBuyers, collectSfApplicants } = require('./compare');
 
 function csvEscape(v) {
   if (v == null) return '';
@@ -67,6 +69,20 @@ function diffProject(db, projectId, { oldSnapshotId, newSnapshotId } = {}) {
     oldSnap = snaps[1];
   }
 
+  // Load latest SF booking by unit_norm for the project so we can render the SF #
+  // column on each unit row in the diff. Empty Map when no SF data or no mapping.
+  const sfSnap = db.prepare(`SELECT * FROM v_latest_sf_snapshot LIMIT 1`).get();
+  const sfBookingsByUnit = new Map();
+  if (sfSnap) {
+    const mapping = db.prepare(`SELECT * FROM project_mapping WHERE project_id = ?`).get(projectId) || {};
+    if (mapping.sf_sub_project) {
+      const bookings = db.prepare(
+        `SELECT * FROM sf_booking WHERE sf_snapshot_id = ? AND sub_project = ?`
+      ).all(sfSnap.sf_snapshot_id, mapping.sf_sub_project);
+      for (const b of bookings) if (b.unit_norm) sfBookingsByUnit.set(b.unit_norm, b);
+    }
+  }
+
   const oldUnits = loadUnitsWithTx(db, oldSnap.snapshot_id);
   const newUnits = loadUnitsWithTx(db, newSnap.snapshot_id);
   const oldByKey = new Map(oldUnits.map(u => [u.unit_number_norm, u]));
@@ -74,12 +90,19 @@ function diffProject(db, projectId, { oldSnapshotId, newSnapshotId } = {}) {
 
   const rows = [];
   const push = (row) => rows.push(row);
-  const unitRow = (unitNumber, u, n) => ({
-    unit_number:  unitNumber,
-    unit_type:    (n && n.unit_type) || (u && u.unit_type) || null,
-    dld_unit_id:  (n && n.dld_unit_id) || (u && u.dld_unit_id) || null,
-    building:     (n && n.building_name) || (u && u.building_name) || null
-  });
+  const unitRow = (unitNumber, u, n) => {
+    const txs = (n && n.transactions) || (u && u.transactions) || [];
+    const sfKey = (n && n.unit_number_norm) || (u && u.unit_number_norm) || unitNumber;
+    const sfBooking = sfBookingsByUnit.get(sfKey) || null;
+    return {
+      unit_number:   unitNumber,
+      unit_type:     (n && n.unit_type) || (u && u.unit_type) || null,
+      dld_unit_id:   (n && n.dld_unit_id) || (u && u.dld_unit_id) || null,
+      building:      (n && n.building_name) || (u && u.building_name) || null,
+      dld_buyers:    collectDldBuyers(txs),
+      sf_applicants: collectSfApplicants(sfBooking)
+    };
+  };
 
   const allKeys = new Set([...oldByKey.keys(), ...newByKey.keys()]);
   for (const key of allKeys) {
@@ -210,17 +233,21 @@ function writeDiffHtml(outPath, result, counts) {
   const newFile = result.newSnapshot.source_file;
 
   const columns = [
-    { key: 'unit_number',  label: 'Unit',     align: 'left' },
-    { key: 'unit_type',    label: 'Type',     align: 'left' },
-    { key: 'building',     label: 'Building', align: 'left' },
-    { key: 'change_type',  label: 'Change',   align: 'left' },
-    { key: 'category',     label: 'Scope',    align: 'left' },
-    { key: 'old_value',    label: 'Was',      align: 'left' },
-    { key: 'new_value',    label: 'Now',      align: 'left' },
-    { key: 'detail',       label: 'Detail',   align: 'left' }
+    { key: 'unit_number',    label: 'Unit',     align: 'left' },
+    { key: 'unit_type',      label: 'Type',     align: 'left' },
+    { key: 'building',       label: 'Building', align: 'left' },
+    { key: 'change_type',    label: 'Change',   align: 'left' },
+    { key: 'category',       label: 'Scope',    align: 'left' },
+    { key: 'dld_count',      label: 'DLD #',    align: 'center', html: true },
+    { key: 'sf_count',       label: 'SF #',     align: 'center', html: true },
+    { key: 'old_value',      label: 'Was',      align: 'left' },
+    { key: 'new_value',      label: 'Now',      align: 'left' },
+    { key: 'detail',         label: 'Detail',   align: 'left' }
   ];
 
   const renderCell = (col, r) => {
+    if (col.html && col.key === 'dld_count') return renderDldBuyersCell(r.dld_buyers || []);
+    if (col.html && col.key === 'sf_count')  return renderSfApplicantsCell(r.sf_applicants || []);
     const raw = r[col.key];
     let html  = escHtml(raw);
     const cls = [];
@@ -301,6 +328,7 @@ function writeDiffHtml(outPath, result, counts) {
   .badge.amt{background:#2d0d3a;color:#d88eff}
   .empty{color:#777;padding:40px;text-align:center;border:1px dashed #1f252e;border-radius:8px;background:#0d1218}
   footer{margin-top:14px;color:#555;font-size:11px;text-align:right}
+${BUYER_CELLS_CSS}
 </style>
 </head>
 <body>
