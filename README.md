@@ -53,8 +53,12 @@ There are **only two data sources** — DLD GOV (Dubai Land Department) and Sale
                    │ audit    — reconciliation       │
                    └────────────────┬────────────────┘
                                     ▼
-             output/<project>.compare.csv        output/<project>.audit-tasks.csv
-             output/html/<project>.compare.html  output/html/all-projects.compare.html
+             output/compare/<project>.compare.html
+             output/csv/<project>.compare.csv
+             output/csv/<project>.audit-tasks.csv
+             output/csv/<project>.diff.csv
+             output/diff/<project>.diff.html
+             output/dashboard.html   ← cross-project summary
 ```
 
 ### Naming gotcha
@@ -187,8 +191,8 @@ Every run is written to `logs/audit.jsonl`.
 | `node index.js parse [file]`                      | Parse one DLD file, emit JSON + CSV in `output/`, no DB write                          |
 | `node index.js import [file]`                     | Parse + upsert into SQLite as a new snapshot                                          |
 | `node index.js import-sf [file]`                  | Import one SF xlsx (or all in `sf-input/` if no file given)                           |
-| `node index.js compare [name]`                    | Run unit-level DLD↔SF diff; emit per-project + master HTML; audit-tasks CSV           |
-| `node index.js diff [name]`                       | Month-over-month diff of two DLD snapshots for the same project                       |
+| `node index.js compare [name]`                    | Run unit-level DLD↔SF diff; emit per-project HTML, CSV, audit-tasks; writes `output/dashboard.html` |
+| `node index.js diff [name] [--since YYYY-MM-DD] [--show-missing]` | Month-over-month DLD snapshot diff. `--since` picks the baseline by date; `--show-missing` includes units/tx that disappeared. |
 | `node index.js import-overrides <csv>`            | Apply buyer overrides edited in the HTML and exported via the "Overrides" button      |
 | `node index.js area-template [project\|all]`      | Emit per-unit area CSV for staff to fill (`output/area-template-<slug>.csv`)          |
 | `node index.js apply-areas <csv>`                 | Apply filled-in area CSV to `manual_area` table                                       |
@@ -222,7 +226,10 @@ dl-processor/
 ├── sf-input/                  # drop SF .xlsx here (gitignored)
 │
 ├── output/                    # generated CSV/JSON (gitignored)
-│   └── html/                  # generated HTML dashboards
+│   ├── compare/               # per-project <name>.compare.html reports
+│   ├── diff/                  # per-project <name>.diff.html reports
+│   ├── csv/                   # per-project .compare.csv, .diff.csv, .audit-tasks.csv
+│   └── dashboard.html         # cross-project summary (regenerated on every compare run)
 │
 ├── logs/
 │   └── audit.jsonl            # every import/pull/compare/edit/apply (gitignored — PII)
@@ -351,6 +358,8 @@ The per-project `<name>.compare.html` and `all-projects.compare.html` master:
 
 Area columns added in v0.9.14: `Manual SQM`, `Area Δ %`, `Area Δ sqm`. Audit flags chip column shows the active A-codes per row.
 
+Buyer columns added in v0.9.15: `DLD #` (count of DLD buyers on the unit) and `SF #` (count of SF applicants on the booking). These let reviewers spot multi-buyer units at a glance without opening the detail row. The dashboard (`output/dashboard.html`) shows a cross-project summary with MATCH / BUYER MISMATCH / Audit Tasks / A10 / A11 / A12 counts — click a project name to open its compare report directly.
+
 ---
 
 ## Audit-flag reference (A-codes)
@@ -369,8 +378,9 @@ The `audit_flags` column on each row carries zero or more pipe-separated A-codes
 | `A9` | Latest DLD tx is a bank — mortgage flow | Add a manual override with the real buyer |
 | `A10` | Matched via co-applicant (not the SF primary applicant) | None — recorded for audit |
 | `A11` | Area mismatch flagged (soft <threshold, OR hard but row already non-MATCH) | (a) <threshold — spot-check; raise with engineering if systematic. (b) Higher-precedence issue exists — fix that first. |
+| `A12` | Multi-buyer ANY-MATCH — DLD unit has multiple buyers, SF booking name matches any one of them | None — informational; review if needed |
 
-A1–A7 are treated as MATCH-eligible (per v0.9.11) — they upgrade BUYER_MISMATCH rows to MATCH. A8 / A9 still need review. A10 is informational only. A11 fires alongside the row's primary classification — does not change the status by itself.
+A1–A7 are treated as MATCH-eligible (per v0.9.11) — they upgrade BUYER_MISMATCH rows to MATCH. A8 / A9 still need review. A10 is informational only. A11 fires alongside the row's primary classification — does not change the status by itself. A12 is informational — records that the MATCH was achieved by ANY-MATCH logic across multiple DLD buyers.
 
 ---
 
@@ -453,6 +463,45 @@ Ground-truth project table, derived from the current SF snapshot. Use this when 
 ---
 
 ## Changelog
+
+### v0.9.15 (4 May 2026)
+
+Three feature branches merged into master, plus 8 polish fixes.
+
+#### A12 — multi-buyer ANY-MATCH
+
+Compare now handles DLD units where multiple buyers appear across different transactions. When the SF booking name matches any one of the DLD buyers (primary or resale), the row classifies as `MATCH + A12` instead of `BUYER_MISMATCH`. A12 is informational — no action required, but reviewers can filter by `A12` to audit any-match resolutions.
+
+#### Dashboard (`output/dashboard.html`)
+
+A cross-project summary HTML file is written after every `compare` run. Columns: Project (link to compare report), MATCH, BUYER MISMATCH, Audit Tasks, A10, A11, A12. Sortable by column header; filterable by project name. Skipped projects show a badge with the skip reason.
+
+#### Output folder structure
+
+All generated files now land in sub-folders:
+- `output/compare/<name>.compare.html` — per-project HTML compare report
+- `output/diff/<name>.diff.html` — per-project HTML diff report
+- `output/csv/<name>.compare.csv`, `<name>.diff.csv`, `<name>.audit-tasks.csv`
+- `output/dashboard.html` — cross-project summary
+
+#### `diff` command flags
+
+- `--since YYYY-MM-DD` — pick the diff baseline by date (snapshot imported before the given date) rather than always using the second-latest import.
+- `--show-missing` — include units/transactions that disappeared between the two snapshots (hidden by default to reduce noise).
+
+#### HTML buyer columns
+
+`DLD #` and `SF #` columns on the compare HTML report show the count of DLD buyers and SF applicants per row, letting reviewers spot multi-party units without expanding the detail view.
+
+#### Polish fixes (all on master)
+
+- Consistent `[1/5]...[5/5]` step labels in the full-pipeline run.
+- Per-project `try/catch` in `compare` and `diff` CLI — a corrupt project or locked file no longer kills the whole 30-project run.
+- Friendly error message when SF `.xlsx` is open in Excel (`EBUSY`/`EPERM` → "close Excel and re-run").
+- Dashboard sort uses `data-sort-val` on numeric cells — em-dash cells no longer sort as text ahead of numbers.
+- CSV serialization: string arrays (`match_flags`) → pipe-joined; object arrays (`dld_buyers`, `sf_applicants`) → JSON-quoted.
+- SF import deduplication by SHA-256: re-importing the same file is a no-op (returns the existing snapshot ID).
+- Bulk transaction load in `compareProject`: one query per snapshot instead of one query per unit (~30,000 → ~30 queries on a full run).
 
 ### v0.9.14 (1 May 2026)
 
