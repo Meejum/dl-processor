@@ -5,6 +5,12 @@ const { collectDldBuyers, collectSfApplicants } = require('./compare');
 
 function csvEscape(v) {
   if (v == null) return '';
+  if (Array.isArray(v)) {
+    if (v.length === 0) return '';
+    if (v.every(x => typeof x === 'string' || typeof x === 'number')) return v.join('|');
+    const s = JSON.stringify(v);
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
   const s = String(v);
   if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
   return s;
