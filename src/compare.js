@@ -4,6 +4,7 @@ const { expectedSfUnit, applyUnitTransforms } = require('./project-mapping');
 const { getOverridesMapForProject } = require('./overrides');
 const { BANK_PREFIX_RE } = require('./common');
 const { SOBHA_STYLE_CSS, brandBar } = require('./html-styles');
+const { renderDldBuyersCell, renderSfApplicantsCell, BUYER_CELLS_CSS } = require('./buyer-cells');
 
 function csvEscape(v) {
   if (v == null) return '';
@@ -652,6 +653,8 @@ function writeCompareHtml(outPath, project, rows, counts) {
     { key: 'dld_purchase_amount', label: 'DLD Price',        align: 'num'  },
     { key: 'dld_purchase_party',  label: 'DLD Buyer',        align: 'left' },
     { key: 'sf_applicant',        label: 'SF Applicant',     align: 'left' },
+    { key: 'dld_count',           label: 'DLD #',            align: 'center', html: true },
+    { key: 'sf_count',            label: 'SF #',             align: 'center', html: true },
     { key: 'sf_purchase_price',   label: 'SF Price',         align: 'num'  },
     { key: 'price_diff_pct',      label: 'Δ %',              align: 'num'  },
     { key: 'price_diff_aed',      label: 'Δ AED',            align: 'num'  },
@@ -672,6 +675,8 @@ function writeCompareHtml(outPath, project, rows, counts) {
   }
 
   const renderCell = (col, r) => {
+    if (col.html && col.key === 'dld_count') return renderDldBuyersCell(r.dld_buyers || []);
+    if (col.html && col.key === 'sf_count')  return renderSfApplicantsCell(r.sf_applicants || []);
     const raw = r[col.key];
     let html  = escHtml(raw);
     let sortVal = raw == null ? '' : String(raw);
@@ -745,7 +750,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
 <head>
 <meta charset="utf-8">
 <title>${escHtml(project.project_name)} — DLD vs SF · Sobha Realty</title>
-<style>${SOBHA_STYLE_CSS}</style>
+<style>${SOBHA_STYLE_CSS}${BUYER_CELLS_CSS}</style>
 </head>
 <body>
 ${brandBar(generatedAt)}
