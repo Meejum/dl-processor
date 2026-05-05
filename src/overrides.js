@@ -90,10 +90,12 @@ function listOverrides(db, projectId) {
 
 function getOverridesMapForProject(db, projectId) {
   const rows = db.prepare(`
-    SELECT unit_number_norm, actual_buyer FROM manual_override WHERE project_id = ?
+    SELECT unit_number_norm, buyer_name
+    FROM master_data
+    WHERE project_id = ? AND buyer_name IS NOT NULL
   `).all(projectId);
   const map = new Map();
-  for (const r of rows) map.set(r.unit_number_norm, r.actual_buyer);
+  for (const r of rows) map.set(r.unit_number_norm, r.buyer_name);
   return map;
 }
 
