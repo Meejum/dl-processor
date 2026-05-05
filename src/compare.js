@@ -4,6 +4,7 @@ const { expectedSfUnit, applyUnitTransforms, getAreaThreshold } = require('./pro
 const { getOverridesMapForProject } = require('./overrides');
 const { BANK_PREFIX_RE } = require('./common');
 const { SOBHA_STYLE_CSS, brandBar } = require('./html-styles');
+const { renderDldBuyersCell, renderSfApplicantsCell, BUYER_CELLS_CSS } = require('./buyer-cells');
 
 function csvEscape(v) {
   if (v == null) return '';
@@ -190,6 +191,82 @@ function findMatchingApplicant(dldBuyer, sfRow) {
   return null;
 }
 
+function splitTxType(raw) {
+  if (!raw) return { txType: '', txSubtype: '' };
+  const idx = raw.indexOf(' - ');
+  if (idx === -1) return { txType: raw.trim(), txSubtype: '' };
+  return { txType: raw.slice(0, idx).trim(), txSubtype: raw.slice(idx + 3).trim() };
+}
+
+function classifyDldKind(name) {
+  if (!name || !String(name).trim()) return 'seller';
+  if (BANK_PREFIX_RE.test(name)) return 'bank';
+  return 'buyer';
+}
+
+function collectDldBuyers(transactions) {
+  if (!Array.isArray(transactions)) return [];
+  const out = transactions.map(t => {
+    const { txType, txSubtype } = splitTxType(t.tx_type);
+    return {
+      name:      t.party_name || null,
+      areaSqm:   t.ft_share != null ? Number(t.ft_share) : null,
+      amountAed: t.amount_aed != null ? Number(t.amount_aed) : null,
+      txType,
+      txSubtype,
+      date:      t.tx_date || null,
+      dateIso:   t.tx_date_iso || null,
+      kind:      classifyDldKind(t.party_name)
+    };
+  });
+  // Order: buyers first (primary = latest 'Sell'-type by tx_date_iso desc), then banks, then sellers.
+  // Within `buyer`, the spec requires the latest-Sell buyer at [0] so downstream consumers
+  // (classifyMatch in Task 3) can treat collectDldBuyers(...).filter(b => b.kind === 'buyer')[0]
+  // as the "primary" without rebuilding context.
+  const order = { buyer: 0, bank: 1, seller: 2 };
+  // Stable tiebreak via captured input index — V8's sort is stable since Node 12,
+  // but recording the index makes the contract explicit. Important when a unit
+  // has joint co-buyers on the same Sell tx with identical tx_date_iso.
+  const indexed = out.map((entry, idx) => ({ entry, idx }));
+  indexed.sort((a, b) => {
+    const k = order[a.entry.kind] - order[b.entry.kind];
+    if (k !== 0) return k;
+    if (a.entry.kind !== 'buyer') return a.idx - b.idx;
+    const aSell = (a.entry.txType || '').toLowerCase() === 'sell' ? 1 : 0;
+    const bSell = (b.entry.txType || '').toLowerCase() === 'sell' ? 1 : 0;
+    if (aSell !== bSell) return bSell - aSell;
+    const aDate = a.entry.dateIso || '';
+    const bDate = b.entry.dateIso || '';
+    if (aDate !== bDate) return bDate.localeCompare(aDate); // desc
+    return a.idx - b.idx; // tiebreak: input order
+  });
+  return indexed.map(x => x.entry);
+}
+
+// Iterate all 5 slots for forward-compatibility — applicant_2..4 and applicant_details
+// are usually empty today but ops may start populating them. The matching logic
+// and HTML dropdown auto-extend the day they're filled. Do NOT collapse this to
+// just applicant_name without revisiting the spec at
+// docs/superpowers/specs/2026-05-04-multi-buyer-matching-design.md.
+function collectSfApplicants(booking) {
+  if (!booking) return [];
+  const slots = [
+    { role: 'primary',           field: 'applicant_name'    },
+    { role: 'applicant_2',       field: 'applicant_2_name'  },
+    { role: 'applicant_3',       field: 'applicant_3_name'  },
+    { role: 'applicant_4',       field: 'applicant_4_name'  },
+    { role: 'applicant_details', field: 'applicant_details' },
+  ];
+  const out = [];
+  for (const { role, field } of slots) {
+    const raw = booking[field];
+    const name = raw != null ? String(raw).trim() : '';
+    if (!name) continue;
+    out.push({ name, role, kind: 'applicant' });
+  }
+  return out;
+}
+
 function computePriceDelta(dldPrice, sfPrice) {
   if (dldPrice == null || sfPrice == null) return { diff: null, pct: null, direction: null };
   const diff = dldPrice - sfPrice;
@@ -239,26 +316,53 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     priceDelta: { diff: null, pct: null, direction: null },
     nameState: 'none',
     usedOverride: false,
-    matchedApplicantField: null
+    matchedApplicantField: null,
+    flags: []
   };
 
-  const purchase    = pickLatestPurchase(dldTxs);
   const marketPrice = pickLatestMarketPrice(dldTxs);
   const dldPrice    = marketPrice ? marketPrice.amount_aed : null;
   const sfPrice     = sfRow.purchase_price;
   const delta       = computePriceDelta(dldPrice, sfPrice);
 
-  const haveSfName  = !!sfRow.applicant_name;
-  const naturalBuyer = purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name) ? purchase.party_name : null;
-  const dldBuyer = naturalBuyer || overrideBuyer || null;
-  const usedOverride = !naturalBuyer && !!overrideBuyer;
+  // Multi-buyer ANY-MATCH: collect every DLD buyer and every populated SF applicant,
+  // then check if any pairing matches. Emit A12 when the match was found via a
+  // non-clean (i.e. not primary-vs-primary) pairing — see spec
+  // docs/superpowers/specs/2026-05-04-multi-buyer-matching-design.md.
+  const dldBuyersAll  = collectDldBuyers(dldTxs).filter(b => b.kind === 'buyer');
+  const sfApplicants  = collectSfApplicants(sfRow);
+  const dldNamesForMatch = dldBuyersAll.map(b => b.name).filter(Boolean);
 
-  let nameState, matchedApplicantField = null;
-  if (!dldBuyer || !haveSfName) {
+  // Override-only path: fall back to override only when DLD has zero non-bank, non-empty parties.
+  // Deliberate behavior change from pre-A12 logic — see test/compare-multi-buyer.test.js.
+  const usedOverride = dldBuyersAll.length === 0 && !!overrideBuyer;
+  if (usedOverride) dldNamesForMatch.push(overrideBuyer);
+
+  // A10 audit signal: which SF applicant slot did the effective DLD primary match?
+  const effectiveDldPrimary = dldNamesForMatch[0] || null;
+  const matchedApplicantField = effectiveDldPrimary ? findMatchingApplicant(effectiveDldPrimary, sfRow) : null;
+
+  const flags = [];
+
+  let nameState;
+  if (dldNamesForMatch.length === 0 || sfApplicants.length === 0) {
     nameState = 'unknown';
   } else {
-    matchedApplicantField = findMatchingApplicant(dldBuyer, sfRow);
-    nameState = matchedApplicantField ? 'match' : 'mismatch';
+    const cleanPair = namesOverlap(dldNamesForMatch[0], sfApplicants[0].name);
+    const anyPair   = dldNamesForMatch.some(d => sfApplicants.some(s => namesOverlap(d, s.name)));
+    if (cleanPair) {
+      nameState = 'match';
+    } else if (anyPair) {
+      nameState = 'match';
+      flags.push('A12');
+    } else {
+      nameState = 'mismatch';
+    }
+  }
+
+  // A10: DLD primary matched a non-primary SF applicant slot (independent of A12).
+  if (matchedApplicantField && matchedApplicantField !== 'applicant_name') {
+    flags.push('A10');
   }
 
   const priceMeaningful = delta.pct != null && Math.abs(delta.pct) > 1;
@@ -268,18 +372,18 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     if (priceMeaningful) reasons.push('buyer ' + priceTag(delta));
     else                 reasons.push('buyer');
     if (usedOverride) reasons.push('override');
-    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField: null };
+    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField, flags };
   }
 
   if (priceMeaningful) {
     reasons.push(priceTag(delta));
     if (usedOverride) reasons.push('override');
     const status = delta.direction === 'up' ? 'PRICE_UP' : 'PRICE_DOWN';
-    return { status, reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField };
+    return { status, reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField, flags };
   }
 
-  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride, matchedApplicantField };
-  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride, matchedApplicantField };
+  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride, matchedApplicantField, flags };
+  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride, matchedApplicantField, flags };
 }
 
 function compareProject(db, projectId, cachedConfig) {
@@ -483,7 +587,10 @@ function compareProject(db, projectId, cachedConfig) {
       match_status:             finalStatus,
       match_reasons:            (cls.reasons || []).join('; '),
       audit_flags:              auditFlags.join('|'),
-      matched_applicant_field:  cls.matchedApplicantField || null
+      match_flags:              Array.from(new Set([...(cls.flags || []), ...auditFlags])),
+      matched_applicant_field:  cls.matchedApplicantField || null,
+      dld_buyers:               collectDldBuyers(dldTxs),
+      sf_applicants:            collectSfApplicants(sfRow)
     });
   }
 
@@ -524,7 +631,10 @@ function compareProject(db, projectId, cachedConfig) {
         match_status:            'SF_ONLY',
         match_reasons:           'no DLD',
         audit_flags:             '',
-        matched_applicant_field: null
+        match_flags:             [],
+        matched_applicant_field: null,
+        dld_buyers:              [],
+        sf_applicants:           collectSfApplicants(b)
       });
     }
   }
@@ -622,6 +732,8 @@ function writeCompareHtml(outPath, project, rows, counts) {
     { key: 'dld_purchase_amount', label: 'DLD Price',        align: 'num'  },
     { key: 'dld_purchase_party',  label: 'DLD Buyer',        align: 'left' },
     { key: 'sf_applicant',        label: 'SF Applicant',     align: 'left' },
+    { key: 'dld_count',           label: 'DLD #',            align: 'center', html: true },
+    { key: 'sf_count',            label: 'SF #',             align: 'center', html: true },
     { key: 'sf_purchase_price',   label: 'SF Price',         align: 'num'  },
     { key: 'price_diff_pct',      label: 'Δ %',              align: 'num'  },
     { key: 'price_diff_aed',      label: 'Δ AED',            align: 'num'  },
@@ -643,6 +755,8 @@ function writeCompareHtml(outPath, project, rows, counts) {
   }
 
   const renderCell = (col, r) => {
+    if (col.html && col.key === 'dld_count') return renderDldBuyersCell(r.dld_buyers || []);
+    if (col.html && col.key === 'sf_count')  return renderSfApplicantsCell(r.sf_applicants || []);
     const raw = r[col.key];
     let html  = escHtml(raw);
     let sortVal = raw == null ? '' : String(raw);
@@ -733,7 +847,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
 <head>
 <meta charset="utf-8">
 <title>${escHtml(project.project_name)} — DLD vs SF · Sobha Realty</title>
-<style>${SOBHA_STYLE_CSS}</style>
+<style>${SOBHA_STYLE_CSS}${BUYER_CELLS_CSS}</style>
 </head>
 <body>
 ${brandBar(generatedAt)}
@@ -890,4 +1004,4 @@ function writeAuditTasks(outPath, project, rows) {
   return tasks;
 }
 
-module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty };
+module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty, collectDldBuyers, collectSfApplicants, classifyMatchPublic: classifyMatch };

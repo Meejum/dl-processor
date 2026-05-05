@@ -12,10 +12,14 @@ const { importSfSnapshot, readSfWorkbook } = require('./src/salesforce');
 const { buildMappingFor, saveMappingToDb } = require('./src/project-mapping');
 const { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks } = require('./src/compare');
 const { diffProject, summarizeDiff, writeDiffCsv, writeDiffHtml } = require('./src/diff');
+const { buildProjectStat, writeDashboardHtml } = require('./src/dashboard');
 
 const INPUT_DIR    = path.join(__dirname, 'input');
 const SF_INPUT_DIR = path.join(__dirname, 'sf-input');
 const OUTPUT_DIR   = path.join(__dirname, 'output');
+const COMPARE_DIR  = path.join(OUTPUT_DIR, 'compare');
+const DIFF_DIR     = path.join(OUTPUT_DIR, 'diff');
+const CSV_DIR      = path.join(OUTPUT_DIR, 'csv');
 
 function banner() {
   console.log('');
@@ -163,27 +167,36 @@ function cmdCompare(filterProjectName) {
   const configPath = path.join(__dirname, 'config', 'project-mapping.json');
   let cachedConfig = {};
   try { cachedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (_) {}
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  fs.mkdirSync(COMPARE_DIR, { recursive: true });
+  fs.mkdirSync(CSV_DIR, { recursive: true });
+  const dashboardStats = [];
   for (const p of projects) {
     console.log(`  -> ${p.project_name}`);
     const result = compareProject(db, p.project_id, cachedConfig);
     if (result.status !== 'ok') {
       console.log(`     skipped: ${result.status}`);
+      dashboardStats.push(buildProjectStat(p, result, null));
       continue;
     }
     const counts = summarize(result.rows);
     console.log(`     MATCH:${counts.MATCH||0}  PRICE↑:${counts.PRICE_UP||0}  PRICE↓:${counts.PRICE_DOWN||0}  BUYER:${counts.BUYER_MISMATCH||0}  AREA:${counts.AREA_MISMATCH||0}  DLD-only:${counts.DLD_ONLY||0}  SF-only:${counts.SF_ONLY||0}`);
     const base   = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
-    const csvOut = path.join(OUTPUT_DIR, base + '.compare.csv');
-    const htmlOut= path.join(OUTPUT_DIR, base + '.compare.html');
-    const tasksOut = path.join(OUTPUT_DIR, base + '.audit-tasks.csv');
+    const csvOut = path.join(CSV_DIR, base + '.compare.csv');
+    const htmlOut= path.join(COMPARE_DIR, base + '.compare.html');
+    const tasksOut = path.join(CSV_DIR, base + '.audit-tasks.csv');
     writeCompareCsv(csvOut, result.rows);
     writeCompareHtml(htmlOut, p, result.rows, counts);
     const tasks = writeAuditTasks(tasksOut, p, result.rows);
+    dashboardStats.push(buildProjectStat(p, result, tasks.length));
     console.log(`     wrote: ${path.relative(process.cwd(), csvOut)}`);
     console.log(`     wrote: ${path.relative(process.cwd(), htmlOut)}`);
     console.log(`     wrote: ${path.relative(process.cwd(), tasksOut)}  (${tasks.length} audit tasks)`);
     console.log('');
+  }
+  if (dashboardStats.length > 0) {
+    const dashOut = path.join(OUTPUT_DIR, 'dashboard.html');
+    writeDashboardHtml(dashOut, dashboardStats);
+    console.log(`  wrote dashboard: ${path.relative(process.cwd(), dashOut)}`);
   }
   db.close();
 }
@@ -222,7 +235,8 @@ function cmdDiff(rest) {
       : `SELECT * FROM dld_project`
   ).all(...(opts.name ? [opts.name] : []));
   if (projects.length === 0) { console.log('  no projects in DB'); db.close(); return; }
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  fs.mkdirSync(DIFF_DIR, { recursive: true });
+  fs.mkdirSync(CSV_DIR, { recursive: true });
 
   const totals = { new: 0, changed: 0, hidden: 0, projects: 0 };
 
@@ -280,8 +294,8 @@ function cmdDiff(rest) {
     }
 
     const base = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
-    const csvOut  = path.join(OUTPUT_DIR, base + '.diff.csv');
-    const htmlOut = path.join(OUTPUT_DIR, base + '.diff.html');
+    const csvOut  = path.join(CSV_DIR, base + '.diff.csv');
+    const htmlOut = path.join(DIFF_DIR, base + '.diff.html');
     writeDiffCsv(csvOut, result);
     writeDiffHtml(htmlOut, result, counts);
     console.log(`     wrote     :  ${path.relative(process.cwd(), csvOut)}`);
