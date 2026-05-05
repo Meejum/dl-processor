@@ -69,14 +69,17 @@ function writeDashboardHtml(outPath, stats) {
     const statusBadge = s.hasCompare
       ? ''
       : `<span class="badge skipped">${escHtml(s.status)}</span>`;
+    const num = (v, cls) => v == null
+      ? `<td class="num ${cls}" data-sort-val="-1">—</td>`
+      : `<td class="num ${cls}" data-sort-val="${v}">${fmt(v)}</td>`;
     return `<tr data-search="${escHtml(s.name.toLowerCase())}">` +
       `<td>${link} ${statusBadge}</td>` +
-      `<td class="num good">${fmt(s.matchCount)}</td>` +
-      `<td class="num bad">${fmt(s.buyerCount)}</td>` +
-      `<td class="num warn">${fmt(s.auditCount)}</td>` +
-      `<td class="num flag a10">${fmt(s.a10)}</td>` +
-      `<td class="num flag a11">${fmt(s.a11)}</td>` +
-      `<td class="num flag a12">${fmt(s.a12)}</td>` +
+      num(s.matchCount, 'good') +
+      num(s.buyerCount, 'bad') +
+      num(s.auditCount, 'warn') +
+      num(s.a10, 'flag a10') +
+      num(s.a11, 'flag a11') +
+      num(s.a12, 'flag a12') +
     `</tr>`;
   }).join('\n');
 
@@ -168,12 +171,12 @@ ${rowsHtml}
     th.classList.add(sortDir === 1 ? 'sort-asc' : 'sort-desc');
     const tbody = tbl.querySelector('tbody');
     const sorted = rows.slice().sort((a, b) => {
-      const av = a.children[i].textContent.trim();
-      const bv = b.children[i].textContent.trim();
-      const an = parseFloat(av.replace(/,/g, ''));
-      const bn = parseFloat(bv.replace(/,/g, ''));
+      const av = a.children[i].dataset.sortVal != null ? a.children[i].dataset.sortVal : a.children[i].textContent.trim();
+      const bv = b.children[i].dataset.sortVal != null ? b.children[i].dataset.sortVal : b.children[i].textContent.trim();
+      const an = parseFloat(String(av).replace(/,/g, ''));
+      const bn = parseFloat(String(bv).replace(/,/g, ''));
       if (!isNaN(an) && !isNaN(bn)) return (an - bn) * sortDir;
-      return av.localeCompare(bv) * sortDir;
+      return String(av).localeCompare(String(bv)) * sortDir;
     });
     for (const r of sorted) tbody.appendChild(r);
   }));
