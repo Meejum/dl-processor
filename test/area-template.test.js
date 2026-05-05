@@ -60,20 +60,22 @@ test('applyAreaTemplate upserts rows and skips blanks', () => {
   const result = applyAreaTemplate({ db, csvPath: tmp });
   assert.equal(result.applied, 1);
   assert.equal(result.skipped, 1);
-  const row = db.prepare(`SELECT area_sqm, source_note FROM manual_area WHERE project_id = ? AND unit_number_norm = ?`).get(projectId, '101');
+  const row = db.prepare(`SELECT area_sqm, area_source FROM master_data WHERE project_id = ? AND unit_number_norm = ?`).get(projectId, '101');
   assert.equal(row.area_sqm, 98.5);
-  assert.equal(row.source_note, 'from drawings');
+  assert.equal(row.area_source, 'staff');
   fs.unlinkSync(tmp);
 });
 
 test('applyAreaTemplate updates an existing row on re-apply', () => {
   const { db, projectId } = fixtureDb();
-  db.prepare(`INSERT INTO manual_area (project_id, unit_number_norm, area_sqm) VALUES (?, ?, ?)`).run(projectId, '101', 50);
+  // Pre-seed via master_data so the re-apply overwrites it (upsert semantics).
+  const { upsertMasterField } = require('../src/master-data');
+  upsertMasterField(db, projectId, '101', 'area_sqm', 50, 'staff');
   const tmp = path.join(os.tmpdir(), 'apply-' + Date.now() + '.csv');
   fs.writeFileSync(tmp, 'project,unit_number,area_sqm\r\nP1,101,77\r\n', 'utf8');
   const result = applyAreaTemplate({ db, csvPath: tmp });
   assert.equal(result.applied, 1);
-  const row = db.prepare(`SELECT area_sqm FROM manual_area WHERE project_id = ? AND unit_number_norm = ?`).get(projectId, '101');
+  const row = db.prepare(`SELECT area_sqm FROM master_data WHERE project_id = ? AND unit_number_norm = ?`).get(projectId, '101');
   assert.equal(row.area_sqm, 77);
   fs.unlinkSync(tmp);
 });

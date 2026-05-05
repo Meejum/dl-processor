@@ -4,6 +4,7 @@ const { parse } = require('csv-parse/sync');
 const { expectedSfUnit } = require('./project-mapping');
 const { pickLatestPurchase, findLatestNonBankParty } = require('./compare');
 const { normalizeUnitNumber, BANK_PREFIX_RE } = require('./common');
+const { upsertMasterField } = require('./master-data');
 
 const TEMPLATE_HEADER = [
   'project',
@@ -132,14 +133,6 @@ function applyAreaTemplate({ db, csvPath }) {
     projCache.set(name, row || null);
     return row || null;
   }
-  const upsert = db.prepare(`
-    INSERT INTO manual_area (project_id, unit_number_norm, area_sqm, source_note, updated_at)
-    VALUES (?, ?, ?, ?, datetime('now'))
-    ON CONFLICT(project_id, unit_number_norm) DO UPDATE SET
-      area_sqm    = excluded.area_sqm,
-      source_note = excluded.source_note,
-      updated_at  = datetime('now')
-  `);
   let applied = 0, skipped = 0;
   const warnings = [];
   const tx = db.transaction(() => {
@@ -152,9 +145,8 @@ function applyAreaTemplate({ db, csvPath }) {
       if (!proj) { skipped++; warnings.push('unknown project: ' + projName); continue; }
       const area = Number(areaRaw);
       if (!Number.isFinite(area) || area <= 0) { skipped++; continue; }
-      const note = (r.source_note || '').trim() || null;
       // Fix 5: normalizeUnitNumber matches the same normalisation applied during DLD import
-      upsert.run(proj.project_id, normalizeUnitNumber(unit), area, note);
+      upsertMasterField(db, proj.project_id, normalizeUnitNumber(unit), 'area_sqm', area, 'staff');
       applied++;
     }
   });
