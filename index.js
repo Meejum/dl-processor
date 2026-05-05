@@ -12,6 +12,7 @@ const { importSfSnapshot, readSfWorkbook } = require('./src/salesforce');
 const { buildMappingFor, saveMappingToDb } = require('./src/project-mapping');
 const { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks } = require('./src/compare');
 const { diffProject, summarizeDiff, writeDiffCsv, writeDiffHtml } = require('./src/diff');
+const { buildProjectStat, writeDashboardHtml } = require('./src/dashboard');
 
 const INPUT_DIR    = path.join(__dirname, 'input');
 const SF_INPUT_DIR = path.join(__dirname, 'sf-input');
@@ -165,11 +166,13 @@ function cmdCompare(filterProjectName) {
   try { cachedConfig = JSON.parse(fs.readFileSync(configPath, 'utf8')); } catch (_) {}
   fs.mkdirSync(COMPARE_DIR, { recursive: true });
   fs.mkdirSync(CSV_DIR, { recursive: true });
+  const dashboardStats = [];
   for (const p of projects) {
     console.log(`  -> ${p.project_name}`);
     const result = compareProject(db, p.project_id, cachedConfig);
     if (result.status !== 'ok') {
       console.log(`     skipped: ${result.status}`);
+      dashboardStats.push(buildProjectStat(p, result, null));
       continue;
     }
     const counts = summarize(result.rows);
@@ -181,10 +184,16 @@ function cmdCompare(filterProjectName) {
     writeCompareCsv(csvOut, result.rows);
     writeCompareHtml(htmlOut, p, result.rows, counts);
     const tasks = writeAuditTasks(tasksOut, p, result.rows);
+    dashboardStats.push(buildProjectStat(p, result, tasks.length));
     console.log(`     wrote: ${path.relative(process.cwd(), csvOut)}`);
     console.log(`     wrote: ${path.relative(process.cwd(), htmlOut)}`);
     console.log(`     wrote: ${path.relative(process.cwd(), tasksOut)}  (${tasks.length} audit tasks)`);
     console.log('');
+  }
+  if (dashboardStats.length > 0) {
+    const dashOut = path.join(OUTPUT_DIR, 'dashboard.html');
+    writeDashboardHtml(dashOut, dashboardStats);
+    console.log(`  wrote dashboard: ${path.relative(process.cwd(), dashOut)}`);
   }
   db.close();
 }
