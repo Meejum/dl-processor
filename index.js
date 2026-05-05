@@ -358,12 +358,12 @@ function cmdStatus() {
 }
 
 function cmdAll() {
-  console.log('  [1/4] parse + import DLD files from input/');
+  console.log('  [1/5] parse + import DLD files from input/');
   const dldTargets = listFiles(INPUT_DIR, ['.xps', '.csv']);
   if (dldTargets.length === 0) console.log('     (no DLD files)');
   else cmdImport(dldTargets);
 
-  console.log('  [2/4] import Salesforce files from sf-input/');
+  console.log('  [2/5] import Salesforce files from sf-input/');
   const sfTargets = listFiles(SF_INPUT_DIR, ['.xlsx']);
   if (sfTargets.length === 0) console.log('     (no SF files)');
   else cmdImportSf(sfTargets);
