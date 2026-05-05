@@ -284,15 +284,10 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     flags: []
   };
 
-  const purchase    = pickLatestPurchase(dldTxs);
   const marketPrice = pickLatestMarketPrice(dldTxs);
   const dldPrice    = marketPrice ? marketPrice.amount_aed : null;
   const sfPrice     = sfRow.purchase_price;
   const delta       = computePriceDelta(dldPrice, sfPrice);
-
-  const haveSfName  = !!sfRow.applicant_name;
-  const naturalBuyer = purchase && purchase.party_name && !BANK_PREFIX_RE.test(purchase.party_name) ? purchase.party_name : null;
-  const dldBuyer = naturalBuyer || overrideBuyer || null;
 
   // Multi-buyer ANY-MATCH: collect every DLD buyer and every populated SF applicant,
   // then check if any pairing matches. Emit A12 when the match was found via a
