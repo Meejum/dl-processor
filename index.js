@@ -34,8 +34,11 @@ function usage() {
   console.log('  node index.js diff     [name] [--since YYYY-MM-DD] [--show-missing]  month-over-month DLD snapshot diff');
   console.log('  node index.js projects         list projects stored in DB');
   console.log('  node index.js status           overview');
+  console.log('  node index.js audit                audit DB state + area coverage');
   console.log('  node index.js import-audit <xlsx>   import the team\'s audit workbook');
   console.log('  node index.js audit-delta [name]    cross-check tool vs auditor');
+  console.log('  node index.js area-template [project|all]   emit per-unit area CSV for staff to fill');
+  console.log('  node index.js apply-areas   <csv>            apply filled-in area CSV to manual_area');
   console.log('');
   console.log('Drop DLD .xps/.csv into input/ and SF .xlsx into sf-input/, then run with no args.');
 }
@@ -169,7 +172,7 @@ function cmdCompare(filterProjectName) {
       continue;
     }
     const counts = summarize(result.rows);
-    console.log(`     MATCH:${counts.MATCH||0}  PRICE↑:${counts.PRICE_UP||0}  PRICE↓:${counts.PRICE_DOWN||0}  BUYER:${counts.BUYER_MISMATCH||0}  DLD-only:${counts.DLD_ONLY||0}  SF-only:${counts.SF_ONLY||0}`);
+    console.log(`     MATCH:${counts.MATCH||0}  PRICE↑:${counts.PRICE_UP||0}  PRICE↓:${counts.PRICE_DOWN||0}  BUYER:${counts.BUYER_MISMATCH||0}  AREA:${counts.AREA_MISMATCH||0}  DLD-only:${counts.DLD_ONLY||0}  SF-only:${counts.SF_ONLY||0}`);
     const base   = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
     const csvOut = path.join(OUTPUT_DIR, base + '.compare.csv');
     const htmlOut= path.join(OUTPUT_DIR, base + '.compare.html');
@@ -403,6 +406,13 @@ function main() {
   if (cmd === 'projects') { cmdProjects(); return; }
   if (cmd === 'status')   { cmdStatus();   return; }
 
+  if (cmd === 'audit') {
+    const { runAudit } = require('./src/audit-report');
+    const db = openDb();
+    try { runAudit({ db }); } finally { db.close(); }
+    return;
+  }
+
   if (cmd === 'import-audit') {
     const filePath = process.argv[3];
     if (!filePath) { console.error('usage: import-audit <xlsx-file>'); process.exit(1); }
@@ -438,6 +448,49 @@ function main() {
         }
       }
       console.log('     totals — agree:' + res.summary.AGREE_MATCH + '  tool-flagged:' + res.summary.TOOL_STRICTER + '  manual-only:' + res.summary.MANUAL_ONLY + '  tool-only:' + res.summary.DL_ONLY);
+    } finally { db.close(); }
+    return;
+  }
+
+  if (cmd === 'area-template') {
+    const projectFilter = process.argv[3] && process.argv[3] !== 'all' ? process.argv[3] : null;
+    const { generateAreaTemplate } = require('./src/area-template');
+    const { openDb } = require('./src/db');
+    const db = openDb();
+    try {
+      const safe = (projectFilter || 'all').replace(/[^A-Za-z0-9_-]+/g, '_');
+      const outPath = path.join(OUTPUT_DIR, 'area-template-' + safe + '.csv');
+      const res = generateAreaTemplate({ db, projectFilter, outPath });
+      console.log('  -> wrote ' + path.relative(process.cwd(), outPath));
+      console.log('     ' + res.rowCount + ' rows across ' + res.projects + ' project(s)');
+    } finally { db.close(); }
+    return;
+  }
+
+  if (cmd === 'apply-areas') {
+    const csvPath = process.argv[3];
+    if (!csvPath) { console.error('usage: apply-areas <csv-file>'); process.exit(1); }
+    const { applyAreaTemplate } = require('./src/area-template');
+    const { openDb } = require('./src/db');
+    const db = openDb();
+    try {
+      const res = applyAreaTemplate({ db, csvPath });
+      console.log('  -> applied ' + res.applied + ' rows; skipped ' + res.skipped);
+      for (const w of res.warnings.slice(0, 20)) console.log('     warn: ' + w);
+      // Append an audit-log entry so the monthly audit trail stays complete.
+      try {
+        const logsDir = path.join(__dirname, 'logs');
+        fs.mkdirSync(logsDir, { recursive: true });
+        const entry = JSON.stringify({
+          ts:      new Date().toISOString(),
+          command: 'apply-areas',
+          source:  csvPath,
+          applied: res.applied,
+          skipped: res.skipped,
+          warnings: res.warnings.length
+        });
+        fs.appendFileSync(path.join(logsDir, 'audit.jsonl'), entry + '\n', 'utf8');
+      } catch (_) { /* never let audit-log failure break the user-facing command */ }
     } finally { db.close(); }
     return;
   }

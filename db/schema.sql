@@ -150,15 +150,29 @@ CREATE TABLE IF NOT EXISTS manual_override (
 CREATE INDEX IF NOT EXISTS idx_override_proj_unit ON manual_override(project_id, unit_number_norm);
 
 CREATE TABLE IF NOT EXISTS project_mapping (
-  project_id     INTEGER PRIMARY KEY REFERENCES dld_project ON DELETE CASCADE,
-  sf_sub_project TEXT,
-  sf_unit_prefix TEXT,
-  sf_project     TEXT,
-  match_scope    TEXT NOT NULL DEFAULT 'sub_project',
-  source         TEXT NOT NULL DEFAULT 'auto',
-  notes          TEXT,
-  updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  project_id          INTEGER PRIMARY KEY REFERENCES dld_project ON DELETE CASCADE,
+  sf_sub_project      TEXT,
+  sf_unit_prefix      TEXT,
+  sf_project          TEXT,
+  match_scope         TEXT NOT NULL DEFAULT 'sub_project',
+  source              TEXT NOT NULL DEFAULT 'auto',
+  notes               TEXT,
+  area_threshold_pct  REAL,
+  updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE TABLE IF NOT EXISTS manual_area (
+  manual_area_id    INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id        INTEGER NOT NULL REFERENCES dld_project ON DELETE CASCADE,
+  unit_number_norm  TEXT NOT NULL,
+  area_sqm          REAL NOT NULL,
+  source_note       TEXT,
+  entered_by        TEXT,
+  created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at        TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(project_id, unit_number_norm)
+);
+CREATE INDEX IF NOT EXISTS idx_manual_area_proj_unit ON manual_area(project_id, unit_number_norm);
 
 CREATE TABLE IF NOT EXISTS manual_audit_snapshot (
   manual_audit_snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,

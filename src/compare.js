@@ -1,6 +1,6 @@
 const fs = require('fs');
 const path = require('path');
-const { expectedSfUnit, applyUnitTransforms } = require('./project-mapping');
+const { expectedSfUnit, applyUnitTransforms, getAreaThreshold } = require('./project-mapping');
 const { getOverridesMapForProject } = require('./overrides');
 const { BANK_PREFIX_RE } = require('./common');
 const { SOBHA_STYLE_CSS, brandBar } = require('./html-styles');
@@ -172,6 +172,24 @@ function namesOverlap(a, b) {
   return isSubsetOf(A, B) || isSubsetOf(B, A);
 }
 
+const SF_APPLICANT_FIELDS = [
+  'applicant_name',
+  'applicant_2_name',
+  'applicant_3_name',
+  'applicant_4_name',
+  'applicant_details'
+];
+
+function findMatchingApplicant(dldBuyer, sfRow) {
+  if (!dldBuyer) return null;
+  for (const f of SF_APPLICANT_FIELDS) {
+    const v = sfRow ? sfRow[f] : null;
+    if (!v) continue;
+    if (namesOverlap(dldBuyer, v)) return f;
+  }
+  return null;
+}
+
 function computePriceDelta(dldPrice, sfPrice) {
   if (dldPrice == null || sfPrice == null) return { diff: null, pct: null, direction: null };
   const diff = dldPrice - sfPrice;
@@ -181,6 +199,23 @@ function computePriceDelta(dldPrice, sfPrice) {
     direction = diff > 0 ? 'up' : 'down';
   }
   return { diff, pct, direction };
+}
+
+// Classify the area difference between DLD and the manually-recorded SF area.
+// Returns { kind, diff, pct } where:
+//   kind = 'none'  — insufficient data or difference below noise floor (< 0.5%)
+//   kind = 'flag'  — difference is meaningful but below the per-project threshold
+//   kind = 'hard'  — difference meets or exceeds the per-project threshold (AREA_MISMATCH)
+// diff = dldArea - manualArea (sq m), pct = (diff / manualArea) * 100
+function computeAreaSignal(dldArea, manualArea, thresholdPct) {
+  if (dldArea == null || manualArea == null) return { kind: 'none', diff: null, pct: null };
+  if (!(dldArea > 0) || !(manualArea > 0))   return { kind: 'none', diff: null, pct: null };
+  const diff = dldArea - manualArea;
+  const pct  = (diff / manualArea) * 100;
+  const absPct = Math.abs(pct);
+  if (absPct < 0.5)          return { kind: 'none', diff, pct };
+  if (absPct < thresholdPct) return { kind: 'flag', diff, pct };
+  return { kind: 'hard', diff, pct };
 }
 
 function shortAed(n) {
@@ -203,7 +238,8 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     reasons: ['no SF'],
     priceDelta: { diff: null, pct: null, direction: null },
     nameState: 'none',
-    usedOverride: false
+    usedOverride: false,
+    matchedApplicantField: null
   };
 
   const purchase    = pickLatestPurchase(dldTxs);
@@ -217,9 +253,13 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
   const dldBuyer = naturalBuyer || overrideBuyer || null;
   const usedOverride = !naturalBuyer && !!overrideBuyer;
 
-  let nameState;
-  if (!dldBuyer || !haveSfName) nameState = 'unknown';
-  else nameState = namesOverlap(dldBuyer, sfRow.applicant_name) ? 'match' : 'mismatch';
+  let nameState, matchedApplicantField = null;
+  if (!dldBuyer || !haveSfName) {
+    nameState = 'unknown';
+  } else {
+    matchedApplicantField = findMatchingApplicant(dldBuyer, sfRow);
+    nameState = matchedApplicantField ? 'match' : 'mismatch';
+  }
 
   const priceMeaningful = delta.pct != null && Math.abs(delta.pct) > 1;
   const reasons = [];
@@ -228,18 +268,18 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
     if (priceMeaningful) reasons.push('buyer ' + priceTag(delta));
     else                 reasons.push('buyer');
     if (usedOverride) reasons.push('override');
-    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride };
+    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField: null };
   }
 
   if (priceMeaningful) {
     reasons.push(priceTag(delta));
     if (usedOverride) reasons.push('override');
     const status = delta.direction === 'up' ? 'PRICE_UP' : 'PRICE_DOWN';
-    return { status, reasons, priceDelta: delta, nameState, usedOverride };
+    return { status, reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField };
   }
 
-  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride };
-  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride };
+  if (usedOverride) return { status: 'MATCH', reasons: ['override'], priceDelta: delta, nameState, usedOverride, matchedApplicantField };
+  return { status: 'MATCH', reasons: [], priceDelta: delta, nameState, usedOverride, matchedApplicantField };
 }
 
 function compareProject(db, projectId, cachedConfig) {
@@ -276,6 +316,10 @@ function compareProject(db, projectId, cachedConfig) {
   if (!sfSnap)  return { project, status: 'no-sf-snapshot', rows: [] };
 
   const dldUnits = getUnitsForSnapshot(db, dldSnap.snapshot_id);
+  const areaThresholdPct = getAreaThreshold(mappingRow, cachedConfig, project.project_name);
+  const manualAreaRows = db.prepare(`SELECT unit_number_norm, area_sqm FROM manual_area WHERE project_id = ?`).all(projectId);
+  const manualAreaMap = new Map();
+  for (const r of manualAreaRows) manualAreaMap.set(r.unit_number_norm, r.area_sqm);
   let sfBookings;
   if (scope === 'project') {
     sfBookings = db.prepare(`SELECT * FROM sf_booking WHERE sf_snapshot_id=? AND project=?`)
@@ -381,6 +425,28 @@ function compareProject(db, projectId, cachedConfig) {
     if (matchedViaBuyer) cls.reasons = (cls.reasons || []).concat(['plot match']);
     if (sfRow) matchedSfUnits.add(sfRow.unit_norm);
 
+    // A10: matched via a co-applicant slot (non-primary). Only fires when nameState === 'match'.
+    let auditFlags = [];
+    if (cls.matchedApplicantField && cls.matchedApplicantField !== 'applicant_name') {
+      auditFlags.push('A10');
+      cls.reasons = (cls.reasons || []).concat(['co-applicant:' + cls.matchedApplicantField]);
+    }
+
+    // A11: area cross-check against staff-recorded area in manual_area.
+    const manualAreaSqm = manualAreaMap.get(u.unit_number_norm) ?? null;
+    const areaSig = computeAreaSignal(u.net_area, manualAreaSqm, areaThresholdPct);
+    let finalStatus = cls.status;
+    if (areaSig.kind === 'flag') {
+      auditFlags.push('A11');
+      const sign = areaSig.pct >= 0 ? '+' : '';
+      cls.reasons = (cls.reasons || []).concat(['area Δ ' + sign + areaSig.pct.toFixed(1) + '% (' + sign + Math.round(areaSig.diff) + ' sqm)']);
+    } else if (areaSig.kind === 'hard') {
+      auditFlags.push('A11');
+      const sign = areaSig.pct >= 0 ? '+' : '';
+      cls.reasons = (cls.reasons || []).concat(['area Δ ' + sign + areaSig.pct.toFixed(1) + '% (' + sign + Math.round(areaSig.diff) + ' sqm)']);
+      if (cls.status === 'MATCH') finalStatus = 'AREA_MISMATCH';
+    }
+
     rows.push({
       dld_project:              project.project_name,
       sf_sub_project:           sfSubProject || sfProject || '(' + scope + ')',
@@ -411,8 +477,13 @@ function compareProject(db, projectId, cachedConfig) {
       sf_pre_reg_status:        sfRow?.pre_reg_status || null,
       sf_procedure_number:      sfRow?.procedure_number || null,
       sf_booking_name:          sfRow?.booking_name || null,
-      match_status:             cls.status,
-      match_reasons:            (cls.reasons || []).join('; ')
+      manual_area_sqm:          manualAreaSqm,
+      area_diff_sqm:            areaSig.diff != null ? Math.round(areaSig.diff * 100) / 100 : null,
+      area_diff_pct:            areaSig.pct  != null ? +areaSig.pct.toFixed(2)             : null,
+      match_status:             finalStatus,
+      match_reasons:            (cls.reasons || []).join('; '),
+      audit_flags:              auditFlags.join('|'),
+      matched_applicant_field:  cls.matchedApplicantField || null
     });
   }
 
@@ -447,8 +518,13 @@ function compareProject(db, projectId, cachedConfig) {
         sf_pre_reg_status:   b.pre_reg_status,
         sf_procedure_number: b.procedure_number,
         sf_booking_name:     b.booking_name,
-        match_status:        'SF_ONLY',
-        match_reasons:       'no DLD'
+        manual_area_sqm:         null,
+        area_diff_sqm:           null,
+        area_diff_pct:           null,
+        match_status:            'SF_ONLY',
+        match_reasons:           'no DLD',
+        audit_flags:             '',
+        matched_applicant_field: null
       });
     }
   }
@@ -456,11 +532,12 @@ function compareProject(db, projectId, cachedConfig) {
   // Sort rows by status priority, then numeric unit number within each group
   const STATUS_PRIORITY = {
     BUYER_MISMATCH: 0,
-    DLD_ONLY:       1,
-    SF_ONLY:        2,
-    PRICE_DOWN:     3,
-    PRICE_UP:       4,
-    MATCH:          5
+    AREA_MISMATCH:  1,
+    DLD_ONLY:       2,
+    SF_ONLY:        3,
+    PRICE_DOWN:     4,
+    PRICE_UP:       5,
+    MATCH:          6
   };
   rows.sort((a, b) => {
     const pd = (STATUS_PRIORITY[a.match_status] ?? 9) - (STATUS_PRIORITY[b.match_status] ?? 9);
@@ -471,7 +548,7 @@ function compareProject(db, projectId, cachedConfig) {
   return { project, status: 'ok', rows, dldSnapshotId: dldSnap.snapshot_id, sfSnapshotId: sfSnap.sf_snapshot_id };
 }
 
-const STATUS_ORDER = ['MATCH', 'PRICE_UP', 'PRICE_DOWN', 'BUYER_MISMATCH', 'DLD_ONLY', 'SF_ONLY'];
+const STATUS_ORDER = ['MATCH', 'PRICE_UP', 'PRICE_DOWN', 'BUYER_MISMATCH', 'AREA_MISMATCH', 'DLD_ONLY', 'SF_ONLY'];
 
 function summarize(rows) {
   const counts = {};
@@ -516,6 +593,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
     PRICE_UP:       'up',
     PRICE_DOWN:     'down',
     BUYER_MISMATCH: 'warn',
+    AREA_MISMATCH:  'area',
     DLD_ONLY:       'dld',
     SF_ONLY:        'sf'
   };
@@ -524,6 +602,7 @@ function writeCompareHtml(outPath, project, rows, counts) {
     PRICE_UP:       'PRICE ↑',
     PRICE_DOWN:     'PRICE ↓',
     BUYER_MISMATCH: 'BUYER MISMATCH',
+    AREA_MISMATCH:  'AREA',
     DLD_ONLY:       'DLD-only',
     SF_ONLY:        'SF-only'
   };
@@ -534,6 +613,9 @@ function writeCompareHtml(outPath, project, rows, counts) {
     { key: 'sf_unit',             label: 'SF Unit (actual)', align: 'left' },
     { key: 'dld_unit_type',       label: 'Type',             align: 'left' },
     { key: 'dld_net_area',        label: 'SQM',              align: 'num'  },
+    { key: 'manual_area_sqm',     label: 'Manual SQM',       align: 'num'  },
+    { key: 'area_diff_pct',       label: 'Area Δ %',    align: 'num'  },
+    { key: 'area_diff_sqm',       label: 'Area Δ sqm',  align: 'num'  },
     { key: 'dld_purchase_type',   label: 'DLD Tx',           align: 'left' },
     { key: 'dld_purchase_date',   label: 'DLD Date',         align: 'left' },
     { key: 'days_outstanding',    label: 'Days',             align: 'num'  },
@@ -545,7 +627,8 @@ function writeCompareHtml(outPath, project, rows, counts) {
     { key: 'price_diff_aed',      label: 'Δ AED',            align: 'num'  },
     { key: 'sf_status',           label: 'SF Status',        align: 'left' },
     { key: 'match_status',        label: 'Match',            align: 'left' },
-    { key: 'match_reasons',       label: 'Reason',           align: 'left' }
+    { key: 'match_reasons',       label: 'Reason',           align: 'left' },
+    { key: 'audit_flags',         label: 'Flags',            align: 'left' }
   ];
 
   // Pre-compute days_outstanding for each row (non-MATCH rows only)
@@ -609,6 +692,23 @@ function writeCompareHtml(outPath, project, rows, counts) {
         const n = +raw;
         html = isFinite(n) ? n.toFixed(2).replace(/\.?0+$/, '') : '';
       }
+    } else if (col.key === 'manual_area_sqm') {
+      sortVal = raw == null ? '-1' : String(raw);
+      if (raw == null) { html = ''; }
+      else { const n = +raw; html = isFinite(n) ? n.toFixed(2).replace(/\.?0+$/, '') : ''; }
+    } else if (col.key === 'area_diff_pct') {
+      sortVal = raw == null ? '-99999' : String(raw);
+      if (raw == null || Math.abs(raw) < 0.5) { html = ''; cls.push('flat'); }
+      else { html = (raw > 0 ? '+' : '') + raw.toFixed(1) + '%'; cls.push(raw > 0 ? 'up' : 'down'); }
+    } else if (col.key === 'area_diff_sqm') {
+      sortVal = raw == null ? '-99999' : String(raw);
+      if (raw == null || Math.abs(raw) < 0.01) { html = ''; }
+      else { html = (raw > 0 ? '+' : '') + raw.toFixed(2).replace(/\.?0+$/, ''); cls.push(raw > 0 ? 'up' : 'down'); }
+    } else if (col.key === 'audit_flags') {
+      if (raw) {
+        const flags = String(raw).split('|').filter(Boolean);
+        html = flags.map(f => `<span class="flag-chip">${escHtml(f)}</span>`).join(' ');
+      } else { html = ''; }
     }
     return `<td class="${cls.join(' ')}" data-sort-val="${escHtml(sortVal)}">${html}</td>`;
   };
@@ -650,6 +750,7 @@ ${brandBar(generatedAt)}
   <span class="chip up"   data-status="PRICE_UP">PRICE ↑ ${counts.PRICE_UP || 0} (${pct(counts.PRICE_UP || 0)})</span>
   <span class="chip down" data-status="PRICE_DOWN">PRICE ↓ ${counts.PRICE_DOWN || 0} (${pct(counts.PRICE_DOWN || 0)})</span>
   <span class="chip warn" data-status="BUYER_MISMATCH">BUYER ${counts.BUYER_MISMATCH || 0} (${pct(counts.BUYER_MISMATCH || 0)})</span>
+  <span class="chip area" data-status="AREA_MISMATCH">AREA ${counts.AREA_MISMATCH || 0} (${pct(counts.AREA_MISMATCH || 0)})</span>
   <span class="chip dld"  data-status="DLD_ONLY">DLD-only ${counts.DLD_ONLY || 0} (${pct(counts.DLD_ONLY || 0)})</span>
   <span class="chip sf"   data-status="SF_ONLY">SF-only ${counts.SF_ONLY || 0} (${pct(counts.SF_ONLY || 0)})</span>
   <button class="btn-reset" id="reset">Reset</button>
@@ -756,6 +857,10 @@ function writeAuditTasks(outPath, project, rows) {
         priority = 'high';
         action = `Reconcile ${r.expected_sf_unit}: ${r.match_reasons}`;
         break;
+      case 'AREA_MISMATCH':
+        priority = 'medium';
+        action = `Verify area for ${r.expected_sf_unit}: DLD ${r.dld_net_area} sqm vs recorded ${r.manual_area_sqm} sqm (${r.area_diff_pct >= 0 ? '+' : ''}${(r.area_diff_pct ?? 0).toFixed(1)}%). Confirm the unit number is correct.`;
+        break;
       case 'DLD_ONLY':
         priority = 'high';
         action = `Add SF booking for ${r.expected_sf_unit} (DLD unit ${r.dld_unit_number}, ${r.dld_purchase_type || r.dld_last_tx_type}, ${r.dld_purchase_amount || r.dld_last_amount_aed} AED)`;
@@ -785,4 +890,4 @@ function writeAuditTasks(outPath, project, rows) {
   return tasks;
 }
 
-module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap };
+module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty };

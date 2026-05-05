@@ -56,6 +56,8 @@ const SOBHA_STYLE_CSS = `
   .chip.up   {background:var(--up-bg);   color:var(--up);   border-color:#A9CF82}
   .chip.down {background:var(--down-bg); color:var(--down); border-color:#E8AC9C}
   .chip.warn {background:var(--warn-bg); color:var(--warn); border-color:#E9C26F}
+  .chip.area {background:#f59e0b;        color:#fff;        border-color:#d97706}
+  .chip.area.off {background:rgba(245,158,11,0.25); color:#6b3a04; border-color:#f59e0b}
   .chip.dld  {background:var(--dld-bg);  color:var(--dld);  border-color:#9DB9D2}
   .chip.sf   {background:var(--sf-bg);   color:var(--sf);   border-color:#B79DCD}
   .chip.flat {background:#ECE4D6;        color:#666;        border-color:#D5CCBA}
@@ -85,6 +87,8 @@ const SOBHA_STYLE_CSS = `
   tbody tr.up   td{background:var(--up-bg)  !important}
   tbody tr.down td{background:var(--down-bg)!important}
   tbody tr.warn td{background:var(--warn-bg)!important}
+  tbody tr.area td{background:#fef3c7!important}
+  tbody tr.area td:first-child{background:#f59e0b!important;color:#fff;font-weight:700}
   tbody tr.dld  td{background:var(--dld-bg) !important}
   tbody tr.sf   td{background:var(--sf-bg)  !important}
   tbody tr:hover td{background:#FFEFC9 !important}
@@ -96,6 +100,7 @@ const SOBHA_STYLE_CSS = `
   .badge.up   {background:var(--up-bg);   color:var(--up)}
   .badge.down {background:var(--down-bg); color:var(--down)}
   .badge.warn {background:var(--warn-bg); color:var(--warn)}
+  .badge.area {background:#f59e0b;        color:#fff}
   .badge.dld  {background:var(--dld-bg);  color:var(--dld)}
   .badge.sf   {background:var(--sf-bg);   color:var(--sf)}
   .badge.flat {background:#ECE4D6;        color:#666}
@@ -104,6 +109,7 @@ const SOBHA_STYLE_CSS = `
   .flag-ok  {color:var(--ok);  font-weight:700}
   .flag-no  {color:var(--down);font-weight:700}
   .flag-blank{color:var(--muted)}
+  .flag-chip{display:inline-block;padding:1px 6px;margin-right:2px;background:#6b7280;color:#fff;border-radius:3px;font-size:11px;font-family:monospace}
 
   footer{margin-top:14px;color:var(--muted);font-size:11px;text-align:right;padding:0 4px}
   footer .sig{color:var(--accent-dark);font-weight:700;margin-left:8px}

@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
-const { pickDldFiles, pickSfFile } = require('./file-picker');
+const { pickDldFiles, pickSfFile, pickFile } = require('./file-picker');
 
 const ROOT         = path.join(__dirname, '..');
 const INPUT_DIR    = path.join(ROOT, 'input');
@@ -158,6 +158,8 @@ async function showMenu() {
   menuLine('S', 'Status',                       '');
   menuLine('O', 'Open latest HTML report',       '');
   menuLine('R', 'Reveal output folder',          '');
+  console.log('');
+  menuLine('Y', 'Area template',                 'generate / apply staff-filled SQM CSVs');
   console.log('');
   menuLine('Q', 'Quit',                          '');
   console.log('');
@@ -488,6 +490,68 @@ async function overridesFor(db, project) {
   }
 }
 
+async function doAreaTemplate() {
+  await showHeader(); sectionHeader('AREA TEMPLATE  /  generate & apply SQM CSVs');
+  console.log('');
+  menuLine('1', 'Generate template',   'writes area-template-<project>.csv to output/');
+  menuLine('2', 'Apply filled template', 'reads back a staff-filled CSV, updates DB');
+  menuLine('B', 'Back',                '');
+  console.log('');
+
+  const choice = await askPrompt('    ' + C.magenta + '>>' + C.reset + ' ');
+
+  if (choice === '1') {
+    await showHeader(); sectionHeader('AREA TEMPLATE  /  Generate');
+    const proj = await askPrompt('  Project name (blank = all projects): ');
+    const projectFilter = proj.trim() || null;
+
+    const { generateAreaTemplate } = require('./area-template');
+    const { openDb } = require('./db');
+    const db = openDb();
+    try {
+      const safe = (projectFilter || 'all').replace(/[^A-Za-z0-9_-]+/g, '_');
+      const outPath = path.join(ROOT, 'output', 'area-template-' + safe + '.csv');
+      const res = generateAreaTemplate({ db, projectFilter, outPath });
+      console.log('');
+      console.log('  -> wrote ' + path.relative(process.cwd(), outPath) + ' (' + res.rowCount + ' rows)');
+    } catch (e) {
+      console.log('  ' + C.red + 'error: ' + C.reset + e.message);
+    } finally { db.close(); }
+    await pause();
+
+  } else if (choice === '2') {
+    await showHeader(); sectionHeader('AREA TEMPLATE  /  Apply');
+    console.log('  Select a filled area-template CSV from the output/ folder.');
+    const picks = await pickFile({
+      title: 'Select filled area-template CSV',
+      filter: 'CSV files (*.csv)|*.csv|All files (*.*)|*.*',
+      initialDir: OUTPUT_DIR,
+      searchDir:  OUTPUT_DIR,
+      extensions: ['.csv'],
+      multi: false
+    });
+    if (!picks || picks.length === 0) {
+      console.log('  ' + C.dim + 'cancelled — no file selected' + C.reset);
+      await pause(); return;
+    }
+    const csvPath = picks[0];
+    console.log('  applying: ' + path.basename(csvPath));
+
+    const { applyAreaTemplate } = require('./area-template');
+    const { openDb } = require('./db');
+    const db = openDb();
+    try {
+      const res = applyAreaTemplate({ db, csvPath });
+      console.log('');
+      console.log('  -> applied: ' + res.applied + '  skipped: ' + res.skipped);
+    } catch (e) {
+      console.log('  ' + C.red + 'error: ' + C.reset + e.message);
+    } finally { db.close(); }
+    await pause();
+  }
+  // 'B' or anything else — just return to main menu
+}
+
 function stripAnsi(s) { return String(s).replace(/\x1b\[[0-9;]*m/g, ''); }
 function pad(s, w) { const vis = stripAnsi(s); return s + ' '.repeat(Math.max(0, w - vis.length)); }
 
@@ -519,6 +583,7 @@ async function mainLoop() {
         case 's': await doStatus();      break;
         case 'o': await doOpenReport();  break;
         case 'r': await doReveal();      break;
+        case 'y': await doAreaTemplate(); break;
         case 'q': case 'exit': case 'quit':
           showCursor(); clear();
           console.log('  bye.\n');
