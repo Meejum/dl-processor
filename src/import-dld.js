@@ -1,6 +1,7 @@
 const path = require('path');
 const { normalizeUnitNumber } = require('./common');
 const { toIsoDate, sha256OfFile } = require('./db');
+const { queueMasterDiffs } = require('./pending-change');
 
 function upsertProject(db, project) {
   const existing = db.prepare('SELECT project_id FROM dld_project WHERE project_name = ?').get(project.projectName);
@@ -122,7 +123,11 @@ function importDldSnapshot({ db, data, sourceFormat, sourceFile, storeRawJson = 
     return { projectId, snapshotId, totalUnits, totalTx };
   });
 
-  return run();
+  const result = run();
+  const queueResult = queueMasterDiffs(db, result.snapshotId);
+  result.queuedDiffs = queueResult.queued;
+  result.seededMaster = queueResult.seeded;
+  return result;
 }
 
 module.exports = { importDldSnapshot };
