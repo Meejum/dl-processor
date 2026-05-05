@@ -172,26 +172,31 @@ function cmdCompare(filterProjectName) {
   const dashboardStats = [];
   for (const p of projects) {
     console.log(`  -> ${p.project_name}`);
-    const result = compareProject(db, p.project_id, cachedConfig);
-    if (result.status !== 'ok') {
-      console.log(`     skipped: ${result.status}`);
-      dashboardStats.push(buildProjectStat(p, result, null));
-      continue;
+    try {
+      const result = compareProject(db, p.project_id, cachedConfig);
+      if (result.status !== 'ok') {
+        console.log(`     skipped: ${result.status}`);
+        dashboardStats.push(buildProjectStat(p, result, null));
+        continue;
+      }
+      const counts = summarize(result.rows);
+      console.log(`     MATCH:${counts.MATCH||0}  PRICE↑:${counts.PRICE_UP||0}  PRICE↓:${counts.PRICE_DOWN||0}  BUYER:${counts.BUYER_MISMATCH||0}  AREA:${counts.AREA_MISMATCH||0}  DLD-only:${counts.DLD_ONLY||0}  SF-only:${counts.SF_ONLY||0}`);
+      const base   = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
+      const csvOut = path.join(CSV_DIR, base + '.compare.csv');
+      const htmlOut= path.join(COMPARE_DIR, base + '.compare.html');
+      const tasksOut = path.join(CSV_DIR, base + '.audit-tasks.csv');
+      writeCompareCsv(csvOut, result.rows);
+      writeCompareHtml(htmlOut, p, result.rows, counts);
+      const tasks = writeAuditTasks(tasksOut, p, result.rows);
+      dashboardStats.push(buildProjectStat(p, result, tasks.length));
+      console.log(`     wrote: ${path.relative(process.cwd(), csvOut)}`);
+      console.log(`     wrote: ${path.relative(process.cwd(), htmlOut)}`);
+      console.log(`     wrote: ${path.relative(process.cwd(), tasksOut)}  (${tasks.length} audit tasks)`);
+      console.log('');
+    } catch (e) {
+      console.log(`     error: ${e.message}`);
+      dashboardStats.push(buildProjectStat(p, { status: 'error: ' + e.message }, null));
     }
-    const counts = summarize(result.rows);
-    console.log(`     MATCH:${counts.MATCH||0}  PRICE↑:${counts.PRICE_UP||0}  PRICE↓:${counts.PRICE_DOWN||0}  BUYER:${counts.BUYER_MISMATCH||0}  AREA:${counts.AREA_MISMATCH||0}  DLD-only:${counts.DLD_ONLY||0}  SF-only:${counts.SF_ONLY||0}`);
-    const base   = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
-    const csvOut = path.join(CSV_DIR, base + '.compare.csv');
-    const htmlOut= path.join(COMPARE_DIR, base + '.compare.html');
-    const tasksOut = path.join(CSV_DIR, base + '.audit-tasks.csv');
-    writeCompareCsv(csvOut, result.rows);
-    writeCompareHtml(htmlOut, p, result.rows, counts);
-    const tasks = writeAuditTasks(tasksOut, p, result.rows);
-    dashboardStats.push(buildProjectStat(p, result, tasks.length));
-    console.log(`     wrote: ${path.relative(process.cwd(), csvOut)}`);
-    console.log(`     wrote: ${path.relative(process.cwd(), htmlOut)}`);
-    console.log(`     wrote: ${path.relative(process.cwd(), tasksOut)}  (${tasks.length} audit tasks)`);
-    console.log('');
   }
   if (dashboardStats.length > 0) {
     const dashOut = path.join(OUTPUT_DIR, 'dashboard.html');
@@ -242,70 +247,68 @@ function cmdDiff(rest) {
 
   for (const p of projects) {
     console.log(`  -> ${p.project_name}`);
-    let result;
     try {
-      result = diffProject(db, p.project_id, { since: opts.since, includeMissing: opts.showMissing });
+      const result = diffProject(db, p.project_id, { since: opts.since, includeMissing: opts.showMissing });
+      if (result.status !== 'ok') {
+        const reasons = {
+          'not-enough-snapshots': '(need >= 2 snapshots)',
+          'no-baseline-before-date': `(no snapshot before ${opts.since})`
+        };
+        console.log(`     skipped: ${result.status} ${reasons[result.status] || ''}`.trimEnd());
+        continue;
+      }
+      if (opts.since) result.sinceUsed = opts.since;
+
+      const counts = summarizeDiff(result.rows);
+      const oldLabel = result.oldSnapshot.snapshot_date + ' ' + result.oldSnapshot.source_format;
+      const newLabel = result.newSnapshot.snapshot_date + ' ' + result.newSnapshot.source_format;
+      const sinceTag = opts.since ? ` (--since ${opts.since})` : '';
+
+      const newUnits   = counts.NEW_UNIT   || 0;
+      const newTxs     = counts.NEW_TX     || 0;
+      const newTotal   = newUnits + newTxs;
+      const changedAmt = counts.AMOUNT_CHANGED   || 0;
+      const changedAr  = counts.AREA_CHANGED     || 0;
+      const changedTy  = counts.UNIT_TYPE_CHANGED|| 0;
+      const changedTot = changedAmt + changedAr + changedTy;
+      const missingU   = counts.MISSING_UNIT || 0;
+      const missingT   = counts.MISSING_TX   || 0;
+      const missingTot = missingU + missingT;
+      const hiddenU    = (result.hiddenMissingCount && result.hiddenMissingCount.units) || 0;
+      const hiddenT    = (result.hiddenMissingCount && result.hiddenMissingCount.txs)   || 0;
+      const hiddenTot  = hiddenU + hiddenT;
+      const totalRows  = result.rows.length;
+
+      console.log(`     baseline  ${oldLabel}${sinceTag}   ->   latest  ${newLabel}`);
+      if (totalRows === 0 && hiddenTot === 0) {
+        console.log('     no changes');
+      } else {
+        console.log(`     new       :  ${newTotal}  (units ${newUnits}, tx ${newTxs})`);
+        console.log(`     changed   :  ${changedTot}  (amount ${changedAmt}, area ${changedAr}, type ${changedTy})`);
+        if (opts.showMissing && missingTot > 0) {
+          console.log(`     missing   :  ${missingTot}  (units ${missingU}, tx ${missingT})`);
+        } else if (!opts.showMissing && hiddenTot > 0) {
+          const noun = hiddenTot === 1 ? 'row' : 'rows';
+          console.log(`     hidden    :  ${hiddenTot} missing ${noun} (use --show-missing to include)`);
+        }
+      }
+
+      const base = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
+      const csvOut  = path.join(CSV_DIR, base + '.diff.csv');
+      const htmlOut = path.join(DIFF_DIR, base + '.diff.html');
+      writeDiffCsv(csvOut, result);
+      writeDiffHtml(htmlOut, result, counts);
+      console.log(`     wrote     :  ${path.relative(process.cwd(), csvOut)}`);
+      console.log(`     wrote     :  ${path.relative(process.cwd(), htmlOut)}`);
+      console.log('');
+
+      totals.projects += 1;
+      totals.new     += newTotal;
+      totals.changed += changedTot;
+      totals.hidden  += hiddenTot;
     } catch (e) {
       console.log(`     error: ${e.message}`);
-      continue;
     }
-    if (result.status !== 'ok') {
-      const reasons = {
-        'not-enough-snapshots': '(need >= 2 snapshots)',
-        'no-baseline-before-date': `(no snapshot before ${opts.since})`
-      };
-      console.log(`     skipped: ${result.status} ${reasons[result.status] || ''}`.trimEnd());
-      continue;
-    }
-    if (opts.since) result.sinceUsed = opts.since;
-
-    const counts = summarizeDiff(result.rows);
-    const oldLabel = result.oldSnapshot.snapshot_date + ' ' + result.oldSnapshot.source_format;
-    const newLabel = result.newSnapshot.snapshot_date + ' ' + result.newSnapshot.source_format;
-    const sinceTag = opts.since ? ` (--since ${opts.since})` : '';
-
-    const newUnits   = counts.NEW_UNIT   || 0;
-    const newTxs     = counts.NEW_TX     || 0;
-    const newTotal   = newUnits + newTxs;
-    const changedAmt = counts.AMOUNT_CHANGED   || 0;
-    const changedAr  = counts.AREA_CHANGED     || 0;
-    const changedTy  = counts.UNIT_TYPE_CHANGED|| 0;
-    const changedTot = changedAmt + changedAr + changedTy;
-    const missingU   = counts.MISSING_UNIT || 0;
-    const missingT   = counts.MISSING_TX   || 0;
-    const missingTot = missingU + missingT;
-    const hiddenU    = (result.hiddenMissingCount && result.hiddenMissingCount.units) || 0;
-    const hiddenT    = (result.hiddenMissingCount && result.hiddenMissingCount.txs)   || 0;
-    const hiddenTot  = hiddenU + hiddenT;
-    const totalRows  = result.rows.length;
-
-    console.log(`     baseline  ${oldLabel}${sinceTag}   ->   latest  ${newLabel}`);
-    if (totalRows === 0 && hiddenTot === 0) {
-      console.log('     no changes');
-    } else {
-      console.log(`     new       :  ${newTotal}  (units ${newUnits}, tx ${newTxs})`);
-      console.log(`     changed   :  ${changedTot}  (amount ${changedAmt}, area ${changedAr}, type ${changedTy})`);
-      if (opts.showMissing && missingTot > 0) {
-        console.log(`     missing   :  ${missingTot}  (units ${missingU}, tx ${missingT})`);
-      } else if (!opts.showMissing && hiddenTot > 0) {
-        const noun = hiddenTot === 1 ? 'row' : 'rows';
-        console.log(`     hidden    :  ${hiddenTot} missing ${noun} (use --show-missing to include)`);
-      }
-    }
-
-    const base = p.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
-    const csvOut  = path.join(CSV_DIR, base + '.diff.csv');
-    const htmlOut = path.join(DIFF_DIR, base + '.diff.html');
-    writeDiffCsv(csvOut, result);
-    writeDiffHtml(htmlOut, result, counts);
-    console.log(`     wrote     :  ${path.relative(process.cwd(), csvOut)}`);
-    console.log(`     wrote     :  ${path.relative(process.cwd(), htmlOut)}`);
-    console.log('');
-
-    totals.projects += 1;
-    totals.new     += newTotal;
-    totals.changed += changedTot;
-    totals.hidden  += hiddenTot;
   }
 
   if (totals.projects > 0) {
