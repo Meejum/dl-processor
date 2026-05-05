@@ -426,6 +426,15 @@ function compareProject(db, projectId, cachedConfig) {
   if (!sfSnap)  return { project, status: 'no-sf-snapshot', rows: [] };
 
   const dldUnits = getUnitsForSnapshot(db, dldSnap.snapshot_id);
+
+  // Bulk-load all transactions for this snapshot (one query instead of one per unit).
+  const txByUnit = new Map();
+  const allTxs = db.prepare(`SELECT * FROM dld_transaction WHERE snapshot_id = ? ORDER BY tx_id`).all(dldSnap.snapshot_id);
+  for (const t of allTxs) {
+    if (!txByUnit.has(t.unit_id)) txByUnit.set(t.unit_id, []);
+    txByUnit.get(t.unit_id).push(t);
+  }
+
   const areaThresholdPct = getAreaThreshold(mappingRow, cachedConfig, project.project_name);
   const manualAreaRows = db.prepare(`SELECT unit_number_norm, area_sqm FROM manual_area WHERE project_id = ?`).all(projectId);
   const manualAreaMap = new Map();
@@ -514,7 +523,7 @@ function compareProject(db, projectId, cachedConfig) {
       buildingTransforms: buildingTransforms
     }, u.building_name);
     let sfRow = expected ? sfByUnit.get(expected) : null;
-    const dldTxs = getTxForUnit(db, u.unit_id);
+    const dldTxs = txByUnit.get(u.unit_id) || [];
     const purchase = pickLatestPurchase(dldTxs) || dldTxs[dldTxs.length - 1] || {};
     const latestTx = dldTxs[dldTxs.length - 1] || {};
 
