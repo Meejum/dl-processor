@@ -228,6 +228,14 @@ function readSfCsv(filePath) {
 }
 
 function importSfRows({ db, rows, generatedAt, sourceFile, sourceSha256 }) {
+  // Dedup: if a snapshot with the same SHA already exists, return it without re-inserting.
+  if (sourceSha256) {
+    const existing = db.prepare('SELECT sf_snapshot_id FROM sf_snapshot WHERE source_sha256 = ?').get(sourceSha256);
+    if (existing) {
+      return { sfSnapshotId: existing.sf_snapshot_id, rowsInserted: 0, generatedAt: null, deduped: true };
+    }
+  }
+
   const insSnap = db.prepare(`
     INSERT INTO sf_snapshot (source_file, source_sha256, generated_at, total_rows)
     VALUES (?, ?, ?, ?)
@@ -266,12 +274,13 @@ function importSfRows({ db, rows, generatedAt, sourceFile, sourceSha256 }) {
 }
 
 function importSfSnapshot({ db, filePath }) {
+  const sha = sha256OfFile(filePath);
   const ext = path.extname(filePath).toLowerCase();
   const { generatedAt, rows } = ext === '.csv' ? readSfCsv(filePath) : readSfWorkbook(filePath);
   return importSfRows({
     db, rows, generatedAt,
     sourceFile: path.basename(filePath),
-    sourceSha256: sha256OfFile(filePath)
+    sourceSha256: sha
   });
 }
 
