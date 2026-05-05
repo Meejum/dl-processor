@@ -353,11 +353,19 @@ async function doAuditDeltaMenu() {
 
 function latestHtmlReport() {
   if (!fs.existsSync(OUTPUT_DIR)) return null;
-  const files = fs.readdirSync(OUTPUT_DIR)
-    .filter(f => f.endsWith('.html'))
-    .map(f => ({ f, t: fs.statSync(path.join(OUTPUT_DIR, f)).mtimeMs }));
-  files.sort((a, b) => b.t - a.t);
-  return files[0] ? path.join(OUTPUT_DIR, files[0].f) : null;
+  const hits = [];
+  const walk = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(full);
+      else if (entry.isFile() && entry.name.endsWith('.html')) {
+        hits.push({ full, t: fs.statSync(full).mtimeMs });
+      }
+    }
+  };
+  walk(OUTPUT_DIR);
+  hits.sort((a, b) => b.t - a.t);
+  return hits[0] ? hits[0].full : null;
 }
 
 async function doOpenReport() {
