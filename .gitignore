@@ -1,10 +1,10 @@
 node_modules/
 .worktrees/
 
-# derived outputs
-output/*.json
-output/*.csv
-output/*.html
+# derived outputs (flat root + subfolders compare/, diff/, csv/, audit-delta/)
+output/**/*.json
+output/**/*.csv
+output/**/*.html
 !output/.gitkeep
 
 # local DB (can contain sensitive unit/buyer data)
