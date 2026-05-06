@@ -159,6 +159,9 @@ Re-running `compare` after any change is cheap — it rebuilds from what's alrea
 [V]  Review pending changes   writes output/csv/pending-changes.csv and opens it
 [B]  Apply pending decisions  reads pending-changes.csv, commits approve/reject decisions
 
+[L]  Last drop                run full pipeline on the newest DLD + SF files
+[Z]  Archive output           snapshot output/ to output/archive/<timestamp>/
+
 [Q]  Quit
 ```
 
@@ -182,6 +185,14 @@ Drives the staff-maintained SQM data flow. Two sub-options:
 
 - **`[1] Generate template`** — emits `output/Changes Template/area-template-<project>.csv` (or `area-template-all.csv`) with one row per DLD unit, pre-populating any existing `master_data.area_sqm` values. Staff fill the `area_sqm` column and (optionally) the `source_note` column.
 - **`[2] Apply filled template`** — reads a filled CSV from `input/Changes Template Input/`; upserts every row whose `area_sqm` is a positive number into `master_data`. Blank rows are skipped silently. Unknown project names skip with a warning. Each apply writes one entry to `logs/audit.jsonl`.
+
+### `[Z] Archive output`
+
+Snapshots the current `output/` tree to `output/archive/<YYYY-MM-DD-HH-MM>/`. Use before re-running on a corrected DLD file when you want to keep the previous run's HTML reports and CSVs. The archive folder is preserved across subsequent runs.
+
+### `[L] Last drop`
+
+One-click full pipeline. Scans `input/` for the newest `.xps`/`.csv` and `sf-input/` for the newest `.xlsx`, shows the picked filenames + dates, and runs the full pipeline (parse → import → SF import → compare → diff) after a single confirmation.
 
 ### `[A] Audit Report`
 
@@ -485,6 +496,24 @@ Ground-truth project table, derived from the current SF snapshot. Use this when 
 ---
 
 ## Changelog
+
+### v0.9.17 (6 May 2026)
+
+Phase A bundle — three small improvements landed on master after the master-data merge.
+
+#### Audit-delta HTML buyer columns
+
+`output/audit-delta/<name>.audit-delta.html` now shows **DLD #** and **SF #** buyer count columns per row, matching the layout used by `compare.html`. Auditors can spot multi-party units in the monthly tool-vs-auditor cross-check without expanding the detail view.
+
+#### `[Z] Archive output` menu entry
+
+New one-click archiving. Copies the current `output/` tree to `output/archive/<YYYY-MM-DD-HH-MM>/`. Run before re-importing a corrected DLD file to keep the previous run's HTML reports and CSVs. Doesn't delete anything.
+
+#### Dashboard test coverage
+
+`test/dashboard.test.js` now exercises `buildProjectStat` and `writeDashboardHtml` end-to-end — synthesized compare results + master-data rows feed the renderer and the test asserts MATCH/BUYER/A10/A11/A12/Pending column counts plus filter+sort attributes.
+
+Test count: 190 → **198**.
 
 ### v0.9.16 (4 May 2026)
 

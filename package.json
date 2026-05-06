@@ -1,6 +1,6 @@
 {
   "name": "dl-processor",
-  "version": "0.4.1",
+  "version": "0.9.17",
   "description": "DL-Processor — reconcile DLD Project Inquiry reports (XPS/CSV) against Salesforce. Parse, snapshot into SQLite, diff, and produce monthly audit tasks.",
   "main": "index.js",
   "bin": {
