@@ -82,8 +82,8 @@ function runAudit({ db, out = process.stdout }) {
   }
 
   // ── Area cross-check coverage ─────────────────────────────────────────────
-  // Shows per-project how many DLD units (latest snapshot) have a manual_area
-  // row, so registrars can see which projects still need area templates filled.
+  // Shows per-project how many DLD units (latest snapshot) have an area_sqm
+  // value in master_data, so registrars can see which projects still need area templates filled.
   const areaCoverageRows = (function () {
     try {
       return db.prepare(`
@@ -93,7 +93,7 @@ function runAudit({ db, out = process.stdout }) {
                   FROM v_dld_unit_latest u
                   WHERE u.project_id = p.project_id
                ) AS dld_units,
-               (SELECT COUNT(*) FROM manual_area ma WHERE ma.project_id = p.project_id) AS area_rows
+               (SELECT COUNT(*) FROM master_data md WHERE md.project_id = p.project_id AND md.area_sqm IS NOT NULL) AS area_rows
         FROM dld_project p
         ORDER BY p.project_name
       `).all();

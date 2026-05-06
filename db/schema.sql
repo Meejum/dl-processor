@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS dld_snapshot (
   imported_at    TEXT NOT NULL DEFAULT (datetime('now')),
   total_units    INTEGER,
   total_tx       INTEGER,
-  raw_json       TEXT,
   UNIQUE(project_id, snapshot_date, source_format)
 );
 
@@ -242,32 +241,61 @@ CREATE VIEW IF NOT EXISTS v_dld_unit_latest AS
   FROM dld_unit u
   JOIN v_latest_dld_snapshot s ON s.snapshot_id = u.snapshot_id;
 
-CREATE VIEW IF NOT EXISTS v_unit_compare AS
-  SELECT
-    p.project_name               AS dld_project,
-    pm.sf_sub_project            AS sf_sub_project,
-    pm.sf_unit_prefix            AS sf_unit_prefix,
-    u.unit_number                AS dld_unit,
-    u.unit_number_norm           AS dld_unit_norm,
-    pm.sf_unit_prefix || '-' || u.unit_number_norm AS expected_sf_unit,
-    b.unit                       AS sf_unit,
-    u.unit_type                  AS dld_unit_type,
-    u.net_area                   AS dld_net_area,
-    b.purchase_price             AS sf_purchase_price,
-    b.dld_amount                 AS sf_dld_amount,
-    b.applicant_name             AS sf_applicant,
-    b.status                     AS sf_status,
-    b.pre_reg_status             AS sf_pre_reg,
-    b.procedure_number           AS sf_procedure_number,
-    b.booking_name               AS sf_booking_name,
-    CASE
-      WHEN b.unit IS NOT NULL THEN 'MATCH'
-      ELSE 'DLD_ONLY'
-    END AS match_status
-  FROM v_dld_unit_latest u
-  JOIN dld_project p ON p.project_id = u.project_id
-  LEFT JOIN project_mapping pm ON pm.project_id = u.project_id
-  LEFT JOIN sf_booking b
-    ON b.sf_snapshot_id = (SELECT sf_snapshot_id FROM v_latest_sf_snapshot)
-   AND b.sub_project = pm.sf_sub_project
-   AND b.unit_norm   = pm.sf_unit_prefix || '-' || u.unit_number_norm;
+-- ─────────────────────────────────────────────────────────────────────
+-- master_data: one row per (project, unit). Wide. Single source of truth
+-- once seeded. Compare reads from here when a row exists, falls back to
+-- DLD's latest snapshot when not.
+-- ─────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS master_data (
+  master_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id           INTEGER NOT NULL REFERENCES dld_project ON DELETE CASCADE,
+  unit_number_norm     TEXT NOT NULL,
+  -- Operational fields:
+  buyer_name           TEXT,
+  purchase_price_aed   REAL,
+  status               TEXT,
+  procedure_number     TEXT,
+  area_sqm             REAL,
+  -- Per-field provenance ('staff' = direct staff edit, 'dld_approved' = DLD proposal that was approved):
+  buyer_source         TEXT CHECK (buyer_source         IN ('staff','dld_approved')),
+  price_source         TEXT CHECK (price_source         IN ('staff','dld_approved')),
+  status_source        TEXT CHECK (status_source        IN ('staff','dld_approved')),
+  procedure_source     TEXT CHECK (procedure_source     IN ('staff','dld_approved')),
+  area_source          TEXT CHECK (area_source          IN ('staff','dld_approved')),
+  -- Per-field decision timestamps (when the value was last set/approved):
+  buyer_decided_at     TEXT,
+  price_decided_at     TEXT,
+  status_decided_at    TEXT,
+  procedure_decided_at TEXT,
+  area_decided_at      TEXT,
+  notes                TEXT,
+  created_at           TEXT NOT NULL DEFAULT (datetime('now')),
+  updated_at           TEXT NOT NULL DEFAULT (datetime('now')),
+  UNIQUE(project_id, unit_number_norm)
+);
+
+CREATE INDEX IF NOT EXISTS idx_master_proj_unit ON master_data(project_id, unit_number_norm);
+
+-- ─────────────────────────────────────────────────────────────────────
+-- pending_change: tall. One row per (unit, field) DLD-proposed change.
+-- Persists forever (audit trail). decision flips pending → approved/rejected.
+-- ─────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS pending_change (
+  change_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  project_id           INTEGER NOT NULL REFERENCES dld_project ON DELETE CASCADE,
+  unit_number_norm     TEXT NOT NULL,
+  field_name           TEXT NOT NULL CHECK (field_name IN
+    ('buyer_name','purchase_price_aed','status','procedure_number','area_sqm')),
+  old_value            TEXT,
+  proposed_value       TEXT,
+  source_snapshot_id   INTEGER REFERENCES dld_snapshot ON DELETE SET NULL,
+  decision             TEXT NOT NULL DEFAULT 'pending'
+                       CHECK (decision IN ('pending','approved','rejected')),
+  decision_notes       TEXT,
+  proposed_at          TEXT NOT NULL DEFAULT (datetime('now')),
+  decided_at           TEXT,
+  decided_by           TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_pending_proj_unit ON pending_change(project_id, unit_number_norm);
+CREATE INDEX IF NOT EXISTS idx_pending_decision  ON pending_change(decision);

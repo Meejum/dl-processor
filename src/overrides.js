@@ -24,14 +24,14 @@ function listBankOnlyUnits(db, projectId) {
            lt.tx_date   AS last_tx_date,
            lt.amount_aed AS last_amount,
            lt.party_name AS last_party,
-           mo.actual_buyer AS override_buyer,
-           mo.notes        AS override_notes,
-           mo.updated_at   AS override_updated
+           md.buyer_name AS override_buyer,
+           md.notes      AS override_notes,
+           md.updated_at AS override_updated
     FROM dld_unit u
     JOIN latest ls ON ls.snapshot_id = u.snapshot_id
     LEFT JOIN dld_building b ON b.building_id = u.building_id
     LEFT JOIN last_tx lt ON lt.unit_id = u.unit_id AND lt.rn = 1
-    LEFT JOIN manual_override mo ON mo.project_id = u.project_id AND mo.unit_number_norm = u.unit_number_norm
+    LEFT JOIN master_data md ON md.project_id = u.project_id AND md.unit_number_norm = u.unit_number_norm
     WHERE u.project_id = ?
       AND lt.party_name IS NOT NULL
       AND (
@@ -48,57 +48,18 @@ function listBankOnlyUnits(db, projectId) {
   `).all(projectId, projectId);
 }
 
-function getOverride(db, projectId, unitNumberNorm) {
-  return db.prepare(`
-    SELECT * FROM manual_override WHERE project_id = ? AND unit_number_norm = ?
-  `).get(projectId, unitNumberNorm);
-}
-
-function setOverride(db, projectId, unitNumberNorm, actualBuyer, notes) {
-  const existing = getOverride(db, projectId, unitNumberNorm);
-  if (existing) {
-    db.prepare(`
-      UPDATE manual_override
-      SET actual_buyer = @buyer, notes = @notes, updated_at = datetime('now')
-      WHERE override_id = @id
-    `).run({ buyer: actualBuyer, notes: notes || null, id: existing.override_id });
-    return existing.override_id;
-  }
-  const info = db.prepare(`
-    INSERT INTO manual_override (project_id, unit_number_norm, actual_buyer, notes)
-    VALUES (?, ?, ?, ?)
-  `).run(projectId, unitNumberNorm, actualBuyer, notes || null);
-  return info.lastInsertRowid;
-}
-
-function deleteOverride(db, projectId, unitNumberNorm) {
-  const info = db.prepare(`
-    DELETE FROM manual_override WHERE project_id = ? AND unit_number_norm = ?
-  `).run(projectId, unitNumberNorm);
-  return info.changes;
-}
-
-function listOverrides(db, projectId) {
-  return db.prepare(`
-    SELECT mo.*, p.project_name
-    FROM manual_override mo
-    JOIN dld_project p ON p.project_id = mo.project_id
-    WHERE mo.project_id = ?
-    ORDER BY mo.unit_number_norm
-  `).all(projectId);
-}
-
 function getOverridesMapForProject(db, projectId) {
   const rows = db.prepare(`
-    SELECT unit_number_norm, actual_buyer FROM manual_override WHERE project_id = ?
+    SELECT unit_number_norm, buyer_name
+    FROM master_data
+    WHERE project_id = ? AND buyer_name IS NOT NULL
   `).all(projectId);
   const map = new Map();
-  for (const r of rows) map.set(r.unit_number_norm, r.actual_buyer);
+  for (const r of rows) map.set(r.unit_number_norm, r.buyer_name);
   return map;
 }
 
 module.exports = {
   listBankOnlyUnits,
-  getOverride, setOverride, deleteOverride, listOverrides,
   getOverridesMapForProject
 };

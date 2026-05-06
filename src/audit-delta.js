@@ -267,7 +267,7 @@ function safeName(s) {
   return String(s || '').replace(/[^A-Za-z0-9_-]+/g, '_');
 }
 
-function runAuditDelta({ db, projectFilter, outDir = path.join(__dirname, '..', 'output') }) {
+function runAuditDelta({ db, projectFilter, outDir = path.join(__dirname, '..', 'output', 'audit-delta') }) {
   const manualSnapshot = db.prepare('SELECT * FROM manual_audit_snapshot ORDER BY manual_audit_snapshot_id DESC LIMIT 1').get();
   if (!manualSnapshot) {
     throw new Error('runAuditDelta: no manual_audit_snapshot found. Run import-audit first.');

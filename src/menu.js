@@ -4,6 +4,7 @@ const path = require('path');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { pickDldFiles, pickSfFile, pickFile } = require('./file-picker');
+const { upsertMasterField } = require('./master-data');
 
 const ROOT         = path.join(__dirname, '..');
 const INPUT_DIR    = path.join(ROOT, 'input');
@@ -147,9 +148,10 @@ async function showMenu() {
   menuLine('2', 'Import Salesforce',          'pick .xlsx file');
   menuLine('3', 'Compare  (DLD vs SF)',        'writes .compare.csv / .html / audit-tasks');
   menuLine('4', 'Month-over-Month Diff',        'writes .diff.csv / .html');
-  menuLine('5', 'Manual Overrides',              'bank-only units → real buyer');
+  menuLine('5', 'Master Data (staff edits)',     'unit-level buyer overrides');
   menuLine('6', 'FULL PIPELINE (folders)',       'process everything in input/ & sf-input/');
   menuLine('7', 'QUICK AUDIT',                   'pick DLD + SF files, run everything');
+  menuLine('L', 'Last drop',                     'imports the newest file in input/ + sf-input/, then full pipeline');
   console.log('');
   menuLine('A', 'Audit Report',                 'reconciliation summary + per-project mapping');
   menuLine('U', 'Import Audit Workbook',        'pick the team verification xlsx');
@@ -160,6 +162,8 @@ async function showMenu() {
   menuLine('R', 'Reveal output folder',          '');
   console.log('');
   menuLine('Y', 'Area template',                 'generate / apply staff-filled SQM CSVs');
+  menuLine('V', 'Review pending changes',        'writes pending-changes.csv and opens it');
+  menuLine('B', 'Apply pending decisions',       'reads pending-changes.csv, commits decisions');
   console.log('');
   menuLine('Q', 'Quit',                          '');
   console.log('');
@@ -269,6 +273,51 @@ async function doFull() {
   await pause();
 }
 
+async function doLastDrop() {
+  await showHeader(); sectionHeader('LAST DROP  /  newest input file + full pipeline');
+  const inputDir = path.join(ROOT, 'input');
+  const sfDir = path.join(ROOT, 'sf-input');
+  const findNewest = (dir, exts) => {
+    if (!fs.existsSync(dir)) return null;
+    const candidates = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(d => d.isFile() && exts.includes(path.extname(d.name).toLowerCase()))
+      .map(d => ({ name: d.name, full: path.join(dir, d.name), mtime: fs.statSync(path.join(dir, d.name)).mtimeMs }));
+    candidates.sort((a, b) => b.mtime - a.mtime);
+    return candidates[0] || null;
+  };
+  const newestDld = findNewest(inputDir, ['.xps', '.csv']);
+  const newestSf  = findNewest(sfDir,    ['.xlsx', '.xls']);
+
+  if (!newestDld && !newestSf) {
+    console.log('  ' + C.dim + 'no inputs found in input/ or sf-input/' + C.reset);
+    await pause(); return;
+  }
+
+  if (newestDld) {
+    console.log('  newest DLD: ' + path.basename(newestDld.full) + '  (' + new Date(newestDld.mtime).toISOString().slice(0, 10) + ')');
+  } else {
+    console.log('  ' + C.dim + 'no DLD file in input/' + C.reset);
+  }
+  if (newestSf) {
+    console.log('  newest SF:  ' + path.basename(newestSf.full) + '  (' + new Date(newestSf.mtime).toISOString().slice(0, 10) + ')');
+  } else {
+    console.log('  ' + C.dim + 'no SF file in sf-input/' + C.reset);
+  }
+
+  const ok = await askPrompt('  ' + C.green + 'run full pipeline on these? [Y/n]' + C.reset + ' ');
+  if (ok && /^n/i.test(ok.trim())) {
+    console.log('  ' + C.dim + 'cancelled' + C.reset);
+    await pause(); return;
+  }
+
+  // Just delegate to the existing full-pipeline runner. cmdAll picks up
+  // everything in input/ and sf-input/ — there's no per-file selection in
+  // the pipeline today, so "newest" is informational. (The pipeline imports
+  // every file present in input/, which is typically just the newest one.)
+  runNode([]);  // no-arg = full pipeline
+  await pause();
+}
+
 async function doProjects() {
   await showHeader(); sectionHeader('PROJECTS');
   runNode(['projects']);
@@ -355,6 +404,10 @@ async function doAuditDeltaMenu() {
 
 function latestHtmlReport() {
   if (!fs.existsSync(OUTPUT_DIR)) return null;
+  // Prefer the master dashboard when it exists — it's the operational entry
+  // point, not the most-recently-touched per-project file.
+  const dashboardPath = path.join(OUTPUT_DIR, 'dashboard.html');
+  if (fs.existsSync(dashboardPath)) return dashboardPath;
   const hits = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -402,11 +455,11 @@ function loadDb() {
 }
 
 async function doOverrides() {
-  const { listBankOnlyUnits, getOverride, setOverride, deleteOverride } = require('./overrides');
+  const { listBankOnlyUnits } = require('./overrides');
 
   while (true) {
     await showHeader();
-    sectionHeader('MANUAL OVERRIDES  /  bank-only units');
+    sectionHeader('MASTER DATA  /  bank-only units');
 
     let db;
     try { db = loadDb(); }
@@ -438,10 +491,10 @@ async function doOverrides() {
 }
 
 async function overridesFor(db, project) {
-  const { listBankOnlyUnits, setOverride, deleteOverride } = require('./overrides');
+  const { listBankOnlyUnits } = require('./overrides');
   while (true) {
     await showHeader();
-    sectionHeader('OVERRIDES  ·  ' + project.project_name);
+    sectionHeader('MASTER DATA  ·  ' + project.project_name);
     const units = listBankOnlyUnits(db, project.project_id);
     if (units.length === 0) {
       console.log('   no bank-only units in latest snapshot.');
@@ -449,7 +502,7 @@ async function overridesFor(db, project) {
       await pause();
       return;
     }
-    const headers = ['#', 'UNIT', 'BANK (DLD)', 'OVERRIDE BUYER', 'NOTES'];
+    const headers = ['#', 'UNIT', 'BANK (DLD)', 'MASTER BUYER', 'NOTES'];
     const rows = units.map((u, i) => [
       String(i + 1),
       u.unit_number || '',
@@ -477,7 +530,9 @@ async function overridesFor(db, project) {
     if (delMatch) {
       const i = parseInt(delMatch[1], 10) - 1;
       if (i >= 0 && i < units.length) {
-        deleteOverride(db, project.project_id, units[i].unit_number_norm);
+        const u = units[i];
+        db.prepare('DELETE FROM master_data WHERE project_id = ? AND unit_number_norm = ?')
+          .run(project.project_id, u.unit_number_norm);
       }
       continue;
     }
@@ -486,23 +541,24 @@ async function overridesFor(db, project) {
     const u = units[i];
     console.log('');
     console.log('   Unit ' + C.bold + u.unit_number + C.reset + ' · DLD bank: ' + (u.last_party || '—'));
-    if (u.override_buyer) console.log('   current override: ' + u.override_buyer);
+    if (u.override_buyer) console.log('   current master buyer: ' + u.override_buyer);
     const name = await askPrompt('    ' + C.magenta + 'real buyer name' + C.reset + ' (blank = keep, "-" = delete): ');
     if (name === '') continue;
     if (name === '-') {
-      deleteOverride(db, project.project_id, u.unit_number_norm);
+      db.prepare('DELETE FROM master_data WHERE project_id = ? AND unit_number_norm = ?')
+        .run(project.project_id, u.unit_number_norm);
       continue;
     }
     const notes = await askPrompt('    ' + C.magenta + 'notes' + C.reset + ' (optional): ');
-    setOverride(db, project.project_id, u.unit_number_norm, name, notes || null);
+    upsertMasterField(db, project.project_id, u.unit_number_norm, 'buyer_name', name, 'staff');
   }
 }
 
 async function doAreaTemplate() {
   await showHeader(); sectionHeader('AREA TEMPLATE  /  generate & apply SQM CSVs');
   console.log('');
-  menuLine('1', 'Generate template',   'writes area-template-<project>.csv to output/');
-  menuLine('2', 'Apply filled template', 'reads back a staff-filled CSV, updates DB');
+  menuLine('1', 'Generate template',   'writes area-template-<project>.csv to output/Changes Template/');
+  menuLine('2', 'Apply filled template', 'reads back a staff-filled CSV from input/Changes Template Input/');
   menuLine('B', 'Back',                '');
   console.log('');
 
@@ -517,8 +573,10 @@ async function doAreaTemplate() {
     const { openDb } = require('./db');
     const db = openDb();
     try {
+      const templateDir = path.join(ROOT, 'output', 'Changes Template');
+      fs.mkdirSync(templateDir, { recursive: true });
       const safe = (projectFilter || 'all').replace(/[^A-Za-z0-9_-]+/g, '_');
-      const outPath = path.join(ROOT, 'output', 'area-template-' + safe + '.csv');
+      const outPath = path.join(templateDir, 'area-template-' + safe + '.csv');
       const res = generateAreaTemplate({ db, projectFilter, outPath });
       console.log('');
       console.log('  -> wrote ' + path.relative(process.cwd(), outPath) + ' (' + res.rowCount + ' rows)');
@@ -529,12 +587,14 @@ async function doAreaTemplate() {
 
   } else if (choice === '2') {
     await showHeader(); sectionHeader('AREA TEMPLATE  /  Apply');
-    console.log('  Select a filled area-template CSV from the output/ folder.');
+    const inputDir = path.join(ROOT, 'input', 'Changes Template Input');
+    fs.mkdirSync(inputDir, { recursive: true });
+    console.log('  Select a filled area-template CSV from input/Changes Template Input/.');
     const picks = await pickFile({
       title: 'Select filled area-template CSV',
       filter: 'CSV files (*.csv)|*.csv|All files (*.*)|*.*',
-      initialDir: OUTPUT_DIR,
-      searchDir:  OUTPUT_DIR,
+      initialDir: inputDir,
+      searchDir:  inputDir,
       extensions: ['.csv'],
       multi: false
     });
@@ -563,6 +623,26 @@ async function doAreaTemplate() {
 function stripAnsi(s) { return String(s).replace(/\x1b\[[0-9;]*m/g, ''); }
 function pad(s, w) { const vis = stripAnsi(s); return s + ' '.repeat(Math.max(0, w - vis.length)); }
 
+async function doReviewPending() {
+  await showHeader(); sectionHeader('REVIEW PENDING CHANGES');
+  runNode(['review-pending']);
+  const csvPath = path.join(ROOT, 'output', 'csv', 'pending-changes.csv');
+  if (fs.existsSync(csvPath)) {
+    if (process.platform === 'win32') {
+      spawn('cmd.exe', ['/c', 'start', '', csvPath], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', [csvPath], { detached: true, stdio: 'ignore' }).unref();
+    }
+  }
+  await pause();
+}
+
+async function doApplyPending() {
+  await showHeader(); sectionHeader('APPLY PENDING DECISIONS');
+  runNode(['apply-pending']);
+  await pause();
+}
+
 function askOnce(promptText) {
   return new Promise(resolve => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
@@ -584,6 +664,7 @@ async function mainLoop() {
         case '5': await doOverrides();   break;
         case '6': await doFull();        break;
         case '7': await doQuickAudit();  break;
+        case 'l': await doLastDrop();    break;
         case 'a': await doAuditReport();    break;
         case 'u': await doImportAudit();    break;
         case 'd': await doAuditDeltaMenu(); break;
@@ -592,6 +673,8 @@ async function mainLoop() {
         case 'o': await doOpenReport();  break;
         case 'r': await doReveal();      break;
         case 'y': await doAreaTemplate(); break;
+        case 'v': await doReviewPending(); break;
+        case 'b': await doApplyPending(); break;
         case 'q': case 'exit': case 'quit':
           showCursor(); clear();
           console.log('  bye.\n');

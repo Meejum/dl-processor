@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { SOBHA_STYLE_CSS, brandBar, escHtml } = require('./html-styles');
 const { renderDldBuyersCell, renderSfApplicantsCell, BUYER_CELLS_CSS } = require('./buyer-cells');
 const { collectDldBuyers, collectSfApplicants } = require('./compare');
 
@@ -19,10 +20,6 @@ function writeCsv(filePath, header, rows) {
   const lines = [header.join(',')];
   for (const r of rows) lines.push(header.map(h => csvEscape(r[h])).join(','));
   fs.writeFileSync(filePath, lines.join('\r\n') + '\r\n', 'utf8');
-}
-function escHtml(s) {
-  return String(s == null ? '' : s)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 function fmtMoney(v) { return v == null ? '' : Math.round(v).toLocaleString(); }
 
@@ -378,91 +375,85 @@ function writeDiffHtml(outPath, result, counts) {
   const empty = total === 0 ? `<div class="empty">No changes between the two snapshots. DLD data is identical.</div>` : '';
   const generatedAt = new Date().toISOString().replace('T',' ').slice(0,19) + ' UTC';
 
+  const hiddenMetaLine = (() => {
+    const hmc = result.hiddenMissingCount || { units: 0, txs: 0 };
+    const hidden = (hmc.units || 0) + (hmc.txs || 0);
+    if (hidden === 0) return '';
+    const parts = [];
+    if (hmc.units) parts.push(`${hmc.units} unit${hmc.units === 1 ? '' : 's'}`);
+    if (hmc.txs)   parts.push(`${hmc.txs} transaction${hmc.txs === 1 ? '' : 's'}`);
+    return `<div class="meta">${hidden} missing row(s) hidden (${parts.join(' · ')}) — re-run with --show-missing to include</div>`;
+  })();
+
   const html = `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <title>${escHtml(project.project_name)} — Month-over-Month Changes</title>
-<style>
-  *{box-sizing:border-box}
-  body{font:13px/1.4 system-ui,Segoe UI,Arial,sans-serif;margin:0;padding:20px 24px;background:#0b0f14;color:#e6e6e6}
-  h1{margin:0 0 4px;color:#fff;font-size:22px}
-  .meta{color:#888;margin-bottom:14px;font-size:12px}
-  .meta b{color:#ccc}
-  .snaps{display:flex;gap:18px;margin:6px 0 14px;font-size:12px;color:#aaa}
-  .snap{padding:8px 12px;border:1px solid #1b2028;border-radius:6px;background:#0d1218}
-  .snap b{color:#fff}
-  .arrow{color:#555;font-size:20px;align-self:center}
-  .controls{display:flex;gap:8px;margin:12px 0;align-items:center;flex-wrap:wrap}
-  .search{background:#0f141b;color:#fff;border:1px solid #222;padding:8px 12px;border-radius:6px;min-width:320px;font:inherit;outline:none}
-  .search:focus{border-color:#3ea1ff;box-shadow:0 0 0 2px rgba(62,161,255,.18)}
-  .chip{padding:6px 10px;border-radius:20px;font-weight:600;cursor:pointer;transition:filter .15s,opacity .15s;user-select:none;font-size:11px}
-  .chip:hover{filter:brightness(1.25)}
-  .chip.off{opacity:.28;filter:grayscale(.4)}
-  .chip.ok{background:#0d3a1d;color:#4ce38e}
-  .chip.warn{background:#3a2a0d;color:#ffcc55}
-  .chip.dld{background:#0d2d3a;color:#5ad4ff}
-  .chip.amt{background:#2d0d3a;color:#d88eff}
-  .count{color:#888;margin-left:auto;font-variant-numeric:tabular-nums;font-size:12px}
-  .count b{color:#fff}
-  .btn-reset{background:#11161d;color:#aaa;border:1px solid #222;padding:6px 10px;border-radius:6px;cursor:pointer;font:inherit;font-size:12px}
-  .btn-reset:hover{color:#fff;border-color:#333}
-  .table-wrap{overflow-x:auto;border:1px solid #1b2028;border-radius:8px;background:#0d1218}
-  table{width:100%;border-collapse:collapse;font-size:12px;min-width:1100px}
-  thead th{background:#11161d;color:#aaa;font-weight:600;text-align:left;padding:8px 10px;border-bottom:2px solid #1f252e;cursor:pointer;position:sticky;top:0;user-select:none;white-space:nowrap}
-  thead th:hover{color:#fff;background:#151b24}
-  thead th.sort-asc::after{content:"  ↑";color:#4ce38e}
-  thead th.sort-desc::after{content:"  ↓";color:#ffcc55}
-  tbody td{padding:6px 10px;border-bottom:1px solid #1a1f27;vertical-align:top}
-  tbody tr.ok td{background:rgba(76,227,142,.05)}
-  tbody tr.warn td{background:rgba(255,204,85,.06)}
-  tbody tr.dld td{background:rgba(90,212,255,.05)}
-  tbody tr.amt td{background:rgba(216,142,255,.05)}
-  tbody tr:hover td{background:#151b24 !important}
-  tbody tr.hidden{display:none}
-  .badge{display:inline-block;padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600}
-  .badge.ok{background:#0d3a1d;color:#4ce38e}
-  .badge.warn{background:#3a2a0d;color:#ffcc55}
-  .badge.dld{background:#0d2d3a;color:#5ad4ff}
-  .badge.amt{background:#2d0d3a;color:#d88eff}
-  .empty{color:#777;padding:40px;text-align:center;border:1px dashed #1f252e;border-radius:8px;background:#0d1218}
-  footer{margin-top:14px;color:#555;font-size:11px;text-align:right}
+<style>${SOBHA_STYLE_CSS}
+  /* Diff-specific overrides */
+  table { min-width: 1100px; }
+  .snaps{display:flex;gap:14px;margin:6px 0 14px;font-size:12px;flex-wrap:wrap}
+  .snap{padding:8px 12px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--ink-2)}
+  .snap b{color:var(--accent-dark)}
+  .snap small{color:var(--muted)}
+  .arrow{color:var(--border-2);font-size:20px;align-self:center;margin:0 4px}
+  .empty{color:var(--muted);padding:40px;text-align:center;border:1px dashed var(--border);border-radius:8px;background:var(--surface)}
+  td.change-NEW_UNIT, td.change-NEW_TX { color: var(--ok); font-weight: 600; }
+  td.change-AMOUNT_CHANGED { color: var(--up); font-weight: 600; }
+  td.change-AREA_CHANGED, td.change-UNIT_TYPE_CHANGED { color: var(--accent); font-weight: 600; }
+  td.change-MISSING_UNIT, td.change-MISSING_TX { color: var(--muted); font-style: italic; }
+  .chip.amt { background: var(--sf-bg); color: var(--sf); border-color: #B79DCD; }
+  .badge.amt { background: var(--sf-bg); color: var(--sf); }
+  tbody tr.amt td { background: var(--sf-bg) !important; }
 ${BUYER_CELLS_CSS}
 </style>
 </head>
 <body>
-<h1>${escHtml(project.project_name)} — Month-over-Month Diff</h1>
-<div class="meta">${total.toLocaleString()} change row(s) detected between snapshots</div>
-${(() => {
-  const hmc = result.hiddenMissingCount || { units: 0, txs: 0 };
-  const hidden = (hmc.units || 0) + (hmc.txs || 0);
-  if (hidden === 0) return '';
-  const parts = [];
-  if (hmc.units) parts.push(`${hmc.units} unit${hmc.units === 1 ? '' : 's'}`);
-  if (hmc.txs)   parts.push(`${hmc.txs} transaction${hmc.txs === 1 ? '' : 's'}`);
-  return `<div class="meta">${hidden} missing row(s) hidden (${parts.join(' · ')}) — re-run with --show-missing to include</div>`;
-})()}
-<div class="snaps">
-  <div class="snap">PREVIOUS<br><b>${escHtml(oldDate)}</b>${sinceSuffix}<br><small>${escHtml(oldFile)}</small></div>
-  <div class="arrow">→</div>
-  <div class="snap">LATEST<br><b>${escHtml(newDate)}</b><br><small>${escHtml(newFile)}</small></div>
+${brandBar(generatedAt)}
+<div class="page">
+  <div class="title-row">
+    <h1>${escHtml(project.project_name)} — Month-over-Month Diff</h1>
+  </div>
+  <div class="meta">
+    baseline <b>${escHtml(oldDate)}</b>${sinceSuffix}
+    <span class="sep">→</span>
+    latest <b>${escHtml(newDate)}</b>
+    <span class="sep">·</span>
+    <b>${total.toLocaleString()}</b> change row(s)
+  </div>
+  ${hiddenMetaLine}
+  <div class="snaps">
+    <div class="snap">PREVIOUS<br><b>${escHtml(oldDate)}</b>${sinceSuffix}<br><small>${escHtml(oldFile)}</small></div>
+    <div class="arrow">→</div>
+    <div class="snap">LATEST<br><b>${escHtml(newDate)}</b><br><small>${escHtml(newFile)}</small></div>
+  </div>
+  <div class="controls">
+    <input class="search" id="q" placeholder="Filter: unit, change, any text…" autocomplete="off">
+    ${chipsHtml}
+    <button class="btn-reset" id="reset">Reset</button>
+    <span class="count" id="count">— rows</span>
+  </div>
+  ${empty}
+  ${total === 0 ? '' : `<div class="table-wrap">
+  <div class="table-scroll">
+  <table id="tbl">
+  <thead><tr>${headHtml}</tr></thead>
+  <tbody>
+  ${bodyHtml}
+  </tbody>
+  </table>
+  </div>
+  </div>`}
+  <footer>
+    generated ${escHtml(generatedAt)}
+    <span class="sep">·</span>
+    click headers to sort
+    <span class="sep">·</span>
+    click chips to toggle change types
+    <span class="sig">SOBHA REALTY</span>
+  </footer>
 </div>
-<div class="controls">
-  <input class="search" id="q" placeholder="Filter: unit, change, any text…" autocomplete="off">
-  ${chipsHtml}
-  <button class="btn-reset" id="reset">Reset</button>
-  <span class="count" id="count">— rows</span>
-</div>
-${empty}
-${total === 0 ? '' : `<div class="table-wrap">
-<table id="tbl">
-<thead><tr>${headHtml}</tr></thead>
-<tbody>
-${bodyHtml}
-</tbody>
-</table>
-</div>`}
-<footer>generated ${escHtml(generatedAt)} · click headers to sort · click chips to toggle change types</footer>
 <script>
 (function(){
   const tbl = document.getElementById('tbl');

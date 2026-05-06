@@ -13,6 +13,7 @@ const { buildMappingFor, saveMappingToDb } = require('./src/project-mapping');
 const { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks } = require('./src/compare');
 const { diffProject, summarizeDiff, writeDiffCsv, writeDiffHtml } = require('./src/diff');
 const { buildProjectStat, writeDashboardHtml } = require('./src/dashboard');
+const { listPending, applyDecision } = require('./src/pending-change');
 
 const INPUT_DIR    = path.join(__dirname, 'input');
 const SF_INPUT_DIR = path.join(__dirname, 'sf-input');
@@ -20,6 +21,9 @@ const OUTPUT_DIR   = path.join(__dirname, 'output');
 const COMPARE_DIR  = path.join(OUTPUT_DIR, 'compare');
 const DIFF_DIR     = path.join(OUTPUT_DIR, 'diff');
 const CSV_DIR      = path.join(OUTPUT_DIR, 'csv');
+const PARSE_DIR    = path.join(OUTPUT_DIR, 'parse');
+const CHANGES_TEMPLATE_DIR       = path.join(OUTPUT_DIR, 'Changes Template');
+const CHANGES_TEMPLATE_INPUT_DIR = path.join(__dirname, 'input', 'Changes Template Input');
 
 function banner() {
   console.log('');
@@ -31,7 +35,7 @@ function banner() {
 function usage() {
   console.log('Usage:');
   console.log('  node index.js                  full pipeline: parse, import, import SF, compare');
-  console.log('  node index.js parse    [file]  parse XPS/CSV -> JSON+CSV in output/');
+  console.log('  node index.js parse    [file]  parse XPS/CSV -> JSON+CSV in output/parse/');
   console.log('  node index.js import   [file]  parse + store in SQLite');
   console.log('  node index.js import-sf [file] import Salesforce xlsx snapshot');
   console.log('  node index.js compare  [name]  DLD vs SF comparison');
@@ -43,6 +47,8 @@ function usage() {
   console.log('  node index.js audit-delta [name]    cross-check tool vs auditor');
   console.log('  node index.js area-template [project|all]   emit per-unit area CSV for staff to fill');
   console.log('  node index.js apply-areas   <csv>            apply filled-in area CSV to manual_area');
+  console.log('  node index.js review-pending [name]  write pending-changes.csv for review');
+  console.log('  node index.js apply-pending [csv]    apply approve/reject decisions from a filled CSV');
   console.log('');
   console.log('Drop DLD .xps/.csv into input/ and SF .xlsx into sf-input/, then run with no args.');
 }
@@ -81,11 +87,11 @@ function printParseSummary(data) {
 }
 
 function writeOutputFiles(data, sourceFilename) {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  fs.mkdirSync(PARSE_DIR, { recursive: true });
   const base = safeName(data.project.projectName) || path.basename(sourceFilename, path.extname(sourceFilename));
-  const jsonPath = path.join(OUTPUT_DIR, base + '.json');
-  const unitsCsv = path.join(OUTPUT_DIR, base + '.units.csv');
-  const txCsv    = path.join(OUTPUT_DIR, base + '.transactions.csv');
+  const jsonPath = path.join(PARSE_DIR, base + '.json');
+  const unitsCsv = path.join(PARSE_DIR, base + '.units.csv');
+  const txCsv    = path.join(PARSE_DIR, base + '.transactions.csv');
   writeJson({
     source: sourceFilename,
     extractedAt: new Date().toISOString(),
@@ -189,7 +195,7 @@ function cmdCompare(filterProjectName) {
       const result = compareProject(db, p.project_id, cachedConfig);
       if (result.status !== 'ok') {
         console.log(`     skipped: ${result.status}`);
-        dashboardStats.push(buildProjectStat(p, result, null));
+        dashboardStats.push(buildProjectStat(p, result, null, null));
         continue;
       }
       const counts = summarize(result.rows);
@@ -201,14 +207,18 @@ function cmdCompare(filterProjectName) {
       writeCompareCsv(csvOut, result.rows);
       writeCompareHtml(htmlOut, p, result.rows, counts);
       const tasks = writeAuditTasks(tasksOut, p, result.rows);
-      dashboardStats.push(buildProjectStat(p, result, tasks.length));
+      const pendingCount = db.prepare(
+        `SELECT COUNT(*) AS n FROM pending_change
+         WHERE project_id = ? AND decision = 'pending'`
+      ).get(p.project_id).n;
+      dashboardStats.push(buildProjectStat(p, result, tasks.length, pendingCount));
       console.log(`     wrote: ${path.relative(process.cwd(), csvOut)}`);
       console.log(`     wrote: ${path.relative(process.cwd(), htmlOut)}`);
       console.log(`     wrote: ${path.relative(process.cwd(), tasksOut)}  (${tasks.length} audit tasks)`);
       console.log('');
     } catch (e) {
       console.log(`     error: ${e.message}`);
-      dashboardStats.push(buildProjectStat(p, { status: 'error: ' + e.message }, null));
+      dashboardStats.push(buildProjectStat(p, { status: 'error: ' + e.message }, null, null));
     }
   }
   if (dashboardStats.length > 0) {
@@ -394,6 +404,89 @@ function cmdAll() {
   cmdStatus();
 }
 
+function cmdReviewPending(filterProjectName) {
+  const db = openDb();
+  const rows = listPending(db, filterProjectName);
+  if (rows.length === 0) {
+    console.log('  no pending changes');
+    db.close();
+    return;
+  }
+  // Group counts for terminal output.
+  const byProject = new Map();
+  for (const r of rows) {
+    if (!byProject.has(r.project_name)) byProject.set(r.project_name, { total: 0, byField: {} });
+    const slot = byProject.get(r.project_name);
+    slot.total += 1;
+    slot.byField[r.field_name] = (slot.byField[r.field_name] || 0) + 1;
+  }
+  console.log('  pending changes:');
+  for (const [name, slot] of byProject) {
+    const fields = Object.entries(slot.byField).map(([k, v]) => v + ' ' + k.replace('buyer_name', 'buyer').replace('purchase_price_aed', 'price').replace('procedure_number', 'procedure').replace('area_sqm', 'area')).join(', ');
+    console.log('    ' + name + ': ' + slot.total + ' (' + fields + ')');
+  }
+  console.log('  TOTAL: ' + rows.length + ' pending across ' + byProject.size + ' project' + (byProject.size === 1 ? '' : 's'));
+
+  fs.mkdirSync(CSV_DIR, { recursive: true });
+  const outPath = path.join(CSV_DIR, 'pending-changes.csv');
+  const header = ['change_id', 'project_name', 'unit', 'field', 'old_value', 'proposed_value', 'source_snapshot_date', 'proposed_at', 'decision', 'notes'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    lines.push(header.map(h => {
+      const v = h === 'project_name' ? r.project_name :
+                h === 'unit' ? r.unit_number_norm :
+                h === 'field' ? r.field_name :
+                h === 'source_snapshot_date' ? (r.source_snapshot_date || '') :
+                h === 'decision' ? 'pending' :
+                h === 'notes' ? '' :
+                r[h] == null ? '' : r[h];
+      const s = String(v);
+      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(','));
+  }
+  fs.writeFileSync(outPath, lines.join('\r\n') + '\r\n', 'utf8');
+  console.log('  wrote: ' + path.relative(process.cwd(), outPath));
+  db.close();
+}
+
+function cmdApplyPending(csvPath) {
+  const db = openDb();
+  const inputPath = csvPath || path.join(CSV_DIR, 'pending-changes.csv');
+  if (!fs.existsSync(inputPath)) {
+    console.log('  no pending CSV at ' + inputPath);
+    db.close();
+    return;
+  }
+  const content = fs.readFileSync(inputPath, 'utf8');
+  // Use the same csv-parse already in deps (used by src/sources/csv.js).
+  const { parse } = require('csv-parse/sync');
+  const rows = parse(content, { relax_quotes: true, columns: true, skip_empty_lines: true });
+  let approved = 0, rejected = 0, deferred = 0, errors = 0;
+  for (const r of rows) {
+    const cid = parseInt(r.change_id, 10);
+    if (isNaN(cid)) { errors += 1; continue; }
+    const decision = String(r.decision || '').trim().toLowerCase();
+    const notes = r.notes || '';
+    if (decision === 'approve') {
+      try { applyDecision(db, cid, 'approve', notes); approved += 1; }
+      catch (e) { console.log('  warn change_id ' + cid + ': ' + e.message); errors += 1; }
+    } else if (decision === 'reject') {
+      try { applyDecision(db, cid, 'reject', notes); rejected += 1; }
+      catch (e) { console.log('  warn change_id ' + cid + ': ' + e.message); errors += 1; }
+    } else if (decision === 'pending' || decision === '') {
+      deferred += 1;
+    } else {
+      console.log('  warn change_id ' + cid + ': unknown decision "' + decision + '", skipping');
+      errors += 1;
+    }
+  }
+  const masterCount = db.prepare('SELECT COUNT(*) AS n FROM master_data').get().n;
+  console.log('  applied ' + approved + ' approval' + (approved === 1 ? '' : 's') + ' · ' + rejected + ' rejection' + (rejected === 1 ? '' : 's') + ' · ' + deferred + ' deferred (still pending)');
+  if (errors) console.log('  ' + errors + ' row' + (errors === 1 ? '' : 's') + ' had errors (see warnings above)');
+  console.log('  master_data now has ' + masterCount + ' canonical row' + (masterCount === 1 ? '' : 's'));
+  db.close();
+}
+
 function main() {
   banner();
   const [cmd, ...rest] = process.argv.slice(2);
@@ -488,8 +581,9 @@ function main() {
     const { openDb } = require('./src/db');
     const db = openDb();
     try {
+      fs.mkdirSync(CHANGES_TEMPLATE_DIR, { recursive: true });
       const safe = (projectFilter || 'all').replace(/[^A-Za-z0-9_-]+/g, '_');
-      const outPath = path.join(OUTPUT_DIR, 'area-template-' + safe + '.csv');
+      const outPath = path.join(CHANGES_TEMPLATE_DIR, 'area-template-' + safe + '.csv');
       const res = generateAreaTemplate({ db, projectFilter, outPath });
       console.log('  -> wrote ' + path.relative(process.cwd(), outPath));
       console.log('     ' + res.rowCount + ' rows across ' + res.projects + ' project(s)');
@@ -498,8 +592,22 @@ function main() {
   }
 
   if (cmd === 'apply-areas') {
-    const csvPath = process.argv[3];
-    if (!csvPath) { console.error('usage: apply-areas <csv-file>'); process.exit(1); }
+    let csvPath = process.argv[3];
+    if (!csvPath) {
+      // Default: look for a single CSV in input/Changes Template Input/.
+      // If exactly one file is present, use it. Otherwise show usage.
+      if (fs.existsSync(CHANGES_TEMPLATE_INPUT_DIR)) {
+        const csvs = fs.readdirSync(CHANGES_TEMPLATE_INPUT_DIR).filter(f => f.toLowerCase().endsWith('.csv'));
+        if (csvs.length === 1) {
+          csvPath = path.join(CHANGES_TEMPLATE_INPUT_DIR, csvs[0]);
+          console.log('  using: ' + path.relative(process.cwd(), csvPath));
+        } else if (csvs.length > 1) {
+          console.error('multiple CSVs in ' + path.relative(process.cwd(), CHANGES_TEMPLATE_INPUT_DIR) + '; specify one explicitly');
+          process.exit(1);
+        }
+      }
+    }
+    if (!csvPath) { console.error('usage: apply-areas <csv-file>  (or drop a CSV into input/Changes Template Input/)'); process.exit(1); }
     const { applyAreaTemplate } = require('./src/area-template');
     const { openDb } = require('./src/db');
     const db = openDb();
@@ -522,6 +630,16 @@ function main() {
         fs.appendFileSync(path.join(logsDir, 'audit.jsonl'), entry + '\n', 'utf8');
       } catch (_) { /* never let audit-log failure break the user-facing command */ }
     } finally { db.close(); }
+    return;
+  }
+
+  if (cmd === 'review-pending') {
+    cmdReviewPending(rest[0] || null);
+    return;
+  }
+
+  if (cmd === 'apply-pending') {
+    cmdApplyPending(rest[0] || null);
     return;
   }
 

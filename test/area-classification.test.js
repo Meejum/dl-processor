@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const { migrateSchema } = require('../src/db');
 const { compareProject, summarize } = require('../src/compare');
+const { upsertMasterField } = require('../src/master-data');
 
 const SCHEMA_SQL = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
 
@@ -39,11 +40,10 @@ function buildFixture() {
   insSf.run(sfId, 'Test Sub', 'T-103', 'T-103', 'BOB ROE', 3000000);
   insSf.run(sfId, 'Test Sub', 'T-104', 'T-104', 'CORRECT NAME', 4000000);
 
-  const insArea = db.prepare(`INSERT INTO manual_area (project_id, unit_number_norm, area_sqm) VALUES (?, ?, ?)`);
-  insArea.run(projectId, '101', 100.0);
-  insArea.run(projectId, '102', 100.0);
-  insArea.run(projectId, '103', 100.0);
-  insArea.run(projectId, '104', 100.0);
+  upsertMasterField(db, projectId, '101', 'area_sqm', 100.0, 'staff');
+  upsertMasterField(db, projectId, '102', 'area_sqm', 100.0, 'staff');
+  upsertMasterField(db, projectId, '103', 'area_sqm', 100.0, 'staff');
+  upsertMasterField(db, projectId, '104', 'area_sqm', 100.0, 'staff');
 
   return { db, projectId };
 }
@@ -82,9 +82,9 @@ test('buyer mismatch + 10% area drift → BUYER_MISMATCH (not escalated to AREA_
   assert.ok((row.audit_flags || '').includes('A11'));
 });
 
-test('manual_area absent → area signal silent (kind=none)', () => {
+test('master_data area absent → area signal silent (kind=none)', () => {
   const { db, projectId } = buildFixture();
-  db.prepare(`DELETE FROM manual_area WHERE unit_number_norm = ?`).run('103');
+  db.prepare(`UPDATE master_data SET area_sqm = NULL WHERE project_id = ? AND unit_number_norm = ?`).run(projectId, '103');
   const result = compareProject(db, projectId, {});
   const row = result.rows.find(r => r.dld_unit_number === '103');
   assert.equal(row.match_status, 'MATCH');

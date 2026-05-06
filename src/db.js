@@ -90,6 +90,83 @@ function migrateSchema(db) {
   if (!pmCols2.has('area_threshold_pct')) {
     db.exec(`ALTER TABLE project_mapping ADD COLUMN area_threshold_pct REAL`);
   }
+
+  // 6. Master-data + approval-queue migration (run only when master_data is empty).
+  //    Tables themselves are created by db/schema.sql via CREATE TABLE IF NOT EXISTS.
+  //    See docs/superpowers/specs/2026-05-05-master-data-and-approval-queue-design.md.
+  //    Guard: skip entirely when master_data table doesn't exist (e.g. old-schema test DBs).
+  const hasMasterTable = db.prepare(
+    `SELECT 1 FROM sqlite_master WHERE type='table' AND name='master_data'`
+  ).get();
+  const masterCount = hasMasterTable
+    ? db.prepare('SELECT COUNT(*) AS n FROM master_data').get().n
+    : 1; // treat missing table as "already seeded" so we skip the block
+  if (masterCount === 0) {
+    db.exec(`
+      BEGIN TRANSACTION;
+
+      -- 6a. Seed master_data from manual_override.
+      INSERT INTO master_data (
+        project_id, unit_number_norm, buyer_name,
+        buyer_source, buyer_decided_at, notes, created_at, updated_at
+      )
+      SELECT
+        o.project_id, o.unit_number_norm, o.actual_buyer,
+        'staff', o.updated_at, COALESCE(o.notes, ''),
+        o.created_at, o.updated_at
+      FROM manual_override o
+      WHERE NOT EXISTS (
+        SELECT 1 FROM master_data m
+        WHERE m.project_id = o.project_id AND m.unit_number_norm = o.unit_number_norm
+      );
+
+      -- 6b. UPDATE area on existing master_data rows that already have a manual_override entry.
+      UPDATE master_data
+      SET area_sqm = (
+            SELECT a.area_sqm FROM manual_area a
+            WHERE a.project_id = master_data.project_id
+              AND a.unit_number_norm = master_data.unit_number_norm
+          ),
+          area_source = 'staff',
+          area_decided_at = (
+            SELECT a.updated_at FROM manual_area a
+            WHERE a.project_id = master_data.project_id
+              AND a.unit_number_norm = master_data.unit_number_norm
+          ),
+          updated_at = datetime('now')
+      WHERE EXISTS (
+        SELECT 1 FROM manual_area a
+        WHERE a.project_id = master_data.project_id
+          AND a.unit_number_norm = master_data.unit_number_norm
+      );
+
+      -- 6c. INSERT new master_data rows for manual_area entries that have no override.
+      INSERT INTO master_data (
+        project_id, unit_number_norm, area_sqm,
+        area_source, area_decided_at, notes, created_at, updated_at
+      )
+      SELECT
+        a.project_id, a.unit_number_norm, a.area_sqm,
+        'staff', a.updated_at, COALESCE(a.source_note, ''),
+        a.created_at, a.updated_at
+      FROM manual_area a
+      WHERE NOT EXISTS (
+        SELECT 1 FROM master_data m
+        WHERE m.project_id = a.project_id AND m.unit_number_norm = a.unit_number_norm
+      );
+
+      COMMIT;
+    `);
+  }
+
+  // 7. Drop unused raw_json column from dld_snapshot if present.
+  const snapCols = new Set(db.prepare('PRAGMA table_info(dld_snapshot)').all().map(r => r.name));
+  if (snapCols.has('raw_json')) {
+    db.exec('ALTER TABLE dld_snapshot DROP COLUMN raw_json');
+  }
+
+  // 8. Drop unused v_unit_compare view if present.
+  db.exec('DROP VIEW IF EXISTS v_unit_compare');
 }
 
 function openDb(dbPath = DEFAULT_DB_PATH) {

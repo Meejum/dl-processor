@@ -1,6 +1,7 @@
 const path = require('path');
 const { normalizeUnitNumber } = require('./common');
 const { toIsoDate, sha256OfFile } = require('./db');
+const { queueMasterDiffs } = require('./pending-change');
 
 function upsertProject(db, project) {
   const existing = db.prepare('SELECT project_id FROM dld_project WHERE project_name = ?').get(project.projectName);
@@ -38,7 +39,7 @@ function upsertProject(db, project) {
   return info.lastInsertRowid;
 }
 
-function createSnapshot(db, projectId, sourceFormat, sourceFile, sourceSha, rawJson) {
+function createSnapshot(db, projectId, sourceFormat, sourceFile, sourceSha) {
   const today = new Date().toISOString().slice(0, 10);
   const existing = db.prepare(`
     SELECT snapshot_id FROM dld_snapshot
@@ -50,15 +51,14 @@ function createSnapshot(db, projectId, sourceFormat, sourceFile, sourceSha, rawJ
   }
 
   const info = db.prepare(`
-    INSERT INTO dld_snapshot (project_id, source_format, source_file, source_sha256, snapshot_date, raw_json)
-    VALUES (@projectId, @sourceFormat, @sourceFile, @sourceSha, @today, @rawJson)
-  `).run({ projectId, sourceFormat, sourceFile, sourceSha, today, rawJson });
+    INSERT INTO dld_snapshot (project_id, source_format, source_file, source_sha256, snapshot_date)
+    VALUES (@projectId, @sourceFormat, @sourceFile, @sourceSha, @today)
+  `).run({ projectId, sourceFormat, sourceFile, sourceSha, today });
   return info.lastInsertRowid;
 }
 
-function importDldSnapshot({ db, data, sourceFormat, sourceFile, storeRawJson = true }) {
+function importDldSnapshot({ db, data, sourceFormat, sourceFile }) {
   const sourceSha = sha256OfFile(sourceFile);
-  const rawJson = storeRawJson ? JSON.stringify(data) : null;
 
   const insertBuilding = db.prepare(`
     INSERT INTO dld_building (snapshot_id, dld_id, name, type)
@@ -82,7 +82,7 @@ function importDldSnapshot({ db, data, sourceFormat, sourceFile, storeRawJson = 
 
   const run = db.transaction(() => {
     const projectId = upsertProject(db, data.project);
-    const snapshotId = createSnapshot(db, projectId, sourceFormat, path.basename(sourceFile), sourceSha, rawJson);
+    const snapshotId = createSnapshot(db, projectId, sourceFormat, path.basename(sourceFile), sourceSha);
 
     let totalUnits = 0;
     let totalTx = 0;
@@ -122,7 +122,11 @@ function importDldSnapshot({ db, data, sourceFormat, sourceFile, storeRawJson = 
     return { projectId, snapshotId, totalUnits, totalTx };
   });
 
-  return run();
+  const result = run();
+  const queueResult = queueMasterDiffs(db, result.snapshotId);
+  result.queuedDiffs = queueResult.queued;
+  result.seededMaster = queueResult.seeded;
+  return result;
 }
 
 module.exports = { importDldSnapshot };
