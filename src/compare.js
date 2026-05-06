@@ -315,7 +315,7 @@ function priceTag(delta) {
   return `${sign}${pct}% (${sign}${aed})`;
 }
 
-function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
+function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer, canonicalBuyer = null) {
   if (!sfRow) return {
     status: 'DLD_ONLY',
     reasons: ['no SF'],
@@ -337,7 +337,16 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer) {
   // docs/superpowers/specs/2026-05-04-multi-buyer-matching-design.md.
   const dldBuyersAll  = collectDldBuyers(dldTxs).filter(b => b.kind === 'buyer');
   const sfApplicants  = collectSfApplicants(sfRow);
-  const dldNamesForMatch = dldBuyersAll.map(b => b.name).filter(Boolean);
+  let dldNamesForMatch;
+  if (canonicalBuyer) {
+    // master_data has a canonical buyer — make it the primary for matching.
+    // Other DLD buyer names still participate in the ANY-MATCH cross-product
+    // so A12 still fires correctly for non-clean alignments.
+    const others = dldBuyersAll.map(b => b.name).filter(n => n && n !== canonicalBuyer);
+    dldNamesForMatch = [canonicalBuyer, ...others];
+  } else {
+    dldNamesForMatch = dldBuyersAll.map(b => b.name).filter(Boolean);
+  }
 
   // Override-only path: fall back to override only when DLD has zero non-bank, non-empty parties.
   // Deliberate behavior change from pre-A12 logic — see test/compare-multi-buyer.test.js.
@@ -539,8 +548,18 @@ function compareProject(db, projectId, cachedConfig) {
       }
     }
 
+    const masterRow = db.prepare(
+      'SELECT * FROM master_data WHERE project_id = ? AND unit_number_norm = ?'
+    ).get(projectId, u.unit_number_norm);
+
+    const pendingForUnit = db.prepare(
+      `SELECT field_name, proposed_value FROM pending_change
+       WHERE project_id = ? AND unit_number_norm = ? AND decision = 'pending'`
+    ).all(projectId, u.unit_number_norm);
+
     const overrideBuyer = overrideMap.get(u.unit_number_norm) || null;
-    const cls = classifyMatch(u, dldTxs, sfRow, overrideBuyer);
+    const canonicalBuyer = masterRow?.buyer_name || null;
+    const cls = classifyMatch(u, dldTxs, sfRow, overrideBuyer, canonicalBuyer);
     if (matchedViaBuyer) cls.reasons = (cls.reasons || []).concat(['plot match']);
     if (sfRow) matchedSfUnits.add(sfRow.unit_norm);
 
@@ -602,10 +621,15 @@ function compareProject(db, projectId, cachedConfig) {
       match_status:             finalStatus,
       match_reasons:            (cls.reasons || []).join('; '),
       audit_flags:              auditFlags.join('|'),
-      match_flags:              Array.from(new Set([...(cls.flags || []), ...auditFlags])),
+      match_flags:              Array.from(new Set([
+        ...(cls.flags || []),
+        ...auditFlags,
+        ...(pendingForUnit.length > 0 ? ['PENDING'] : [])
+      ])),
       matched_applicant_field:  cls.matchedApplicantField || null,
       dld_buyers:               collectDldBuyers(dldTxs),
-      sf_applicants:            collectSfApplicants(sfRow)
+      sf_applicants:            collectSfApplicants(sfRow),
+      pending_changes:          pendingForUnit
     });
   }
 
@@ -649,7 +673,8 @@ function compareProject(db, projectId, cachedConfig) {
         match_flags:             [],
         matched_applicant_field: null,
         dld_buyers:              [],
-        sf_applicants:           collectSfApplicants(b)
+        sf_applicants:           collectSfApplicants(b),
+        pending_changes:         []
       });
     }
   }
