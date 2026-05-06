@@ -214,3 +214,25 @@ test('listPending filters by project name when provided', () => {
   assert.equal(rowsA.length, 1);
   assert.equal(rowsA[0].proposed_value, 'BOB');
 });
+
+test('queueMasterDiffs skips units with null unit_number_norm without crashing', () => {
+  // Real DLD imports occasionally produce dld_unit rows with no normalizable
+  // unit number (summary rows, unparseable plots). master_data.unit_number_norm
+  // is NOT NULL, so naive seeding would crash with SQLITE_CONSTRAINT_NOTNULL.
+  const db = buildDb();
+  const pid = insertProject(db, 'A');
+  const sid = insertSnapshot(db, pid);
+  // Insert a unit WITHOUT unit_number_norm (allowed by dld_unit schema):
+  const uid = db.prepare(
+    `INSERT INTO dld_unit (snapshot_id, project_id, unit_number, unit_number_norm, net_area)
+     VALUES (?, ?, 'PLOT-X', NULL, 100.0)`
+  ).run(sid, pid).lastInsertRowid;
+  db.prepare(
+    `INSERT INTO dld_transaction (unit_id, snapshot_id, project_id, party_name, ft_share, share_unit, tx_type, tx_date, tx_date_iso, amount_aed)
+     VALUES (?, ?, ?, 'ALICE', 100, 'F.T.', 'Sell - Pre registration', '04/02/2024', '2024-02-04', 1500000)`
+  ).run(uid, sid, pid);
+  // Should not throw:
+  const result = queueMasterDiffs(db, sid);
+  assert.equal(result.queued, 0);
+  assert.equal(result.seeded, 0, 'null-norm unit should not be seeded');
+});

@@ -73,6 +73,11 @@ function queueMasterDiffs(db, snapshotId) {
   let queued = 0;
   let seeded = 0;
   for (const u of units) {
+    // Skip units with no normalizable unit number (DLD report summary rows,
+    // unparseable plot identifiers, etc.). master_data has a NOT NULL constraint
+    // on unit_number_norm so we'd crash on insert. These units have no
+    // canonical identity to track at the master-data layer.
+    if (!u.unit_number_norm) continue;
     const dldView = dldViewForUnit(db, u.unit_id);
     if (!dldView) continue;
     const master = getMasterRow(db, projectId, u.unit_number_norm);
