@@ -88,7 +88,15 @@ function queueMasterDiffs(db, snapshotId) {
       if (valuesEqual(dldValue, masterValue)) continue;
       if (dldValue == null) continue;  // don't queue "DLD has no value"
       if (masterValue == null) {
-        // Master field not yet established — silently seed it (bootstrap for this field).
+        // Per-field bootstrap: master_data row exists for this unit but THIS specific
+        // field was never established (typical case: pre-migration manual_override
+        // seeded buyer_name only, leaving area/price/status/procedure null). The first
+        // observation of a previously-null field gets silently approved as
+        // 'dld_approved' rather than queueing a pending row. Rationale: a null master
+        // field has no prior canonical to disagree with, so DLD wins by default. This
+        // mirrors the unit-level bootstrap path (seedMasterFromDld) at a finer grain.
+        // Documented deviation from plan §queueMasterDiffs (which only had the
+        // dldValue==null guard); see review feedback I1, 2026-05-06.
         upsertMasterField(db, projectId, u.unit_number_norm, field, dldValue, 'dld_approved');
         continue;
       }
