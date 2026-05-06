@@ -26,7 +26,6 @@ CREATE TABLE IF NOT EXISTS dld_snapshot (
   imported_at    TEXT NOT NULL DEFAULT (datetime('now')),
   total_units    INTEGER,
   total_tx       INTEGER,
-  raw_json       TEXT,
   UNIQUE(project_id, snapshot_date, source_format)
 );
 

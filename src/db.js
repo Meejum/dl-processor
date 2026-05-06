@@ -158,6 +158,12 @@ function migrateSchema(db) {
       COMMIT;
     `);
   }
+
+  // 7. Drop unused raw_json column from dld_snapshot if present.
+  const snapCols = new Set(db.prepare('PRAGMA table_info(dld_snapshot)').all().map(r => r.name));
+  if (snapCols.has('raw_json')) {
+    db.exec('ALTER TABLE dld_snapshot DROP COLUMN raw_json');
+  }
 }
 
 function openDb(dbPath = DEFAULT_DB_PATH) {
