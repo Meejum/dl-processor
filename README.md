@@ -121,14 +121,18 @@ See [CLI subcommands](#cli-subcommands).
    - `[6] FULL PIPELINE` — processes everything in `input/` and `sf-input/`, or
    - `[7] QUICK AUDIT` — pick specific files, run the full pipeline on just those.
 4. **(Optional)** Top up area data when you have new SQM measurements:
-   - `[Y] Area template` → `[1] Generate template` → fills `output/area-template-<project>.csv`.
-   - Open in Excel, fill the `area_sqm` column for the units you have data on, save.
-   - `[Y] Area template` → `[2] Apply filled template` → upserts into `manual_area`.
+   - `[Y] Area template` → `[1] Generate template` → fills `output/Changes Template/area-template-<project>.csv`.
+   - Open in Excel, fill the `area_sqm` column for the units you have data on, save into `input/Changes Template Input/`.
+   - `[Y] Area template` → `[2] Apply filled template` → upserts into `master_data.area_sqm`.
    - Re-run `[3] Compare` to see new A11 / AREA_MISMATCH signals.
-5. When done:
-   - `[O]` opens the latest HTML.
+5. **(Optional)** Review DLD-proposed changes:
+   - `[V] Review pending changes` → opens `output/csv/pending-changes.csv`.
+   - Set `decision` to `approved` or `rejected` for each row, save.
+   - `[B] Apply pending decisions` → commits approved changes to `master_data`.
+6. When done:
+   - `[O]` opens `output/dashboard.html` (cross-project summary).
    - `[R]` reveals the `output/` folder in Explorer.
-   - Per-project `.compare.html` + the `all-projects.compare.html` master are in `output/html/`.
+   - Per-project `.compare.html` reports are in `output/compare/`.
 
 Re-running `compare` after any change is cheap — it rebuilds from what's already in SQLite.
 
@@ -137,47 +141,57 @@ Re-running `compare` after any change is cheap — it rebuilds from what's alrea
 ## The menu in detail
 
 ```
-[1]  Import files             DLD + SF auto-routed by extension
-[2]  Import Salesforce only   restrict picker to .xlsx
+[1]  Parse & Import DLD       pick .xps or .csv file
+[2]  Import Salesforce        pick .xlsx file
 [3]  Compare (DLD vs SF)      writes compare.csv / .html / audit-tasks
 [4]  Month-over-Month Diff    writes diff.csv / .html
-[5]  Manual Overrides         bank-only units → real buyer
+[5]  Master Data (staff edits) unit-level buyer overrides
 [6]  FULL PIPELINE (folders)  process everything in input/ & sf-input/
 [7]  QUICK AUDIT              pick DLD + SF files, run everything
-[8]  Import Overrides CSV     apply buyer names edited in compare.html
 
+[A]  Audit Report             reconciliation summary + per-project mapping
 [P]  Projects list            projects in DB with their mapping
 [S]  Status                   DB overview (counts per table)
-[O]  Open latest HTML report
+[O]  Open latest HTML report  opens output/dashboard.html if present
 [R]  Reveal output folder
-[A]  Audit log                last 30 actions
-[V]  Verify / audit data      counts + cross-checks (incl. area coverage)
 
 [Y]  Area template            generate / apply staff-filled SQM CSVs
+[V]  Review pending changes   writes output/csv/pending-changes.csv and opens it
+[B]  Apply pending decisions  reads pending-changes.csv, commits approve/reject decisions
 
 [Q]  Quit
 ```
 
-### `[5] Manual Overrides`
+### `[5] Master Data (staff edits)`
 
-DLD transactions sometimes have a bank (mortgage holder) as the last party when the real buyer sold to someone else. The override submenu lets you pick a project, pick a bank-only unit, and enter the real buyer name. Compare uses your override instead of the bank.
+DLD transactions sometimes have a bank (mortgage holder) as the last party when the real buyer sold to someone else. The Master Data submenu lets you pick a project, pick a bank-only unit, and enter the real buyer name. Compare reads from `master_data` instead of the bank.
+
+`master_data` is the single source of truth for staff-curated values. It is seeded from `manual_override` + `manual_area` on first run (those legacy tables are then frozen). Every DLD import queues proposed changes into `pending_change` for staff review before they take effect.
+
+### `[V] Review pending changes`
+
+Writes `output/csv/pending-changes.csv` listing every row in `pending_change` whose `decision = 'pending'`. Opens the CSV in the default application (Excel). Staff set the `decision` column to `approved` or `rejected` and save.
+
+### `[B] Apply pending decisions`
+
+Reads the saved `pending-changes.csv` back, applies each approved row to `master_data`, marks rejected rows as decided, and reports the counts.
 
 ### `[Y] Area template`
 
 Drives the staff-maintained SQM data flow. Two sub-options:
 
-- **`[1] Generate template`** — emits `output/area-template-<project>.csv` (or `area-template-all.csv`) with one row per DLD unit, pre-populating any existing `manual_area` rows. Staff fill the `area_sqm` column and (optionally) the `source_note` column.
-- **`[2] Apply filled template`** — upserts every row whose `area_sqm` is a positive number into the `manual_area` table. Blank rows are skipped silently. Unknown project names skip with a warning. Each apply writes one entry to `logs/audit.jsonl`.
+- **`[1] Generate template`** — emits `output/Changes Template/area-template-<project>.csv` (or `area-template-all.csv`) with one row per DLD unit, pre-populating any existing `master_data.area_sqm` values. Staff fill the `area_sqm` column and (optionally) the `source_note` column.
+- **`[2] Apply filled template`** — reads a filled CSV from `input/Changes Template Input/`; upserts every row whose `area_sqm` is a positive number into `master_data`. Blank rows are skipped silently. Unknown project names skip with a warning. Each apply writes one entry to `logs/audit.jsonl`.
 
-### `[V] Verify / audit data`
+### `[A] Audit Report`
 
-Reconciliation report:
+Reconciliation report (previously accessible as `[V]` before v0.9.16):
 
 - Rows imported vs rows in the raw xlsx.
 - Per-project completeness — missing SF unit / DLD unit / price.
 - Projects matched to a DLD row in the DB.
 - SF booking cross-check — percentage of audit rows whose booking name exists in the current SF snapshot.
-- **Area cross-check coverage** — per-project `manual_area` row count vs DLD unit count + total percentage. Lets you see which projects still need staff to fill area templates.
+- **Area cross-check coverage** — per-project `master_data.area_sqm` row count vs DLD unit count + total percentage. Lets you see which projects still need staff to fill area templates.
 
 Every run is written to `logs/audit.jsonl`.
 
@@ -198,6 +212,8 @@ Every run is written to `logs/audit.jsonl`.
 | `node index.js apply-areas <csv>`                 | Apply filled-in area CSV to `manual_area` table                                       |
 | `node index.js audit`                             | Reconciliation report (counts, cross-checks) — the `[V]` menu option                  |
 | `node index.js audit-log [N]`                     | Show last N entries of `logs/audit.jsonl` (default 30)                                |
+| `node index.js review-pending`                    | Write `output/csv/pending-changes.csv` of all pending `pending_change` rows. The `[V]` menu option. |
+| `node index.js apply-pending`                     | Read `pending-changes.csv`, apply approved decisions to `master_data`. The `[B]` menu option. |
 | `node index.js audit-delta`                       | **(Legacy.)** Cross-checks manual audit flags vs tool output. Useless since v0.9.4.    |
 | `node index.js import-audit <xlsx>`               | **(Legacy — don't use.)** Imported the Projects Verification workbook. Replaced by the reference table in this README. |
 | `node index.js projects`                          | List DLD projects in the DB with their mapping                                        |
@@ -223,12 +239,16 @@ dl-processor/
 │   └── schema.sql             # tables + views
 │
 ├── input/                     # drop DLD .xps / .csv here (gitignored)
+│   └── Changes Template Input/    # drop filled area-template CSVs here
 ├── sf-input/                  # drop SF .xlsx here (gitignored)
 │
 ├── output/                    # generated CSV/JSON (gitignored)
 │   ├── compare/               # per-project <name>.compare.html reports
 │   ├── diff/                  # per-project <name>.diff.html reports
 │   ├── csv/                   # per-project .compare.csv, .diff.csv, .audit-tasks.csv
+│   │   └── pending-changes.csv    # written by review-pending; edited by staff; read by apply-pending
+│   ├── Changes Template/      # generated area-template-<slug>.csv files (output of [Y] → 1)
+│   ├── audit-delta/           # per-project <name>.audit-delta.html (legacy)
 │   └── dashboard.html         # cross-project summary (regenerated on every compare run)
 │
 ├── logs/
@@ -265,8 +285,10 @@ dl-processor/
 - **`sf_snapshot`** — one row per SF xlsx imported.
 - **`sf_booking`** — one row per SF booking; includes primary applicant + co-applicants 2–4 + `applicant_details`.
 - **`project_mapping`** — overrides for DLD ↔ SF translation, including per-project `area_threshold_pct`.
-- **`manual_override`** — per-unit "real buyer" overrides from the HTML editor.
-- **`manual_area`** — staff-recorded SQM per unit. Durable; survives every SF re-import. Keyed by `(project_id, unit_number_norm)`.
+- **`master_data`** — wide table, one row per `(project_id, unit_number_norm)`. Single source of truth for staff-curated values (`buyer_name`, `purchase_price_aed`, `area_sqm`, etc.). Each field has a `_source` provenance column (`staff` / `dld_approved`) and a `_decided_at` timestamp. Seeded from `manual_override` + `manual_area` on first run.
+- **`pending_change`** — tall audit trail. One row per `(unit, field)` DLD-proposed change. `decision` starts as `pending`; staff set it to `approved` or `rejected` via the CSV round-trip. Approved rows are applied to `master_data` by `apply-pending`.
+- **`manual_override`** — **(legacy, frozen after migration to `master_data`).** Pre-v0.9.16 per-unit buyer overrides. Still readable; no new writes.
+- **`manual_area`** — **(legacy, frozen after migration to `master_data`).** Pre-v0.9.16 staff-recorded SQM. Still readable; no new writes.
 
 ---
 
@@ -306,9 +328,9 @@ Net effect on a typical month: a meaningful chunk of rows that used to land in B
 
 ## Area cross-check (SQM)
 
-> Added in v0.9.14.
+> Added in v0.9.14. Area data migrated to `master_data` in v0.9.16.
 
-DLD records `net_area` per unit. The Sobha-recorded saleable / built-up area lives in the new `manual_area` table, fed by the `[Y] Area template` workflow. Compare emits an area signal when both sides exist.
+DLD records `net_area` per unit. The Sobha-recorded saleable / built-up area lives in the `master_data.area_sqm` field (previously `manual_area`, migrated on first run of v0.9.16+), fed by the `[Y] Area template` workflow. Compare emits an area signal when both sides exist.
 
 **Signal rules** (see `computeAreaSignal` in `src/compare.js`):
 
@@ -463,6 +485,41 @@ Ground-truth project table, derived from the current SF snapshot. Use this when 
 ---
 
 ## Changelog
+
+### v0.9.16 (4 May 2026)
+
+Three quality-of-life improvements on the `feat/master-data-approval` branch.
+
+#### Master-data + approval queue
+
+A new `master_data` table (wide, one row per unit) is the single source of truth for staff-curated values: `buyer_name`, `purchase_price_aed`, `area_sqm`, `status`, `procedure_number`. Each field carries a `_source` provenance tag (`staff` / `dld_approved`) and a `_decided_at` timestamp.
+
+- **Migration on first run** — existing `manual_override` rows (buyer overrides) and `manual_area` rows (SQM data) are automatically copied into `master_data` via `db.js` self-heal. The legacy tables are then frozen; all new reads and writes go to `master_data`.
+- **`pending_change` table** — after every DLD import, differences between the incoming snapshot and `master_data` are queued here as `pending` rows (one per `(unit, field)`). This is the audit trail for DLD-proposed changes.
+- **CSV round-trip approval workflow** — `[V] Review pending` writes `output/csv/pending-changes.csv`; staff set each row's `decision` to `approved` or `rejected` and save; `[B] Apply pending` reads the file back, promotes approved rows to `master_data`, and records the decision timestamps.
+
+#### New CLI subcommands
+
+- `node index.js review-pending` — writes `output/csv/pending-changes.csv`. Corresponds to menu `[V]`.
+- `node index.js apply-pending` — applies decisions from `pending-changes.csv` to `master_data`. Corresponds to menu `[B]`.
+
+#### Menu changes
+
+- `[5]` renamed from "Manual Overrides" → **"Master Data (staff edits)"** — reflects the wider scope of the new table.
+- **`[V] Review pending changes`** — new entry (was `[V] Verify / audit data`, now moved to `[A] Audit Report`).
+- **`[B] Apply pending decisions`** — new entry.
+
+#### Dashboard Pending column
+
+`output/dashboard.html` gains a **Pending** column showing the count of unresolved `pending_change` rows per project. Lets staff see at a glance which projects have queued DLD-proposed changes waiting for approval.
+
+#### Sobha-branded diff HTML
+
+`output/diff/<name>.diff.html` now uses the same cream/bronze Sobha palette as `compare.html`, `dashboard.html`, and `audit-delta.html`. The previous dark-theme inline CSS has been replaced with `SOBHA_STYLE_CSS` from `src/html-styles.js`.
+
+#### `[L] Last drop` menu entry
+
+New one-click shortcut: scans `input/` and `sf-input/` for the newest `.xps`/`.csv`/`.xlsx` file, shows the filenames and dates, and runs the full pipeline after confirmation.
 
 ### v0.9.15 (4 May 2026)
 
