@@ -192,7 +192,7 @@ function cmdCompare(filterProjectName) {
       const result = compareProject(db, p.project_id, cachedConfig);
       if (result.status !== 'ok') {
         console.log(`     skipped: ${result.status}`);
-        dashboardStats.push(buildProjectStat(p, result, null));
+        dashboardStats.push(buildProjectStat(p, result, null, null));
         continue;
       }
       const counts = summarize(result.rows);
@@ -204,14 +204,18 @@ function cmdCompare(filterProjectName) {
       writeCompareCsv(csvOut, result.rows);
       writeCompareHtml(htmlOut, p, result.rows, counts);
       const tasks = writeAuditTasks(tasksOut, p, result.rows);
-      dashboardStats.push(buildProjectStat(p, result, tasks.length));
+      const pendingCount = db.prepare(
+        `SELECT COUNT(*) AS n FROM pending_change
+         WHERE project_id = ? AND decision = 'pending'`
+      ).get(p.project_id).n;
+      dashboardStats.push(buildProjectStat(p, result, tasks.length, pendingCount));
       console.log(`     wrote: ${path.relative(process.cwd(), csvOut)}`);
       console.log(`     wrote: ${path.relative(process.cwd(), htmlOut)}`);
       console.log(`     wrote: ${path.relative(process.cwd(), tasksOut)}  (${tasks.length} audit tasks)`);
       console.log('');
     } catch (e) {
       console.log(`     error: ${e.message}`);
-      dashboardStats.push(buildProjectStat(p, { status: 'error: ' + e.message }, null));
+      dashboardStats.push(buildProjectStat(p, { status: 'error: ' + e.message }, null, null));
     }
   }
   if (dashboardStats.length > 0) {

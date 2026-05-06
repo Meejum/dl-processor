@@ -17,7 +17,7 @@ function countFlag(rows, flag) {
   return n;
 }
 
-function buildProjectStat(project, result, auditTaskCount) {
+function buildProjectStat(project, result, auditTaskCount, pendingCount) {
   const base = project.project_name.replace(/[^A-Za-z0-9_-]+/g, '_');
   if (!result || result.status !== 'ok') {
     return {
@@ -27,6 +27,7 @@ function buildProjectStat(project, result, auditTaskCount) {
       matchCount: null,
       buyerCount: null,
       auditCount: null,
+      pendingCount: null,
       a10: null,
       a11: null,
       a12: null,
@@ -43,6 +44,7 @@ function buildProjectStat(project, result, auditTaskCount) {
     matchCount: counts.MATCH || 0,
     buyerCount: counts.BUYER_MISMATCH || 0,
     auditCount: auditTaskCount != null ? auditTaskCount : 0,
+    pendingCount: pendingCount != null ? pendingCount : 0,
     a10:        countFlag(rows, 'A10'),
     a11:        countFlag(rows, 'A11'),
     a12:        countFlag(rows, 'A12'),
@@ -55,10 +57,11 @@ function writeDashboardHtml(outPath, stats) {
     match: t.match + (s.matchCount || 0),
     buyer: t.buyer + (s.buyerCount || 0),
     audit: t.audit + (s.auditCount || 0),
+    pending: t.pending + (s.pendingCount || 0),
     a10:   t.a10   + (s.a10        || 0),
     a11:   t.a11   + (s.a11        || 0),
     a12:   t.a12   + (s.a12        || 0)
-  }), { match: 0, buyer: 0, audit: 0, a10: 0, a11: 0, a12: 0 });
+  }), { match: 0, buyer: 0, audit: 0, pending: 0, a10: 0, a11: 0, a12: 0 });
 
   const fmt = (n) => n == null ? '—' : Number(n).toLocaleString();
 
@@ -77,6 +80,7 @@ function writeDashboardHtml(outPath, stats) {
       num(s.matchCount, 'good') +
       num(s.buyerCount, 'bad') +
       num(s.auditCount, 'warn') +
+      num(s.pendingCount, 'warn') +
       num(s.a10, 'flag a10') +
       num(s.a11, 'flag a11') +
       num(s.a12, 'flag a12') +
@@ -134,9 +138,10 @@ function writeDashboardHtml(outPath, stats) {
   <th data-col="1" class="num">MATCH</th>
   <th data-col="2" class="num">BUYER MISMATCH</th>
   <th data-col="3" class="num">Audit Tasks</th>
-  <th data-col="4" class="num">A10</th>
-  <th data-col="5" class="num">A11</th>
-  <th data-col="6" class="num">A12</th>
+  <th data-col="4" class="num">Pending</th>
+  <th data-col="5" class="num">A10</th>
+  <th data-col="6" class="num">A11</th>
+  <th data-col="7" class="num">A12</th>
 </tr></thead>
 <tbody>
 ${rowsHtml}
@@ -146,6 +151,7 @@ ${rowsHtml}
   <td class="num good">${fmt(totals.match)}</td>
   <td class="num bad">${fmt(totals.buyer)}</td>
   <td class="num warn">${fmt(totals.audit)}</td>
+  <td class="num warn">${fmt(totals.pending)}</td>
   <td class="num flag">${fmt(totals.a10)}</td>
   <td class="num flag">${fmt(totals.a11)}</td>
   <td class="num flag">${fmt(totals.a12)}</td>
