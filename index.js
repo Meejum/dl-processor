@@ -13,6 +13,7 @@ const { buildMappingFor, saveMappingToDb } = require('./src/project-mapping');
 const { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks } = require('./src/compare');
 const { diffProject, summarizeDiff, writeDiffCsv, writeDiffHtml } = require('./src/diff');
 const { buildProjectStat, writeDashboardHtml } = require('./src/dashboard');
+const { listPending, applyDecision } = require('./src/pending-change');
 
 const INPUT_DIR    = path.join(__dirname, 'input');
 const SF_INPUT_DIR = path.join(__dirname, 'sf-input');
@@ -43,6 +44,7 @@ function usage() {
   console.log('  node index.js audit-delta [name]    cross-check tool vs auditor');
   console.log('  node index.js area-template [project|all]   emit per-unit area CSV for staff to fill');
   console.log('  node index.js apply-areas   <csv>            apply filled-in area CSV to manual_area');
+  console.log('  node index.js review-pending [name]  write pending-changes.csv for review');
   console.log('');
   console.log('Drop DLD .xps/.csv into input/ and SF .xlsx into sf-input/, then run with no args.');
 }
@@ -394,6 +396,54 @@ function cmdAll() {
   cmdStatus();
 }
 
+function cmdReviewPending(filterProjectName) {
+  const db = openDb();
+  const rows = listPending(db, filterProjectName);
+  if (rows.length === 0) {
+    console.log('  no pending changes');
+    db.close();
+    return;
+  }
+  // Group counts for terminal output.
+  const byProject = new Map();
+  for (const r of rows) {
+    if (!byProject.has(r.project_name)) byProject.set(r.project_name, { total: 0, byField: {} });
+    const slot = byProject.get(r.project_name);
+    slot.total += 1;
+    slot.byField[r.field_name] = (slot.byField[r.field_name] || 0) + 1;
+  }
+  console.log('  pending changes:');
+  for (const [name, slot] of byProject) {
+    const fields = Object.entries(slot.byField).map(([k, v]) => v + ' ' + k.replace('buyer_name', 'buyer').replace('purchase_price_aed', 'price').replace('procedure_number', 'procedure').replace('area_sqm', 'area')).join(', ');
+    console.log('    ' + name + ': ' + slot.total + ' (' + fields + ')');
+  }
+  console.log('  TOTAL: ' + rows.length + ' pending across ' + byProject.size + ' project' + (byProject.size === 1 ? '' : 's'));
+
+  fs.mkdirSync(CSV_DIR, { recursive: true });
+  const outPath = path.join(CSV_DIR, 'pending-changes.csv');
+  const header = ['change_id', 'project_name', 'unit', 'field', 'old_value', 'proposed_value', 'source_snapshot_date', 'proposed_at', 'decision', 'notes'];
+  const lines = [header.join(',')];
+  for (const r of rows) {
+    const snap = r.source_snapshot_id
+      ? db.prepare('SELECT snapshot_date FROM dld_snapshot WHERE snapshot_id = ?').get(r.source_snapshot_id)
+      : null;
+    lines.push(header.map(h => {
+      const v = h === 'project_name' ? r.project_name :
+                h === 'unit' ? r.unit_number_norm :
+                h === 'field' ? r.field_name :
+                h === 'source_snapshot_date' ? (snap ? snap.snapshot_date : '') :
+                h === 'decision' ? 'pending' :
+                h === 'notes' ? '' :
+                r[h] == null ? '' : r[h];
+      const s = String(v);
+      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+    }).join(','));
+  }
+  fs.writeFileSync(outPath, lines.join('\r\n') + '\r\n', 'utf8');
+  console.log('  wrote: ' + path.relative(process.cwd(), outPath));
+  db.close();
+}
+
 function main() {
   banner();
   const [cmd, ...rest] = process.argv.slice(2);
@@ -522,6 +572,11 @@ function main() {
         fs.appendFileSync(path.join(logsDir, 'audit.jsonl'), entry + '\n', 'utf8');
       } catch (_) { /* never let audit-log failure break the user-facing command */ }
     } finally { db.close(); }
+    return;
+  }
+
+  if (cmd === 'review-pending') {
+    cmdReviewPending(rest[0] || null);
     return;
   }
 
