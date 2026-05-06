@@ -236,3 +236,17 @@ test('queueMasterDiffs skips units with null unit_number_norm without crashing',
   assert.equal(result.queued, 0);
   assert.equal(result.seeded, 0, 'null-norm unit should not be seeded');
 });
+
+test('queueMasterDiffs is atomic — transaction wrapper does not break the happy path', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'A');
+  const sid = insertSnapshot(db, pid);
+  insertUnitWithBuyer(db, sid, pid, '101', 'BOB');
+  insertUnitWithBuyer(db, sid, pid, '102', 'CAROL');
+  upsertMasterField(db, pid, '101', 'buyer_name', 'ALICE', 'staff');
+  upsertMasterField(db, pid, '102', 'buyer_name', 'DAN', 'staff');
+  // Both units have differing buyer — should queue 2 pending rows.
+  queueMasterDiffs(db, sid);
+  const pending = listPending(db);
+  assert.equal(pending.length, 2);
+});

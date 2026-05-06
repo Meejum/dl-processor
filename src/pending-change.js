@@ -72,57 +72,60 @@ function queueMasterDiffs(db, snapshotId) {
   const units = db.prepare('SELECT * FROM dld_unit WHERE snapshot_id = ?').all(snapshotId);
   let queued = 0;
   let seeded = 0;
-  for (const u of units) {
-    // Skip units with no normalizable unit number (DLD report summary rows,
-    // unparseable plot identifiers, etc.). master_data has a NOT NULL constraint
-    // on unit_number_norm so we'd crash on insert. These units have no
-    // canonical identity to track at the master-data layer.
-    if (!u.unit_number_norm) continue;
-    const dldView = dldViewForUnit(db, u.unit_id);
-    if (!dldView) continue;
-    const master = getMasterRow(db, projectId, u.unit_number_norm);
-    if (!master) {
-      // Bootstrap: first time seeing this unit.
-      seedMasterFromDld(db, projectId, u.unit_number_norm, dldView);
-      seeded += 1;
-      continue;
-    }
-    for (const field of TRACKED_FIELDS) {
-      const dldValue = dldView[field];
-      const masterValue = master[field];
-      if (valuesEqual(dldValue, masterValue)) continue;
-      if (dldValue == null) continue;  // don't queue "DLD has no value"
-      if (masterValue == null) {
-        // Per-field bootstrap: master_data row exists for this unit but THIS specific
-        // field was never established (typical case: pre-migration manual_override
-        // seeded buyer_name only, leaving area/price/status/procedure null). The first
-        // observation of a previously-null field gets silently approved as
-        // 'dld_approved' rather than queueing a pending row. Rationale: a null master
-        // field has no prior canonical to disagree with, so DLD wins by default. This
-        // mirrors the unit-level bootstrap path (seedMasterFromDld) at a finer grain.
-        // Documented deviation from plan §queueMasterDiffs (which only had the
-        // dldValue==null guard); see review feedback I1, 2026-05-06.
-        upsertMasterField(db, projectId, u.unit_number_norm, field, dldValue, 'dld_approved');
+  const work = db.transaction(() => {
+    for (const u of units) {
+      // Skip units with no normalizable unit number (DLD report summary rows,
+      // unparseable plot identifiers, etc.). master_data has a NOT NULL constraint
+      // on unit_number_norm so we'd crash on insert. These units have no
+      // canonical identity to track at the master-data layer.
+      if (!u.unit_number_norm) continue;
+      const dldView = dldViewForUnit(db, u.unit_id);
+      if (!dldView) continue;
+      const master = getMasterRow(db, projectId, u.unit_number_norm);
+      if (!master) {
+        // Bootstrap: first time seeing this unit.
+        seedMasterFromDld(db, projectId, u.unit_number_norm, dldView);
+        seeded += 1;
         continue;
       }
-      const proposedStr = String(dldValue);
-      if (proposalAlreadyRejected(db, projectId, u.unit_number_norm, field, proposedStr)) continue;
-      if (alreadyHasPendingProposal(db, projectId, u.unit_number_norm, field, proposedStr)) continue;
-      db.prepare(
-        `INSERT INTO pending_change
-           (project_id, unit_number_norm, field_name, old_value, proposed_value, source_snapshot_id)
-         VALUES (?, ?, ?, ?, ?, ?)`
-      ).run(
-        projectId,
-        u.unit_number_norm,
-        field,
-        masterValue == null ? null : String(masterValue),
-        proposedStr,
-        snapshotId
-      );
-      queued += 1;
+      for (const field of TRACKED_FIELDS) {
+        const dldValue = dldView[field];
+        const masterValue = master[field];
+        if (valuesEqual(dldValue, masterValue)) continue;
+        if (dldValue == null) continue;  // don't queue "DLD has no value"
+        if (masterValue == null) {
+          // Per-field bootstrap: master_data row exists for this unit but THIS specific
+          // field was never established (typical case: pre-migration manual_override
+          // seeded buyer_name only, leaving area/price/status/procedure null). The first
+          // observation of a previously-null field gets silently approved as
+          // 'dld_approved' rather than queueing a pending row. Rationale: a null master
+          // field has no prior canonical to disagree with, so DLD wins by default. This
+          // mirrors the unit-level bootstrap path (seedMasterFromDld) at a finer grain.
+          // Documented deviation from plan §queueMasterDiffs (which only had the
+          // dldValue==null guard); see review feedback I1, 2026-05-06.
+          upsertMasterField(db, projectId, u.unit_number_norm, field, dldValue, 'dld_approved');
+          continue;
+        }
+        const proposedStr = String(dldValue);
+        if (proposalAlreadyRejected(db, projectId, u.unit_number_norm, field, proposedStr)) continue;
+        if (alreadyHasPendingProposal(db, projectId, u.unit_number_norm, field, proposedStr)) continue;
+        db.prepare(
+          `INSERT INTO pending_change
+             (project_id, unit_number_norm, field_name, old_value, proposed_value, source_snapshot_id)
+           VALUES (?, ?, ?, ?, ?, ?)`
+        ).run(
+          projectId,
+          u.unit_number_norm,
+          field,
+          masterValue == null ? null : String(masterValue),
+          proposedStr,
+          snapshotId
+        );
+        queued += 1;
+      }
     }
-  }
+  });
+  work();
   return { queued, seeded };
 }
 
@@ -150,25 +153,28 @@ function applyDecision(db, changeId, decision, notes) {
     throw new Error('decision must be "approve" or "reject", got: ' + decision);
   }
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  if (decision === 'approve') {
-    // Coerce proposed_value to the right type before applying.
-    let value = pc.proposed_value;
-    if (pc.field_name === 'purchase_price_aed' || pc.field_name === 'area_sqm') {
-      value = value == null ? null : Number(value);
+  const work = db.transaction(() => {
+    if (decision === 'approve') {
+      // Coerce proposed_value to the right type before applying.
+      let value = pc.proposed_value;
+      if (pc.field_name === 'purchase_price_aed' || pc.field_name === 'area_sqm') {
+        value = value == null ? null : Number(value);
+      }
+      upsertMasterField(db, pc.project_id, pc.unit_number_norm, pc.field_name, value, 'dld_approved');
+      db.prepare(
+        `UPDATE pending_change
+         SET decision = 'approved', decided_at = ?, decided_by = 'ali', decision_notes = ?
+         WHERE change_id = ?`
+      ).run(now, notes || '', changeId);
+    } else {
+      db.prepare(
+        `UPDATE pending_change
+         SET decision = 'rejected', decided_at = ?, decided_by = 'ali', decision_notes = ?
+         WHERE change_id = ?`
+      ).run(now, notes || '', changeId);
     }
-    upsertMasterField(db, pc.project_id, pc.unit_number_norm, pc.field_name, value, 'dld_approved');
-    db.prepare(
-      `UPDATE pending_change
-       SET decision = 'approved', decided_at = ?, decided_by = 'ali', decision_notes = ?
-       WHERE change_id = ?`
-    ).run(now, notes || '', changeId);
-  } else {
-    db.prepare(
-      `UPDATE pending_change
-       SET decision = 'rejected', decided_at = ?, decided_by = 'ali', decision_notes = ?
-       WHERE change_id = ?`
-    ).run(now, notes || '', changeId);
-  }
+  });
+  work();
 }
 
 module.exports = {
