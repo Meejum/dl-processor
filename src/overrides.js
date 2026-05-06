@@ -24,14 +24,14 @@ function listBankOnlyUnits(db, projectId) {
            lt.tx_date   AS last_tx_date,
            lt.amount_aed AS last_amount,
            lt.party_name AS last_party,
-           mo.actual_buyer AS override_buyer,
-           mo.notes        AS override_notes,
-           mo.updated_at   AS override_updated
+           md.buyer_name AS override_buyer,
+           md.notes      AS override_notes,
+           md.updated_at AS override_updated
     FROM dld_unit u
     JOIN latest ls ON ls.snapshot_id = u.snapshot_id
     LEFT JOIN dld_building b ON b.building_id = u.building_id
     LEFT JOIN last_tx lt ON lt.unit_id = u.unit_id AND lt.rn = 1
-    LEFT JOIN manual_override mo ON mo.project_id = u.project_id AND mo.unit_number_norm = u.unit_number_norm
+    LEFT JOIN master_data md ON md.project_id = u.project_id AND md.unit_number_norm = u.unit_number_norm
     WHERE u.project_id = ?
       AND lt.party_name IS NOT NULL
       AND (
