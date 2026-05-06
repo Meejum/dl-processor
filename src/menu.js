@@ -358,6 +358,10 @@ async function doAuditDeltaMenu() {
 
 function latestHtmlReport() {
   if (!fs.existsSync(OUTPUT_DIR)) return null;
+  // Prefer the master dashboard when it exists — it's the operational entry
+  // point, not the most-recently-touched per-project file.
+  const dashboardPath = path.join(OUTPUT_DIR, 'dashboard.html');
+  if (fs.existsSync(dashboardPath)) return dashboardPath;
   const hits = [];
   const walk = (dir) => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
