@@ -151,6 +151,7 @@ async function showMenu() {
   menuLine('5', 'Master Data (staff edits)',     'unit-level buyer overrides');
   menuLine('6', 'FULL PIPELINE (folders)',       'process everything in input/ & sf-input/');
   menuLine('7', 'QUICK AUDIT',                   'pick DLD + SF files, run everything');
+  menuLine('L', 'Last drop',                     'imports the newest file in input/ + sf-input/, then full pipeline');
   console.log('');
   menuLine('A', 'Audit Report',                 'reconciliation summary + per-project mapping');
   menuLine('U', 'Import Audit Workbook',        'pick the team verification xlsx');
@@ -269,6 +270,51 @@ async function doDiff() {
 async function doFull() {
   await showHeader(); sectionHeader('FULL PIPELINE');
   runNode([]);
+  await pause();
+}
+
+async function doLastDrop() {
+  await showHeader(); sectionHeader('LAST DROP  /  newest input file + full pipeline');
+  const inputDir = path.join(ROOT, 'input');
+  const sfDir = path.join(ROOT, 'sf-input');
+  const findNewest = (dir, exts) => {
+    if (!fs.existsSync(dir)) return null;
+    const candidates = fs.readdirSync(dir, { withFileTypes: true })
+      .filter(d => d.isFile() && exts.includes(path.extname(d.name).toLowerCase()))
+      .map(d => ({ name: d.name, full: path.join(dir, d.name), mtime: fs.statSync(path.join(dir, d.name)).mtimeMs }));
+    candidates.sort((a, b) => b.mtime - a.mtime);
+    return candidates[0] || null;
+  };
+  const newestDld = findNewest(inputDir, ['.xps', '.csv']);
+  const newestSf  = findNewest(sfDir,    ['.xlsx', '.xls']);
+
+  if (!newestDld && !newestSf) {
+    console.log('  ' + C.dim + 'no inputs found in input/ or sf-input/' + C.reset);
+    await pause(); return;
+  }
+
+  if (newestDld) {
+    console.log('  newest DLD: ' + path.basename(newestDld.full) + '  (' + new Date(newestDld.mtime).toISOString().slice(0, 10) + ')');
+  } else {
+    console.log('  ' + C.dim + 'no DLD file in input/' + C.reset);
+  }
+  if (newestSf) {
+    console.log('  newest SF:  ' + path.basename(newestSf.full) + '  (' + new Date(newestSf.mtime).toISOString().slice(0, 10) + ')');
+  } else {
+    console.log('  ' + C.dim + 'no SF file in sf-input/' + C.reset);
+  }
+
+  const ok = await askPrompt('  ' + C.green + 'run full pipeline on these? [Y/n]' + C.reset + ' ');
+  if (ok && /^n/i.test(ok.trim())) {
+    console.log('  ' + C.dim + 'cancelled' + C.reset);
+    await pause(); return;
+  }
+
+  // Just delegate to the existing full-pipeline runner. cmdAll picks up
+  // everything in input/ and sf-input/ — there's no per-file selection in
+  // the pipeline today, so "newest" is informational. (The pipeline imports
+  // every file present in input/, which is typically just the newest one.)
+  runNode([]);  // no-arg = full pipeline
   await pause();
 }
 
@@ -618,6 +664,7 @@ async function mainLoop() {
         case '5': await doOverrides();   break;
         case '6': await doFull();        break;
         case '7': await doQuickAudit();  break;
+        case 'l': await doLastDrop();    break;
         case 'a': await doAuditReport();    break;
         case 'u': await doImportAudit();    break;
         case 'd': await doAuditDeltaMenu(); break;
