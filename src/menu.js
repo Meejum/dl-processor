@@ -4,6 +4,7 @@ const path = require('path');
 const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { pickDldFiles, pickSfFile, pickFile } = require('./file-picker');
+const { upsertMasterField } = require('./master-data');
 
 const ROOT         = path.join(__dirname, '..');
 const INPUT_DIR    = path.join(ROOT, 'input');
@@ -147,7 +148,7 @@ async function showMenu() {
   menuLine('2', 'Import Salesforce',          'pick .xlsx file');
   menuLine('3', 'Compare  (DLD vs SF)',        'writes .compare.csv / .html / audit-tasks');
   menuLine('4', 'Month-over-Month Diff',        'writes .diff.csv / .html');
-  menuLine('5', 'Manual Overrides',              'bank-only units → real buyer');
+  menuLine('5', 'Master Data (staff edits)',     'unit-level buyer overrides');
   menuLine('6', 'FULL PIPELINE (folders)',       'process everything in input/ & sf-input/');
   menuLine('7', 'QUICK AUDIT',                   'pick DLD + SF files, run everything');
   console.log('');
@@ -160,6 +161,8 @@ async function showMenu() {
   menuLine('R', 'Reveal output folder',          '');
   console.log('');
   menuLine('Y', 'Area template',                 'generate / apply staff-filled SQM CSVs');
+  menuLine('V', 'Review pending changes',        'writes pending-changes.csv and opens it');
+  menuLine('B', 'Apply pending decisions',       'reads pending-changes.csv, commits decisions');
   console.log('');
   menuLine('Q', 'Quit',                          '');
   console.log('');
@@ -402,11 +405,11 @@ function loadDb() {
 }
 
 async function doOverrides() {
-  const { listBankOnlyUnits, getOverride, setOverride, deleteOverride } = require('./overrides');
+  const { listBankOnlyUnits } = require('./overrides');
 
   while (true) {
     await showHeader();
-    sectionHeader('MANUAL OVERRIDES  /  bank-only units');
+    sectionHeader('MASTER DATA  /  bank-only units');
 
     let db;
     try { db = loadDb(); }
@@ -438,10 +441,10 @@ async function doOverrides() {
 }
 
 async function overridesFor(db, project) {
-  const { listBankOnlyUnits, setOverride, deleteOverride } = require('./overrides');
+  const { listBankOnlyUnits } = require('./overrides');
   while (true) {
     await showHeader();
-    sectionHeader('OVERRIDES  ·  ' + project.project_name);
+    sectionHeader('MASTER DATA  ·  ' + project.project_name);
     const units = listBankOnlyUnits(db, project.project_id);
     if (units.length === 0) {
       console.log('   no bank-only units in latest snapshot.');
@@ -449,7 +452,7 @@ async function overridesFor(db, project) {
       await pause();
       return;
     }
-    const headers = ['#', 'UNIT', 'BANK (DLD)', 'OVERRIDE BUYER', 'NOTES'];
+    const headers = ['#', 'UNIT', 'BANK (DLD)', 'MASTER BUYER', 'NOTES'];
     const rows = units.map((u, i) => [
       String(i + 1),
       u.unit_number || '',
@@ -477,7 +480,9 @@ async function overridesFor(db, project) {
     if (delMatch) {
       const i = parseInt(delMatch[1], 10) - 1;
       if (i >= 0 && i < units.length) {
-        deleteOverride(db, project.project_id, units[i].unit_number_norm);
+        const u = units[i];
+        db.prepare('DELETE FROM master_data WHERE project_id = ? AND unit_number_norm = ?')
+          .run(project.project_id, u.unit_number_norm);
       }
       continue;
     }
@@ -486,15 +491,16 @@ async function overridesFor(db, project) {
     const u = units[i];
     console.log('');
     console.log('   Unit ' + C.bold + u.unit_number + C.reset + ' · DLD bank: ' + (u.last_party || '—'));
-    if (u.override_buyer) console.log('   current override: ' + u.override_buyer);
+    if (u.override_buyer) console.log('   current master buyer: ' + u.override_buyer);
     const name = await askPrompt('    ' + C.magenta + 'real buyer name' + C.reset + ' (blank = keep, "-" = delete): ');
     if (name === '') continue;
     if (name === '-') {
-      deleteOverride(db, project.project_id, u.unit_number_norm);
+      db.prepare('DELETE FROM master_data WHERE project_id = ? AND unit_number_norm = ?')
+        .run(project.project_id, u.unit_number_norm);
       continue;
     }
     const notes = await askPrompt('    ' + C.magenta + 'notes' + C.reset + ' (optional): ');
-    setOverride(db, project.project_id, u.unit_number_norm, name, notes || null);
+    upsertMasterField(db, project.project_id, u.unit_number_norm, 'buyer_name', name, 'staff');
   }
 }
 
@@ -563,6 +569,26 @@ async function doAreaTemplate() {
 function stripAnsi(s) { return String(s).replace(/\x1b\[[0-9;]*m/g, ''); }
 function pad(s, w) { const vis = stripAnsi(s); return s + ' '.repeat(Math.max(0, w - vis.length)); }
 
+async function doReviewPending() {
+  await showHeader(); sectionHeader('REVIEW PENDING CHANGES');
+  runNode(['review-pending']);
+  const csvPath = path.join(ROOT, 'output', 'csv', 'pending-changes.csv');
+  if (fs.existsSync(csvPath)) {
+    if (process.platform === 'win32') {
+      spawn('cmd.exe', ['/c', 'start', '', csvPath], { detached: true, stdio: 'ignore' }).unref();
+    } else {
+      spawn('xdg-open', [csvPath], { detached: true, stdio: 'ignore' }).unref();
+    }
+  }
+  await pause();
+}
+
+async function doApplyPending() {
+  await showHeader(); sectionHeader('APPLY PENDING DECISIONS');
+  runNode(['apply-pending']);
+  await pause();
+}
+
 function askOnce(promptText) {
   return new Promise(resolve => {
     const rl = readline.createInterface({ input: process.stdin, output: process.stdout, terminal: true });
@@ -592,6 +618,8 @@ async function mainLoop() {
         case 'o': await doOpenReport();  break;
         case 'r': await doReveal();      break;
         case 'y': await doAreaTemplate(); break;
+        case 'v': await doReviewPending(); break;
+        case 'b': await doApplyPending(); break;
         case 'q': case 'exit': case 'quit':
           showCursor(); clear();
           console.log('  bye.\n');
