@@ -13,9 +13,9 @@ data/*.sqlite-*
 data/*.db
 
 # inputs (real customer data — not for git)
-input/*.xps
-input/*.csv
-input/*.xlsx
+input/**/*.xps
+input/**/*.csv
+input/**/*.xlsx
 sf-input/*.xlsx
 sf-input/*.xls
 

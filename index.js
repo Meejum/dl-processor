@@ -21,6 +21,9 @@ const OUTPUT_DIR   = path.join(__dirname, 'output');
 const COMPARE_DIR  = path.join(OUTPUT_DIR, 'compare');
 const DIFF_DIR     = path.join(OUTPUT_DIR, 'diff');
 const CSV_DIR      = path.join(OUTPUT_DIR, 'csv');
+const PARSE_DIR    = path.join(OUTPUT_DIR, 'parse');
+const CHANGES_TEMPLATE_DIR       = path.join(OUTPUT_DIR, 'Changes Template');
+const CHANGES_TEMPLATE_INPUT_DIR = path.join(__dirname, 'input', 'Changes Template Input');
 
 function banner() {
   console.log('');
@@ -32,7 +35,7 @@ function banner() {
 function usage() {
   console.log('Usage:');
   console.log('  node index.js                  full pipeline: parse, import, import SF, compare');
-  console.log('  node index.js parse    [file]  parse XPS/CSV -> JSON+CSV in output/');
+  console.log('  node index.js parse    [file]  parse XPS/CSV -> JSON+CSV in output/parse/');
   console.log('  node index.js import   [file]  parse + store in SQLite');
   console.log('  node index.js import-sf [file] import Salesforce xlsx snapshot');
   console.log('  node index.js compare  [name]  DLD vs SF comparison');
@@ -84,11 +87,11 @@ function printParseSummary(data) {
 }
 
 function writeOutputFiles(data, sourceFilename) {
-  fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  fs.mkdirSync(PARSE_DIR, { recursive: true });
   const base = safeName(data.project.projectName) || path.basename(sourceFilename, path.extname(sourceFilename));
-  const jsonPath = path.join(OUTPUT_DIR, base + '.json');
-  const unitsCsv = path.join(OUTPUT_DIR, base + '.units.csv');
-  const txCsv    = path.join(OUTPUT_DIR, base + '.transactions.csv');
+  const jsonPath = path.join(PARSE_DIR, base + '.json');
+  const unitsCsv = path.join(PARSE_DIR, base + '.units.csv');
+  const txCsv    = path.join(PARSE_DIR, base + '.transactions.csv');
   writeJson({
     source: sourceFilename,
     extractedAt: new Date().toISOString(),
@@ -581,8 +584,9 @@ function main() {
     const { openDb } = require('./src/db');
     const db = openDb();
     try {
+      fs.mkdirSync(CHANGES_TEMPLATE_DIR, { recursive: true });
       const safe = (projectFilter || 'all').replace(/[^A-Za-z0-9_-]+/g, '_');
-      const outPath = path.join(OUTPUT_DIR, 'area-template-' + safe + '.csv');
+      const outPath = path.join(CHANGES_TEMPLATE_DIR, 'area-template-' + safe + '.csv');
       const res = generateAreaTemplate({ db, projectFilter, outPath });
       console.log('  -> wrote ' + path.relative(process.cwd(), outPath));
       console.log('     ' + res.rowCount + ' rows across ' + res.projects + ' project(s)');
@@ -591,8 +595,22 @@ function main() {
   }
 
   if (cmd === 'apply-areas') {
-    const csvPath = process.argv[3];
-    if (!csvPath) { console.error('usage: apply-areas <csv-file>'); process.exit(1); }
+    let csvPath = process.argv[3];
+    if (!csvPath) {
+      // Default: look for a single CSV in input/Changes Template Input/.
+      // If exactly one file is present, use it. Otherwise show usage.
+      if (fs.existsSync(CHANGES_TEMPLATE_INPUT_DIR)) {
+        const csvs = fs.readdirSync(CHANGES_TEMPLATE_INPUT_DIR).filter(f => f.toLowerCase().endsWith('.csv'));
+        if (csvs.length === 1) {
+          csvPath = path.join(CHANGES_TEMPLATE_INPUT_DIR, csvs[0]);
+          console.log('  using: ' + path.relative(process.cwd(), csvPath));
+        } else if (csvs.length > 1) {
+          console.error('multiple CSVs in ' + path.relative(process.cwd(), CHANGES_TEMPLATE_INPUT_DIR) + '; specify one explicitly');
+          process.exit(1);
+        }
+      }
+    }
+    if (!csvPath) { console.error('usage: apply-areas <csv-file>  (or drop a CSV into input/Changes Template Input/)'); process.exit(1); }
     const { applyAreaTemplate } = require('./src/area-template');
     const { openDb } = require('./src/db');
     const db = openDb();

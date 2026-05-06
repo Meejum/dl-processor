@@ -511,8 +511,8 @@ async function overridesFor(db, project) {
 async function doAreaTemplate() {
   await showHeader(); sectionHeader('AREA TEMPLATE  /  generate & apply SQM CSVs');
   console.log('');
-  menuLine('1', 'Generate template',   'writes area-template-<project>.csv to output/');
-  menuLine('2', 'Apply filled template', 'reads back a staff-filled CSV, updates DB');
+  menuLine('1', 'Generate template',   'writes area-template-<project>.csv to output/Changes Template/');
+  menuLine('2', 'Apply filled template', 'reads back a staff-filled CSV from input/Changes Template Input/');
   menuLine('B', 'Back',                '');
   console.log('');
 
@@ -527,8 +527,10 @@ async function doAreaTemplate() {
     const { openDb } = require('./db');
     const db = openDb();
     try {
+      const templateDir = path.join(ROOT, 'output', 'Changes Template');
+      fs.mkdirSync(templateDir, { recursive: true });
       const safe = (projectFilter || 'all').replace(/[^A-Za-z0-9_-]+/g, '_');
-      const outPath = path.join(ROOT, 'output', 'area-template-' + safe + '.csv');
+      const outPath = path.join(templateDir, 'area-template-' + safe + '.csv');
       const res = generateAreaTemplate({ db, projectFilter, outPath });
       console.log('');
       console.log('  -> wrote ' + path.relative(process.cwd(), outPath) + ' (' + res.rowCount + ' rows)');
@@ -539,12 +541,14 @@ async function doAreaTemplate() {
 
   } else if (choice === '2') {
     await showHeader(); sectionHeader('AREA TEMPLATE  /  Apply');
-    console.log('  Select a filled area-template CSV from the output/ folder.');
+    const inputDir = path.join(ROOT, 'input', 'Changes Template Input');
+    fs.mkdirSync(inputDir, { recursive: true });
+    console.log('  Select a filled area-template CSV from input/Changes Template Input/.');
     const picks = await pickFile({
       title: 'Select filled area-template CSV',
       filter: 'CSV files (*.csv)|*.csv|All files (*.*)|*.*',
-      initialDir: OUTPUT_DIR,
-      searchDir:  OUTPUT_DIR,
+      initialDir: inputDir,
+      searchDir:  inputDir,
       extensions: ['.csv'],
       multi: false
     });
