@@ -2,6 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const { compareProject } = require('./compare');
 const { SOBHA_STYLE_CSS, brandBar } = require('./html-styles');
+const { renderDldBuyersCell, renderSfApplicantsCell, BUYER_CELLS_CSS } = require('./buyer-cells');
 
 const CATEGORY_LABEL = {
   AGREE_MATCH:    'Agree · match',
@@ -58,6 +59,8 @@ function makeDeltaRow(m, t) {
     t_match_reasons:  t ? t.match_reasons : null,
     t_dld_buyer:      t ? t.dld_purchase_party : null,
     t_sf_applicant:   t ? t.sf_applicant : null,
+    t_dld_buyers:     t ? (t.dld_buyers    || []) : [],
+    t_sf_applicants:  t ? (t.sf_applicants || []) : [],
     t_dld_price:      t ? t.dld_purchase_amount : null,
     t_sf_price:       t ? t.sf_purchase_price : null,
     t_price_diff_pct: t ? t.price_diff_pct : null,
@@ -175,6 +178,8 @@ function writeAuditDeltaHtml(outPath, projectName, rows, manualSnapshot) {
       `<td>${renderCell(r.t_match_reasons)}</td>` +
       `<td>${renderCell(r.t_dld_buyer)}</td>` +
       `<td>${renderCell(r.t_sf_applicant)}</td>` +
+      renderDldBuyersCell(r.t_dld_buyers || []) +
+      renderSfApplicantsCell(r.t_sf_applicants || []) +
       `<td class="num">${fmtMoney(r.t_dld_price)}</td>` +
       `<td class="num">${fmtMoney(r.t_sf_price)}</td>` +
       `</tr>`;
@@ -185,7 +190,7 @@ function writeAuditDeltaHtml(outPath, projectName, rows, manualSnapshot) {
 <head>
 <meta charset="utf-8">
 <title>${escHtml(projectName)} — Audit Delta · Sobha Realty</title>
-<style>${SOBHA_STYLE_CSS}</style>
+<style>${SOBHA_STYLE_CSS}${BUYER_CELLS_CSS}</style>
 </head>
 <body>
 ${brandBar(generatedAt)}
@@ -216,6 +221,7 @@ ${brandBar(generatedAt)}
   <th>Manual SF Applicant</th><th data-align="num">Manual SF Price</th>
   <th>Tool Status</th><th>Tool Reasons</th>
   <th>Tool DLD Buyer</th><th>Tool SF Applicant</th>
+  <th data-align="num">DLD #</th><th data-align="num">SF #</th>
   <th data-align="num">Tool DLD Price</th><th data-align="num">Tool SF Price</th>
 </tr></thead>
 <tbody>

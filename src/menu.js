@@ -5,6 +5,7 @@ const readline = require('readline');
 const { spawn, spawnSync } = require('child_process');
 const { pickDldFiles, pickSfFile, pickFile } = require('./file-picker');
 const { upsertMasterField } = require('./master-data');
+const { archiveOutput } = require('./archive');
 
 const ROOT         = path.join(__dirname, '..');
 const INPUT_DIR    = path.join(ROOT, 'input');
@@ -160,6 +161,7 @@ async function showMenu() {
   menuLine('S', 'Status',                       '');
   menuLine('O', 'Open latest HTML report',       '');
   menuLine('R', 'Reveal output folder',          '');
+  menuLine('Z', 'Archive output',                'snapshots output/ to output/archive/<timestamp>/');
   console.log('');
   menuLine('Y', 'Area template',                 'generate / apply staff-filled SQM CSVs');
   menuLine('V', 'Review pending changes',        'writes pending-changes.csv and opens it');
@@ -449,6 +451,18 @@ async function doReveal() {
   await pause();
 }
 
+async function doArchiveOutput() {
+  await showHeader(); sectionHeader('ARCHIVE OUTPUT');
+  const res = archiveOutput(OUTPUT_DIR);
+  if (!res.ok) {
+    console.log('  ' + C.dim + res.reason + C.reset);
+  } else {
+    console.log('  archived ' + res.count + ' file(s) to:');
+    console.log('    ' + path.relative(ROOT, res.dest));
+  }
+  await pause();
+}
+
 function loadDb() {
   const Database = require('better-sqlite3');
   return new Database(path.join(ROOT, 'data', 'dld-sync.sqlite'));
@@ -672,6 +686,7 @@ async function mainLoop() {
         case 's': await doStatus();      break;
         case 'o': await doOpenReport();  break;
         case 'r': await doReveal();      break;
+        case 'z': await doArchiveOutput(); break;
         case 'y': await doAreaTemplate(); break;
         case 'v': await doReviewPending(); break;
         case 'b': await doApplyPending(); break;
