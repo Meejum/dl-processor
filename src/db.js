@@ -164,6 +164,9 @@ function migrateSchema(db) {
   if (snapCols.has('raw_json')) {
     db.exec('ALTER TABLE dld_snapshot DROP COLUMN raw_json');
   }
+
+  // 8. Drop unused v_unit_compare view if present.
+  db.exec('DROP VIEW IF EXISTS v_unit_compare');
 }
 
 function openDb(dbPath = DEFAULT_DB_PATH) {

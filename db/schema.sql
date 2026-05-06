@@ -241,36 +241,6 @@ CREATE VIEW IF NOT EXISTS v_dld_unit_latest AS
   FROM dld_unit u
   JOIN v_latest_dld_snapshot s ON s.snapshot_id = u.snapshot_id;
 
-CREATE VIEW IF NOT EXISTS v_unit_compare AS
-  SELECT
-    p.project_name               AS dld_project,
-    pm.sf_sub_project            AS sf_sub_project,
-    pm.sf_unit_prefix            AS sf_unit_prefix,
-    u.unit_number                AS dld_unit,
-    u.unit_number_norm           AS dld_unit_norm,
-    pm.sf_unit_prefix || '-' || u.unit_number_norm AS expected_sf_unit,
-    b.unit                       AS sf_unit,
-    u.unit_type                  AS dld_unit_type,
-    u.net_area                   AS dld_net_area,
-    b.purchase_price             AS sf_purchase_price,
-    b.dld_amount                 AS sf_dld_amount,
-    b.applicant_name             AS sf_applicant,
-    b.status                     AS sf_status,
-    b.pre_reg_status             AS sf_pre_reg,
-    b.procedure_number           AS sf_procedure_number,
-    b.booking_name               AS sf_booking_name,
-    CASE
-      WHEN b.unit IS NOT NULL THEN 'MATCH'
-      ELSE 'DLD_ONLY'
-    END AS match_status
-  FROM v_dld_unit_latest u
-  JOIN dld_project p ON p.project_id = u.project_id
-  LEFT JOIN project_mapping pm ON pm.project_id = u.project_id
-  LEFT JOIN sf_booking b
-    ON b.sf_snapshot_id = (SELECT sf_snapshot_id FROM v_latest_sf_snapshot)
-   AND b.sub_project = pm.sf_sub_project
-   AND b.unit_norm   = pm.sf_unit_prefix || '-' || u.unit_number_norm;
-
 -- ─────────────────────────────────────────────────────────────────────
 -- master_data: one row per (project, unit). Wide. Single source of truth
 -- once seeded. Compare reads from here when a row exists, falls back to
