@@ -432,14 +432,11 @@ function cmdReviewPending(filterProjectName) {
   const header = ['change_id', 'project_name', 'unit', 'field', 'old_value', 'proposed_value', 'source_snapshot_date', 'proposed_at', 'decision', 'notes'];
   const lines = [header.join(',')];
   for (const r of rows) {
-    const snap = r.source_snapshot_id
-      ? db.prepare('SELECT snapshot_date FROM dld_snapshot WHERE snapshot_id = ?').get(r.source_snapshot_id)
-      : null;
     lines.push(header.map(h => {
       const v = h === 'project_name' ? r.project_name :
                 h === 'unit' ? r.unit_number_norm :
                 h === 'field' ? r.field_name :
-                h === 'source_snapshot_date' ? (snap ? snap.snapshot_date : '') :
+                h === 'source_snapshot_date' ? (r.source_snapshot_date || '') :
                 h === 'decision' ? 'pending' :
                 h === 'notes' ? '' :
                 r[h] == null ? '' : r[h];

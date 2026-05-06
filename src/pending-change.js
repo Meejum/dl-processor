@@ -131,9 +131,10 @@ function queueMasterDiffs(db, snapshotId) {
 
 function listPending(db, projectFilter) {
   let sql = `
-    SELECT pc.*, p.project_name
+    SELECT pc.*, p.project_name, s.snapshot_date AS source_snapshot_date
     FROM pending_change pc
     JOIN dld_project p ON p.project_id = pc.project_id
+    LEFT JOIN dld_snapshot s ON s.snapshot_id = pc.source_snapshot_id
     WHERE pc.decision = 'pending'
   `;
   const params = [];
