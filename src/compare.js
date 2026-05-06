@@ -445,7 +445,11 @@ function compareProject(db, projectId, cachedConfig) {
   }
 
   const areaThresholdPct = getAreaThreshold(mappingRow, cachedConfig, project.project_name);
-  const manualAreaRows = db.prepare(`SELECT unit_number_norm, area_sqm FROM manual_area WHERE project_id = ?`).all(projectId);
+  const manualAreaRows = db.prepare(`
+    SELECT unit_number_norm, area_sqm
+    FROM master_data
+    WHERE project_id = ? AND area_sqm IS NOT NULL
+  `).all(projectId);
   const manualAreaMap = new Map();
   for (const r of manualAreaRows) manualAreaMap.set(r.unit_number_norm, r.area_sqm);
   let sfBookings;
