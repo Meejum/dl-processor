@@ -1,5 +1,6 @@
 const { getMasterRow, upsertMasterField, seedMasterFromDld, FIELD_TO_COLUMNS } = require('./master-data');
 const { BANK_PREFIX_RE } = require('./common');
+const { loadAutoApproveConfig, shouldAutoApprove } = require('./auto-approve');
 
 const TRACKED_FIELDS = ['buyer_name', 'purchase_price_aed', 'status', 'procedure_number', 'area_sqm'];
 
@@ -69,6 +70,7 @@ function queueMasterDiffs(db, snapshotId) {
   const snap = db.prepare('SELECT * FROM dld_snapshot WHERE snapshot_id = ?').get(snapshotId);
   if (!snap) return { queued: 0, seeded: 0 };
   const projectId = snap.project_id;
+  const autoCfg = loadAutoApproveConfig();
   const units = db.prepare('SELECT * FROM dld_unit WHERE snapshot_id = ?').all(snapshotId);
   let queued = 0;
   let seeded = 0;
@@ -109,6 +111,17 @@ function queueMasterDiffs(db, snapshotId) {
         const proposedStr = String(dldValue);
         if (proposalAlreadyRejected(db, projectId, u.unit_number_norm, field, proposedStr)) continue;
         if (alreadyHasPendingProposal(db, projectId, u.unit_number_norm, field, proposedStr)) continue;
+        const masterSource = master[FIELD_TO_COLUMNS[field].source];
+        if (shouldAutoApprove(field, masterValue, dldValue, masterSource, autoCfg)) {
+          db.prepare(
+            `INSERT INTO pending_change
+               (project_id, unit_number_norm, field_name, old_value, proposed_value,
+                source_snapshot_id, decision, decided_at, decided_by)
+             VALUES (?, ?, ?, ?, ?, ?, 'approved', datetime('now'), 'auto')`
+          ).run(projectId, u.unit_number_norm, field, String(masterValue), proposedStr, snapshotId);
+          upsertMasterField(db, projectId, u.unit_number_norm, field, dldValue, 'dld_approved');
+          continue;
+        }
         db.prepare(
           `INSERT INTO pending_change
              (project_id, unit_number_norm, field_name, old_value, proposed_value, source_snapshot_id)
