@@ -5,13 +5,21 @@ const { openFile } = require('../src/open-file');
 
 function withStubbedSpawn(fn) {
   const calls = [];
+  const stubs = [];
   const orig = cp.spawn;
   cp.spawn = (...args) => {
     calls.push(args);
-    return { unref() {} };
+    const handlers = {};
+    const stub = {
+      on(event, fn) { handlers[event] = fn; return stub; },
+      unref() {},
+      emit(event, ...rest) { if (handlers[event]) handlers[event](...rest); }
+    };
+    stubs.push(stub);
+    return stub;
   };
   try {
-    fn(calls);
+    fn(calls, stubs);
   } finally {
     cp.spawn = orig;
   }
@@ -42,5 +50,15 @@ test('openFile on win32 uses cmd /s /c start "" with verbatim-quoted path', () =
     assert.match(args[2], /^start "" "C:\/some dir\/has & special\.txt"$/);
     assert.equal(opts.windowsVerbatimArguments, true);
     assert.equal(opts.shell, false);
+  });
+});
+
+test('openFile attaches an error listener so async spawn failures do not crash the parent', () => {
+  withStubbedSpawn((calls, stubs) => {
+    openFile('C:/fake/path/smoke.txt');
+    assert.equal(stubs.length, 1);
+    // Simulate child_process emitting 'error' (e.g. xdg-open not installed).
+    // Without an attached listener this would throw an uncaught exception.
+    assert.doesNotThrow(() => stubs[0].emit('error', new Error('ENOENT: xdg-open not found')));
   });
 });

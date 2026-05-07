@@ -21,6 +21,12 @@ function openFile(absolutePath) {
   } else {
     throw new Error('openFile: unsupported platform: ' + p);
   }
+  // Async failures (xdg-open / open not installed; spawned binary crashes) emit
+  // 'error' on the child. Without a listener that becomes an uncaught exception
+  // and crashes the parent — even though the spawn is detached. Swallow it: the
+  // file-open is best-effort, the caller (cmdReviewPending) has already written
+  // both files to disk.
+  child.on('error', () => {});
   child.unref();
 }
 
