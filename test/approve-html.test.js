@@ -27,7 +27,7 @@ test('generateApproveHtml writes a self-contained HTML file with brandBar and to
     generateApproveHtml(SAMPLE_ROWS, TOLS, file);
     const html = fs.readFileSync(file, 'utf8');
     assert.match(html, /<!DOCTYPE html>/i);
-    assert.match(html, /class="brand"/);
+    assert.match(html, /class="topbar"/);  // brandBar output
     assert.match(html, /Approve Pending Master-Data Changes/);
     assert.match(html, /3 pending/);
     assert.match(html, /1 buyer/);
@@ -78,6 +78,6 @@ test('generateApproveHtml writes empty-state HTML when no pending rows', () => {
     generateApproveHtml([], TOLS, file);
     const html = fs.readFileSync(file, 'utf8');
     assert.match(html, /No pending changes/);
-    assert.match(html, /class="brand"/);
+    assert.match(html, /class="topbar"/);  // brandBar output
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

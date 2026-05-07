@@ -83,7 +83,7 @@ function generateApproveHtml(pendingRows, tolerances, outPath) {
   if (total === 0) {
     const empty =
       '<main class="approve-page">' +
-      '<h1 class="brand">Approve Pending Master-Data Changes</h1>' +
+      '<h1>Approve Pending Master-Data Changes</h1>' +
       '<p class="muted">No pending changes.</p>' +
       '</main></body></html>';
     fs.writeFileSync(outPath, head + empty, 'utf8');
@@ -92,7 +92,7 @@ function generateApproveHtml(pendingRows, tolerances, outPath) {
 
   const headerCard =
     '<section class="card header">' +
-      '<h1 class="brand">Approve Pending Master-Data Changes</h1>' +
+      '<h1>Approve Pending Master-Data Changes</h1>' +
       '<div class="counts">' +
         '<span class="big">' + total + ' pending</span>' +
         '<span class="sep">·</span>' +
