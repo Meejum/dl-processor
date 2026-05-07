@@ -165,7 +165,7 @@ async function showMenu() {
   console.log('');
   menuLine('Y', 'Area template',                 'generate / apply staff-filled SQM CSVs');
   menuLine('V', 'Review pending changes',        'writes pending-changes.csv and opens it');
-  menuLine('B', 'Apply pending decisions',       'reads pending-changes.csv, commits decisions');
+  menuLine('B', 'Apply pending decisions',       'pick a CSV (HTML export, Changes Template Input, or output/csv) and commit decisions');
   console.log('');
   menuLine('Q', 'Quit',                          '');
   console.log('');
@@ -653,7 +653,27 @@ async function doReviewPending() {
 
 async function doApplyPending() {
   await showHeader(); sectionHeader('APPLY PENDING DECISIONS');
-  runNode(['apply-pending']);
+  // Look in three places: input/Changes Template Input (where staff drop edited CSVs),
+  // output/csv (the freshly written pending-changes.csv), and Downloads (HTML "Export decisions").
+  const changesDir = path.join(ROOT, 'input', 'Changes Template Input');
+  const outputCsvDir = path.join(ROOT, 'output', 'csv');
+  fs.mkdirSync(changesDir, { recursive: true });
+  console.log('  Select the decisions CSV to apply.');
+  const picks = await pickFile({
+    title: 'Select decisions CSV',
+    filter: 'CSV files (*.csv)|*.csv|All files (*.*)|*.*',
+    initialDir: changesDir,
+    searchDirs: [changesDir, outputCsvDir],
+    extensions: ['.csv'],
+    multi: false
+  });
+  if (!picks || picks.length === 0) {
+    console.log('  ' + C.dim + 'cancelled — no file selected' + C.reset);
+    await pause(); return;
+  }
+  const csvPath = picks[0];
+  console.log('  applying: ' + path.relative(process.cwd(), csvPath));
+  runNode(['apply-pending', csvPath]);
   await pause();
 }
 
