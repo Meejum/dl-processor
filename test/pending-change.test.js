@@ -282,3 +282,50 @@ test('applyDecision falls back to "ali" when DLP_USER is unset', () => {
   const pc = db.prepare('SELECT * FROM pending_change WHERE change_id=?').get(cid);
   assert.equal(pc.decided_by, 'ali');
 });
+
+test('applyDecision: appliedValue null/equal-to-proposed → no override; legacy behavior', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'A');
+  upsertMasterField(db, pid, '101', 'purchase_price_aed', 1000000, 'staff');
+  const cid = db.prepare(
+    `INSERT INTO pending_change (project_id, unit_number_norm, field_name, old_value, proposed_value)
+     VALUES (?, '101', 'purchase_price_aed', '1000000', '1100000')`
+  ).run(pid).lastInsertRowid;
+  applyDecision(db, cid, 'approve', 'standard approve', null);
+  const m = db.prepare('SELECT * FROM master_data WHERE project_id=? AND unit_number_norm=?').get(pid, '101');
+  assert.equal(m.purchase_price_aed, 1100000);
+  const pc = db.prepare('SELECT * FROM pending_change WHERE change_id=?').get(cid);
+  assert.equal(pc.decision_notes, 'standard approve', 'no override prefix when appliedValue is null');
+});
+
+test('applyDecision: appliedValue differs → applies override; decision_notes has structured prefix', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'A');
+  upsertMasterField(db, pid, '101', 'purchase_price_aed', 1000000, 'staff');
+  const cid = db.prepare(
+    `INSERT INTO pending_change (project_id, unit_number_norm, field_name, old_value, proposed_value)
+     VALUES (?, '101', 'purchase_price_aed', '1000000', '1100000')`
+  ).run(pid).lastInsertRowid;
+  applyDecision(db, cid, 'approve', 'staff-corrected per buyer email', 1234567);
+  const m = db.prepare('SELECT * FROM master_data WHERE project_id=? AND unit_number_norm=?').get(pid, '101');
+  assert.equal(m.purchase_price_aed, 1234567, 'master holds the override, not the DLD proposal');
+  const pc = db.prepare('SELECT * FROM pending_change WHERE change_id=?').get(cid);
+  assert.equal(pc.proposed_value, '1100000', 'pending_change.proposed_value preserves the DLD original');
+  assert.match(pc.decision_notes, /^override: 1234567 \(DLD: 1100000\) — staff-corrected per buyer email$/);
+});
+
+test('applyDecision: reject ignores appliedValue', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'A');
+  upsertMasterField(db, pid, '101', 'purchase_price_aed', 1000000, 'staff');
+  const cid = db.prepare(
+    `INSERT INTO pending_change (project_id, unit_number_norm, field_name, old_value, proposed_value)
+     VALUES (?, '101', 'purchase_price_aed', '1000000', '1100000')`
+  ).run(pid).lastInsertRowid;
+  applyDecision(db, cid, 'reject', 'wrong figure', 999);
+  const m = db.prepare('SELECT * FROM master_data WHERE project_id=? AND unit_number_norm=?').get(pid, '101');
+  assert.equal(m.purchase_price_aed, 1000000, 'reject leaves master alone');
+  const pc = db.prepare('SELECT * FROM pending_change WHERE change_id=?').get(cid);
+  assert.equal(pc.decision, 'rejected');
+  assert.equal(pc.decision_notes, 'wrong figure', 'no override prefix on reject');
+});

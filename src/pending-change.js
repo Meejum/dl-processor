@@ -159,7 +159,7 @@ function listPending(db, projectFilter) {
   return db.prepare(sql).all(...params);
 }
 
-function applyDecision(db, changeId, decision, notes) {
+function applyDecision(db, changeId, decision, notes, appliedValue) {
   const pc = db.prepare('SELECT * FROM pending_change WHERE change_id = ?').get(changeId);
   if (!pc) throw new Error('change_id ' + changeId + ' not found');
   if (pc.decision !== 'pending') throw new Error('change_id ' + changeId + ' already decided: ' + pc.decision);
@@ -168,19 +168,32 @@ function applyDecision(db, changeId, decision, notes) {
   }
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   const decidedBy = process.env.DLP_USER || 'ali';
+
+  // Type-aware coercion shared by both proposed and applied values.
+  function coerce(v) {
+    if (v == null || v === '') return null;
+    if (pc.field_name === 'purchase_price_aed' || pc.field_name === 'area_sqm') {
+      const n = Number(v);
+      return isFinite(n) ? n : null;
+    }
+    return String(v);
+  }
+
   const work = db.transaction(() => {
     if (decision === 'approve') {
-      // Coerce proposed_value to the right type before applying.
-      let value = pc.proposed_value;
-      if (pc.field_name === 'purchase_price_aed' || pc.field_name === 'area_sqm') {
-        value = value == null ? null : Number(value);
-      }
-      upsertMasterField(db, pc.project_id, pc.unit_number_norm, pc.field_name, value, 'dld_approved');
+      const proposed = coerce(pc.proposed_value);
+      const applied  = coerce(appliedValue);
+      const isOverride = applied !== null && applied !== proposed;
+      const valueToApply = isOverride ? applied : proposed;
+      const finalNotes = isOverride
+        ? 'override: ' + valueToApply + ' (DLD: ' + pc.proposed_value + ')' + (notes ? ' — ' + notes : '')
+        : (notes || '');
+      upsertMasterField(db, pc.project_id, pc.unit_number_norm, pc.field_name, valueToApply, 'dld_approved');
       db.prepare(
         `UPDATE pending_change
          SET decision = 'approved', decided_at = ?, decided_by = ?, decision_notes = ?
          WHERE change_id = ?`
-      ).run(now, decidedBy, notes || '', changeId);
+      ).run(now, decidedBy, finalNotes, changeId);
     } else {
       db.prepare(
         `UPDATE pending_change
