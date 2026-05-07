@@ -14,6 +14,8 @@ const { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAudit
 const { diffProject, summarizeDiff, writeDiffCsv, writeDiffHtml } = require('./src/diff');
 const { buildProjectStat, writeDashboardHtml } = require('./src/dashboard');
 const { listPending, applyDecision } = require('./src/pending-change');
+const { generateApproveHtml } = require('./src/approve-html');
+const { loadAutoApproveConfig } = require('./src/auto-approve');
 
 const INPUT_DIR    = path.join(__dirname, 'input');
 const SF_INPUT_DIR = path.join(__dirname, 'sf-input');
@@ -446,6 +448,10 @@ function cmdReviewPending(filterProjectName) {
   }
   fs.writeFileSync(outPath, lines.join('\r\n') + '\r\n', 'utf8');
   console.log('  wrote: ' + path.relative(process.cwd(), outPath));
+  const htmlPath = path.join(OUTPUT_DIR, 'approve-pending.html');
+  const tolerances = loadAutoApproveConfig();
+  generateApproveHtml(rows, tolerances, htmlPath);
+  console.log('  wrote: ' + path.relative(process.cwd(), htmlPath));
   db.close();
 }
 
