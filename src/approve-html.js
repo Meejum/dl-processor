@@ -47,7 +47,12 @@ function fieldBreakdown(rows) {
     const k = FIELD_LABEL[r.field_name];
     if (k) counts[k] += 1;
   }
-  return counts.buyer + ' buyer · ' + counts.price + ' price · ' + counts.area + ' area · ' + (counts.status + counts.procedure) + ' other';
+  return [
+    '<a class="count-link" data-target="buyer" href="#section-buyer">' + counts.buyer + ' buyer</a>',
+    '<a class="count-link" data-target="price" href="#section-price">' + counts.price + ' price</a>',
+    '<a class="count-link" data-target="area"  href="#section-area">'  + counts.area  + ' area</a>',
+    '<a class="count-link" data-target="other" href="#section-other">' + (counts.status + counts.procedure) + ' other</a>'
+  ].join(' · ');
 }
 
 function projectBreakdown(rows) {
@@ -113,9 +118,13 @@ function renderRow(r, tolerances) {
 function renderSection(section, rows, tolerances) {
   const sectionRows = rowsForSection(rows, section);
   if (sectionRows.length === 0) {
-    return '<section class="approve-section" data-section="' + section.id + '">' +
-             '<h2 class="section-title">' + escHtml(section.title) + ' — 0 pending</h2>' +
-             '<p class="muted">No pending changes in this category.</p>' +
+    return '<section class="approve-section" id="section-' + section.id + '" data-section="' + section.id + '">' +
+             '<h2 class="section-title" data-toggle="' + section.id + '">' +
+               '<span class="caret">▶</span> ' + escHtml(section.title) + ' — 0 pending' +
+             '</h2>' +
+             '<div class="section-body" id="section-body-' + section.id + '" hidden>' +
+               '<p class="muted">No pending changes in this category.</p>' +
+             '</div>' +
            '</section>';
   }
   const groups = groupByProject(sectionRows);
@@ -133,9 +142,13 @@ function renderSection(section, rows, tolerances) {
     '<tr><td class="group-header" colspan="7">' + escHtml(g.name) + ' — ' + g.rows.length + ' pending</td></tr>' +
     g.rows.map(r => renderRow(r, tolerances)).join('')
   ).join('');
-  return '<section class="approve-section" data-section="' + section.id + '">' +
-           '<h2 class="section-title">' + escHtml(section.title) + ' — ' + sectionRows.length + ' pending</h2>' +
-           tableHead + body + '</tbody></table>' +
+  return '<section class="approve-section" id="section-' + section.id + '" data-section="' + section.id + '">' +
+           '<h2 class="section-title" data-toggle="' + section.id + '">' +
+             '<span class="caret">▶</span> ' + escHtml(section.title) + ' — ' + sectionRows.length + ' pending' +
+           '</h2>' +
+           '<div class="section-body" id="section-body-' + section.id + '" hidden>' +
+             tableHead + body + '</tbody></table>' +
+           '</div>' +
          '</section>';
 }
 
@@ -155,7 +168,11 @@ const APPROVE_CSS = `
   .toolbar .counter{margin-left:8px;color:var(--ink-2);font-size:13px}
   .toolbar .sep{flex:0 0 1px;height:20px;background:var(--border);margin:0 4px}
   .approve-section{margin-top:16px}
-  .section-title{font-size:15px;font-weight:600;color:var(--accent-dark);border-bottom:2px solid var(--accent-soft);padding-bottom:4px;margin:0 0 6px 0}
+  .section-title{font-size:15px;font-weight:700;color:var(--ink);border-bottom:2px solid var(--accent-soft);padding-bottom:4px;margin:0 0 6px 0;cursor:pointer;user-select:none}
+  .section-title .caret{display:inline-block;transition:transform .15s;font-size:11px;color:var(--muted);margin-right:4px}
+  .approve-section.is-open .section-title .caret{transform:rotate(90deg)}
+  .count-link{color:var(--accent-dark);text-decoration:none;border-bottom:1px dotted var(--border-2)}
+  .count-link:hover{color:var(--accent);border-bottom-color:var(--accent)}
   table.approve{width:100%;border-collapse:collapse;background:var(--surface);border:1px solid var(--border);border-radius:8px;overflow:hidden}
   table.approve th,table.approve td{padding:6px 10px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:top}
   table.approve th{background:var(--surface-2);text-align:left;font-weight:600}
@@ -314,6 +331,35 @@ const APPROVE_JS = `
     reader.readAsText(f);
   });
 
+  document.querySelectorAll('.section-title[data-toggle]').forEach(function(h){
+    h.addEventListener('click', function(){
+      var id = h.getAttribute('data-toggle');
+      var body = document.getElementById('section-body-' + id);
+      if (!body) return;
+      var section = h.closest('.approve-section');
+      var nowHidden = body.hasAttribute('hidden');
+      if (nowHidden) {
+        body.removeAttribute('hidden');
+        section.classList.add('is-open');
+      } else {
+        body.setAttribute('hidden', '');
+        section.classList.remove('is-open');
+      }
+    });
+  });
+
+  document.querySelectorAll('.count-link[data-target]').forEach(function(a){
+    a.addEventListener('click', function(){
+      var id = a.getAttribute('data-target');
+      var body = document.getElementById('section-body-' + id);
+      var section = document.getElementById('section-' + id);
+      if (body && body.hasAttribute('hidden')) {
+        body.removeAttribute('hidden');
+        if (section) section.classList.add('is-open');
+      }
+    });
+  });
+
   refreshCounter();
 })();
 `;
@@ -344,7 +390,7 @@ function generateApproveHtml(pendingRows, tolerances, outPath) {
       '<div class="counts">' +
         '<span class="big">' + total + ' pending</span>' +
         '<span class="sep">·</span>' +
-        '<span>' + escHtml(fieldBreakdown(rows)) + '</span>' +
+        '<span>' + fieldBreakdown(rows) + '</span>' +
       '</div>' +
       '<div class="byproj">' + projectBreakdown(rows) + '</div>' +
       '<div class="tolerances muted">tolerance: price ' + tolerances.price_tolerance_pct + '% · area ' + tolerances.area_tolerance_pct + '%</div>' +

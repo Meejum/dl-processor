@@ -93,3 +93,35 @@ test('redesign: editable proposed-input pre-filled with proposed_value and data-
     assert.match(html, /<input[^>]+class="proposed-input"[^>]+type="number"[^>]+data-original="1004000"[^>]+value="1004000"/);
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
+
+test('redesign: sections start collapsed (section-body has hidden attribute)', () => {
+  const { dir, file } = tmpHtml();
+  try {
+    generateApproveHtml(FOUR_SECTION_ROWS, TOLS, file);
+    const html = fs.readFileSync(file, 'utf8');
+    // Each section's body has a hidden attribute on initial render.
+    assert.match(html, /<div class="section-body" id="section-body-buyer"[^>]*hidden/);
+    assert.match(html, /<div class="section-body" id="section-body-price"[^>]*hidden/);
+    assert.match(html, /<div class="section-body" id="section-body-area"[^>]*hidden/);
+    assert.match(html, /<div class="section-body" id="section-body-other"[^>]*hidden/);
+    // Section titles carry data-toggle for the click handler.
+    assert.match(html, /class="section-title" data-toggle="buyer"/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('redesign: summary counts are clickable links targeting each section', () => {
+  const { dir, file } = tmpHtml();
+  try {
+    generateApproveHtml(FOUR_SECTION_ROWS, TOLS, file);
+    const html = fs.readFileSync(file, 'utf8');
+    assert.match(html, /<a class="count-link" data-target="buyer" href="#section-buyer">2 buyer<\/a>/);
+    assert.match(html, /<a class="count-link" data-target="price" href="#section-price">1 price<\/a>/);
+    assert.match(html, /<a class="count-link" data-target="area"\s+href="#section-area">1 area<\/a>/);
+    assert.match(html, /<a class="count-link" data-target="other" href="#section-other">1 other<\/a>/);
+    // Each section has the matching id so the anchor scroll works.
+    assert.match(html, /<section class="approve-section" id="section-buyer"/);
+    assert.match(html, /<section class="approve-section" id="section-price"/);
+    assert.match(html, /<section class="approve-section" id="section-area"/);
+    assert.match(html, /<section class="approve-section" id="section-other"/);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
