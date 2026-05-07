@@ -460,8 +460,24 @@ function cmdReviewPending(filterProjectName) {
       return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
     }).join(','));
   }
-  fs.writeFileSync(outPath, lines.join('\r\n') + '\r\n', 'utf8');
-  console.log('  wrote: ' + path.relative(process.cwd(), outPath));
+  // Excel locks files while open. If pending-changes.csv is locked from a
+  // prior run, write to a timestamped fallback so we don't crash the command
+  // (the HTML is the primary surface anyway).
+  let csvWrittenPath = outPath;
+  const csvBody = lines.join('\r\n') + '\r\n';
+  try {
+    fs.writeFileSync(outPath, csvBody, 'utf8');
+  } catch (e) {
+    if (e.code === 'EBUSY' || e.code === 'EPERM') {
+      const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16);
+      csvWrittenPath = path.join(CSV_DIR, 'pending-changes-' + stamp + '.csv');
+      fs.writeFileSync(csvWrittenPath, csvBody, 'utf8');
+      console.log('  (pending-changes.csv was locked — close Excel; wrote fallback)');
+    } else {
+      throw e;
+    }
+  }
+  console.log('  wrote: ' + path.relative(process.cwd(), csvWrittenPath));
   const htmlPath = path.join(OUTPUT_DIR, 'approve-pending.html');
   const tolerances = loadAutoApproveConfig();
   generateApproveHtml(rows, tolerances, htmlPath);
