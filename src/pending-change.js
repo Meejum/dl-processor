@@ -167,6 +167,7 @@ function applyDecision(db, changeId, decision, notes) {
     throw new Error('decision must be "approve" or "reject", got: ' + decision);
   }
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const decidedBy = process.env.DLP_USER || 'ali';
   const work = db.transaction(() => {
     if (decision === 'approve') {
       // Coerce proposed_value to the right type before applying.
@@ -177,15 +178,15 @@ function applyDecision(db, changeId, decision, notes) {
       upsertMasterField(db, pc.project_id, pc.unit_number_norm, pc.field_name, value, 'dld_approved');
       db.prepare(
         `UPDATE pending_change
-         SET decision = 'approved', decided_at = ?, decided_by = 'ali', decision_notes = ?
+         SET decision = 'approved', decided_at = ?, decided_by = ?, decision_notes = ?
          WHERE change_id = ?`
-      ).run(now, notes || '', changeId);
+      ).run(now, decidedBy, notes || '', changeId);
     } else {
       db.prepare(
         `UPDATE pending_change
-         SET decision = 'rejected', decided_at = ?, decided_by = 'ali', decision_notes = ?
+         SET decision = 'rejected', decided_at = ?, decided_by = ?, decision_notes = ?
          WHERE change_id = ?`
-      ).run(now, notes || '', changeId);
+      ).run(now, decidedBy, notes || '', changeId);
     }
   });
   work();

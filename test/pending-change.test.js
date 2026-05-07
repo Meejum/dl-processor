@@ -250,3 +250,35 @@ test('queueMasterDiffs is atomic — transaction wrapper does not break the happ
   const pending = listPending(db);
   assert.equal(pending.length, 2);
 });
+
+test('applyDecision uses process.env.DLP_USER when set', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'A');
+  upsertMasterField(db, pid, '101', 'buyer_name', 'ALICE', 'staff');
+  const cid = db.prepare(
+    `INSERT INTO pending_change (project_id, unit_number_norm, field_name, old_value, proposed_value)
+     VALUES (?, '101', 'buyer_name', 'ALICE', 'BOB')`
+  ).run(pid).lastInsertRowid;
+  const prev = process.env.DLP_USER;
+  process.env.DLP_USER = 'sara';
+  try { applyDecision(db, cid, 'approve', ''); }
+  finally { if (prev === undefined) delete process.env.DLP_USER; else process.env.DLP_USER = prev; }
+  const pc = db.prepare('SELECT * FROM pending_change WHERE change_id=?').get(cid);
+  assert.equal(pc.decided_by, 'sara');
+});
+
+test('applyDecision falls back to "ali" when DLP_USER is unset', () => {
+  const db = buildDb();
+  const pid = insertProject(db, 'A');
+  upsertMasterField(db, pid, '101', 'buyer_name', 'ALICE', 'staff');
+  const cid = db.prepare(
+    `INSERT INTO pending_change (project_id, unit_number_norm, field_name, old_value, proposed_value)
+     VALUES (?, '101', 'buyer_name', 'ALICE', 'BOB')`
+  ).run(pid).lastInsertRowid;
+  const prev = process.env.DLP_USER;
+  delete process.env.DLP_USER;
+  try { applyDecision(db, cid, 'reject', ''); }
+  finally { if (prev !== undefined) process.env.DLP_USER = prev; }
+  const pc = db.prepare('SELECT * FROM pending_change WHERE change_id=?').get(cid);
+  assert.equal(pc.decided_by, 'ali');
+});
