@@ -16,6 +16,9 @@ const { buildProjectStat, writeDashboardHtml } = require('./src/dashboard');
 const { listPending, applyDecision } = require('./src/pending-change');
 const { generateApproveHtml } = require('./src/approve-html');
 const { loadAutoApproveConfig } = require('./src/auto-approve');
+const { lookupSfUnit } = require('./src/sf-lookup');
+const { openFile } = require('./src/open-file');
+const { getMasterRow } = require('./src/master-data');
 
 const INPUT_DIR    = path.join(__dirname, 'input');
 const SF_INPUT_DIR = path.join(__dirname, 'sf-input');
@@ -429,9 +432,19 @@ function cmdReviewPending(filterProjectName) {
   }
   console.log('  TOTAL: ' + rows.length + ' pending across ' + byProject.size + ' project' + (byProject.size === 1 ? '' : 's'));
 
+  // Enrich rows with SF unit, applicant, price, and current master_data buyer.
+  for (const r of rows) {
+    const sf = lookupSfUnit(db, r.project_id, r.unit_number_norm);
+    r.sf_unit      = sf ? sf.sf_unit      : null;
+    r.sf_applicant = sf ? sf.sf_applicant : null;
+    r.sf_price     = sf ? sf.sf_price     : null;
+    const masterRow = getMasterRow(db, r.project_id, r.unit_number_norm);
+    r.current_buyer = masterRow ? masterRow.buyer_name : null;
+  }
+
   fs.mkdirSync(CSV_DIR, { recursive: true });
   const outPath = path.join(CSV_DIR, 'pending-changes.csv');
-  const header = ['change_id', 'project_name', 'unit', 'field', 'old_value', 'proposed_value', 'source_snapshot_date', 'proposed_at', 'decision', 'notes'];
+  const header = ['change_id', 'project_name', 'unit', 'field', 'old_value', 'proposed_value', 'applied_value', 'source_snapshot_date', 'proposed_at', 'decision', 'notes'];
   const lines = [header.join(',')];
   for (const r of rows) {
     lines.push(header.map(h => {
@@ -441,6 +454,7 @@ function cmdReviewPending(filterProjectName) {
                 h === 'source_snapshot_date' ? (r.source_snapshot_date || '') :
                 h === 'decision' ? 'pending' :
                 h === 'notes' ? '' :
+                h === 'applied_value' ? '' :   // initial CSV has no override; staff fill in via HTML or edit
                 r[h] == null ? '' : r[h];
       const s = String(v);
       return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
@@ -452,6 +466,12 @@ function cmdReviewPending(filterProjectName) {
   const tolerances = loadAutoApproveConfig();
   generateApproveHtml(rows, tolerances, htmlPath);
   console.log('  wrote: ' + path.relative(process.cwd(), htmlPath));
+  try {
+    openFile(htmlPath);
+    console.log('  opened in browser');
+  } catch (e) {
+    console.log('  (could not auto-open: ' + e.message + ')');
+  }
   db.close();
 }
 
@@ -473,11 +493,12 @@ function cmdApplyPending(csvPath) {
     if (isNaN(cid)) { errors += 1; continue; }
     const decision = String(r.decision || '').trim().toLowerCase();
     const notes = r.notes || '';
+    const applied = r.applied_value === '' || r.applied_value == null ? null : r.applied_value;
     if (decision === 'approve') {
-      try { applyDecision(db, cid, 'approve', notes); approved += 1; }
+      try { applyDecision(db, cid, 'approve', notes, applied); approved += 1; }
       catch (e) { console.log('  warn change_id ' + cid + ': ' + e.message); errors += 1; }
     } else if (decision === 'reject') {
-      try { applyDecision(db, cid, 'reject', notes); rejected += 1; }
+      try { applyDecision(db, cid, 'reject', notes, applied); rejected += 1; }
       catch (e) { console.log('  warn change_id ' + cid + ': ' + e.message); errors += 1; }
     } else if (decision === 'pending' || decision === '') {
       deferred += 1;
