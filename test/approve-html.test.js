@@ -72,6 +72,22 @@ test('generateApproveHtml emits all required toolbar buttons + Save/Load draft',
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
+test('generateApproveHtml escapes </script> in data values to prevent script-tag breakout', () => {
+  const { dir, file } = tmpHtml();
+  try {
+    const evilRow = { change_id: 99, project_name: 'Bad </script><b>X</b> Tower', unit_number_norm: 'A-1', field_name: 'buyer_name',
+                      old_value: 'Smith', proposed_value: 'Hacker</script>', source_snapshot_date: '2026-04-30', proposed_at: '2026-04-30 10:00:00' };
+    generateApproveHtml([evilRow], TOLS, file);
+    const html = fs.readFileSync(file, 'utf8');
+    // The literal closing script tag must NOT appear inside the data-script block (between window.__APPROVE_DATA__ assignment and its terminator).
+    const dataBlockMatch = html.match(/window\.__APPROVE_DATA__ = (.*?);window\.__TOLERANCES__/s);
+    assert.ok(dataBlockMatch, 'data block should be present');
+    assert.equal(/<\/script>/i.test(dataBlockMatch[1]), false, 'raw </script> must not appear in inlined JSON');
+    // The escaped form must appear.
+    assert.match(dataBlockMatch[1], /<\\\/script>/i);
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('generateApproveHtml writes empty-state HTML when no pending rows', () => {
   const { dir, file } = tmpHtml();
   try {

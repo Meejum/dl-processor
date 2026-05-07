@@ -45,6 +45,12 @@ function projectBreakdown(rows) {
   return Array.from(m, ([name, n]) => escHtml(name) + ': ' + n).join(' · ');
 }
 
+function safeJsonForScriptTag(value) {
+  // JSON.stringify doesn't escape '</script>'; we must, so the inlined data
+  // can't break out of the surrounding <script>...</script> block.
+  return JSON.stringify(value).replace(/<\/(script)/gi, '<\\/$1');
+}
+
 function renderRow(r, tolerances) {
   const isNum = isNumericField(r.field_name);
   const dPct  = isNum ? deltaPct(r.old_value, r.proposed_value) : null;
@@ -68,98 +74,6 @@ function renderRow(r, tolerances) {
     '<td><input type="text" class="notes-input" placeholder="optional"></td>',
     '</tr>'
   ].join('');
-}
-
-function generateApproveHtml(pendingRows, tolerances, outPath) {
-  const rows = Array.isArray(pendingRows) ? pendingRows : [];
-  const total = rows.length;
-  const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  const head =
-    '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
-    '<title>Approve Pending Master-Data Changes</title>' +
-    '<style>' + SOBHA_STYLE_CSS + APPROVE_CSS + '</style>' +
-    '</head><body>' + brandBar(stamp);
-
-  if (total === 0) {
-    const empty =
-      '<main class="approve-page">' +
-      '<h1>Approve Pending Master-Data Changes</h1>' +
-      '<p class="muted">No pending changes.</p>' +
-      '</main></body></html>';
-    fs.writeFileSync(outPath, head + empty, 'utf8');
-    return;
-  }
-
-  const headerCard =
-    '<section class="card header">' +
-      '<h1>Approve Pending Master-Data Changes</h1>' +
-      '<div class="counts">' +
-        '<span class="big">' + total + ' pending</span>' +
-        '<span class="sep">·</span>' +
-        '<span>' + escHtml(fieldBreakdown(rows)) + '</span>' +
-      '</div>' +
-      '<div class="byproj">' + projectBreakdown(rows) + '</div>' +
-      '<div class="tolerances muted">tolerance: price ' + tolerances.price_tolerance_pct + '% · area ' + tolerances.area_tolerance_pct + '%</div>' +
-    '</section>';
-
-  const toolbar =
-    '<div class="toolbar sticky">' +
-      '<button id="btn-approve-all" type="button">Approve all</button>' +
-      '<button id="btn-approve-within-tolerance" type="button">Approve all where Δ&lt;tolerance</button>' +
-      '<button id="btn-approve-field-price" type="button">Approve all where field=price</button>' +
-      '<button id="btn-reject-field-buyer" type="button">Reject all where field=buyer</button>' +
-      '<button id="btn-reset-skip" type="button">Reset to skip</button>' +
-      '<span class="sep"></span>' +
-      '<button id="btn-save-draft" type="button">Save draft</button>' +
-      '<button id="btn-load-draft" type="button">Load draft</button>' +
-      '<input id="file-load-draft" type="file" accept=".json" style="display:none">' +
-      '<span class="counter">' +
-        'Approved: <span id="counter-approved">0</span> · ' +
-        'Rejected: <span id="counter-rejected">0</span> · ' +
-        'Skipped: <span id="counter-skipped">' + total + '</span>' +
-      '</span>' +
-      '<button id="btn-export-decisions" type="button" class="primary">Export decisions</button>' +
-    '</div>';
-
-  const tableHead =
-    '<table class="approve"><thead><tr>' +
-      '<th data-sort="text">Project</th>' +
-      '<th data-sort="text">Unit</th>' +
-      '<th data-sort="text">Field</th>' +
-      '<th>Old → Proposed</th>' +
-      '<th data-sort="num">Δ%</th>' +
-      '<th data-sort="text">Proposed at</th>' +
-      '<th data-sort="text">Source snapshot</th>' +
-      '<th>Decision</th>' +
-      '<th>Notes</th>' +
-    '</tr></thead><tbody>';
-
-  const body = rows.map(r => renderRow(r, tolerances)).join('');
-  const tableEnd = '</tbody></table>';
-
-  const dataRows = rows.map(r => ({
-    change_id: r.change_id,
-    project_name: r.project_name,
-    unit_number_norm: r.unit_number_norm,
-    field_name: r.field_name,
-    old_value: r.old_value == null ? '' : String(r.old_value),
-    proposed_value: r.proposed_value == null ? '' : String(r.proposed_value),
-    source_snapshot_date: r.source_snapshot_date || '',
-    proposed_at: r.proposed_at || ''
-  }));
-
-  const dataScript = '<script>window.__APPROVE_DATA__ = ' + JSON.stringify(dataRows) + ';' +
-                     'window.__TOLERANCES__ = ' + JSON.stringify(tolerances) + ';</script>';
-
-  fs.writeFileSync(
-    outPath,
-    head +
-      '<main class="approve-page">' + headerCard + toolbar + tableHead + body + tableEnd + '</main>' +
-      dataScript +
-      '<script>' + APPROVE_JS + '</script>' +
-    '</body></html>',
-    'utf8'
-  );
 }
 
 const APPROVE_CSS = `
@@ -343,5 +257,97 @@ const APPROVE_JS = `
   refreshCounter();
 })();
 `;
+
+function generateApproveHtml(pendingRows, tolerances, outPath) {
+  const rows = Array.isArray(pendingRows) ? pendingRows : [];
+  const total = rows.length;
+  const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  const head =
+    '<!DOCTYPE html>\n<html lang="en"><head><meta charset="utf-8">' +
+    '<title>Approve Pending Master-Data Changes</title>' +
+    '<style>' + SOBHA_STYLE_CSS + APPROVE_CSS + '</style>' +
+    '</head><body>' + brandBar(stamp);
+
+  if (total === 0) {
+    const empty =
+      '<main class="approve-page">' +
+      '<h1>Approve Pending Master-Data Changes</h1>' +
+      '<p class="muted">No pending changes.</p>' +
+      '</main></body></html>';
+    fs.writeFileSync(outPath, head + empty, 'utf8');
+    return;
+  }
+
+  const headerCard =
+    '<section class="card header">' +
+      '<h1>Approve Pending Master-Data Changes</h1>' +
+      '<div class="counts">' +
+        '<span class="big">' + total + ' pending</span>' +
+        '<span class="sep">·</span>' +
+        '<span>' + escHtml(fieldBreakdown(rows)) + '</span>' +
+      '</div>' +
+      '<div class="byproj">' + projectBreakdown(rows) + '</div>' +
+      '<div class="tolerances muted">tolerance: price ' + tolerances.price_tolerance_pct + '% · area ' + tolerances.area_tolerance_pct + '%</div>' +
+    '</section>';
+
+  const toolbar =
+    '<div class="toolbar sticky">' +
+      '<button id="btn-approve-all" type="button">Approve all</button>' +
+      '<button id="btn-approve-within-tolerance" type="button">Approve all where Δ&lt;tolerance</button>' +
+      '<button id="btn-approve-field-price" type="button">Approve all where field=price</button>' +
+      '<button id="btn-reject-field-buyer" type="button">Reject all where field=buyer</button>' +
+      '<button id="btn-reset-skip" type="button">Reset to skip</button>' +
+      '<span class="sep"></span>' +
+      '<button id="btn-save-draft" type="button">Save draft</button>' +
+      '<button id="btn-load-draft" type="button">Load draft</button>' +
+      '<input id="file-load-draft" type="file" accept=".json" style="display:none">' +
+      '<span class="counter">' +
+        'Approved: <span id="counter-approved">0</span> · ' +
+        'Rejected: <span id="counter-rejected">0</span> · ' +
+        'Skipped: <span id="counter-skipped">' + total + '</span>' +
+      '</span>' +
+      '<button id="btn-export-decisions" type="button" class="primary">Export decisions</button>' +
+    '</div>';
+
+  const tableHead =
+    '<table class="approve"><thead><tr>' +
+      '<th data-sort="text">Project</th>' +
+      '<th data-sort="text">Unit</th>' +
+      '<th data-sort="text">Field</th>' +
+      '<th>Old → Proposed</th>' +
+      '<th data-sort="num">Δ%</th>' +
+      '<th data-sort="text">Proposed at</th>' +
+      '<th data-sort="text">Source snapshot</th>' +
+      '<th>Decision</th>' +
+      '<th>Notes</th>' +
+    '</tr></thead><tbody>';
+
+  const body = rows.map(r => renderRow(r, tolerances)).join('');
+  const tableEnd = '</tbody></table>';
+
+  const dataRows = rows.map(r => ({
+    change_id: r.change_id,
+    project_name: r.project_name,
+    unit_number_norm: r.unit_number_norm,
+    field_name: r.field_name,
+    old_value: r.old_value == null ? '' : String(r.old_value),
+    proposed_value: r.proposed_value == null ? '' : String(r.proposed_value),
+    source_snapshot_date: r.source_snapshot_date || '',
+    proposed_at: r.proposed_at || ''
+  }));
+
+  const dataScript = '<script>window.__APPROVE_DATA__ = ' + safeJsonForScriptTag(dataRows) + ';' +
+                     'window.__TOLERANCES__ = ' + safeJsonForScriptTag(tolerances) + ';</script>';
+
+  fs.writeFileSync(
+    outPath,
+    head +
+      '<main class="approve-page">' + headerCard + toolbar + tableHead + body + tableEnd + '</main>' +
+      dataScript +
+      '<script>' + APPROVE_JS + '</script>' +
+    '</body></html>',
+    'utf8'
+  );
+}
 
 module.exports = { generateApproveHtml };
