@@ -10,7 +10,7 @@ function lookupSfUnit(db, projectId, unitNumberNorm) {
   const scope        = mapping.match_scope || 'sub_project';
   const sfSubProject = mapping.sf_sub_project || mapping.p_sub;
   const sfPrefix     = mapping.sf_unit_prefix != null ? mapping.sf_unit_prefix : mapping.p_prefix;
-  const sfProject    = mapping.sf_project || mapping.p_proj || null;
+  const sfProject    = mapping.sf_project || null;
 
   const snap = db.prepare('SELECT sf_snapshot_id FROM v_latest_sf_snapshot').get();
   if (!snap) return null;
