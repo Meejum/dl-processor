@@ -94,6 +94,18 @@ app.whenReady().then(async () => {
     return { folder, summary };
   });
 
+  ipcMain.handle('dlp:pick:csv', async (event, { initialDir, title } = {}) => {
+    const start = initialDir || path.join(state.dataFolder, 'input', 'Changes Template Input');
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: title || 'Choose decisions CSV',
+      properties: ['openFile'],
+      defaultPath: start,
+      filters: [{ name: 'CSV', extensions: ['csv'] }, { name: 'All files', extensions: ['*'] }]
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return result.filePaths[0];
+  });
+
   createWindow();
 });
 

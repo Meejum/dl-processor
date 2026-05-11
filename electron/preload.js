@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('dlp', {
   version:    () => ipcRenderer.invoke('dlp:version'),
   runCommand: (name, args) => ipcRenderer.invoke('dlp:cmd:' + name, args || []),
+  pickCsv:    (opts) => ipcRenderer.invoke('dlp:pick:csv', opts || {}),
   onLog: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('dlp:log:line', listener);

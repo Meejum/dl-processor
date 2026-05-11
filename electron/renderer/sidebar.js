@@ -11,10 +11,14 @@ function initSidebar({ logPanel, onCommandDone }) {
 
     let args = [];
     if (needsFile) {
-      // Apply-pending: ask main to open a file picker. Implementation lands
-      // in Task 8 (window.dlp.pickCsv). For now, just run without an arg —
-      // apply-pending defaults to its own configured path.
-      args = [];
+      const csvPath = await window.dlp.pickCsv({
+        title: 'Choose decisions CSV'
+      });
+      if (!csvPath) {
+        logPanel.appendInfo('cancelled — no file picked');
+        return;
+      }
+      args = [csvPath];
     }
 
     setRunning(true, btn);
