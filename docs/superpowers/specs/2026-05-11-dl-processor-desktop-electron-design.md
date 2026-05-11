@@ -11,7 +11,7 @@
 Wrap the existing DL-Processor codebase in an Electron shell so colleagues can install and run the tool without setting up Node.js, npm, or a code editor. v1.0 ships:
 
 - A native window with a sidebar of buttons (mirroring the current CLI menu), a log panel, and a tab host that renders the existing HTML reports inline.
-- Platform-specific installers built by `electron-builder`: Windows NSIS `.exe` + portable zip, macOS `.dmg`, Linux `.AppImage` + `.deb`.
+- **Windows-only for v1.0** (Ali's decision, 2026-05-11): NSIS `.exe` installer + portable zip. macOS and Linux deferred to a follow-up release once a Mac CI runner or signing path is sorted.
 - First-run wizard that asks where to store data (default `~/Documents/DL-Processor/`) and offers to copy from a detected legacy install at `C:\projects\DL-Processor\`.
 - In-app "Check for updates" button that fetches a manifest from a static HTTPS host and applies updates user-initiated.
 - All 246 existing tests continue to pass — the Node-side business logic does not change.
@@ -275,7 +275,7 @@ This is platform config (location, window state, version), NOT user data — the
 
 ### Build pipeline
 
-`electron-builder.yml` configured for three targets:
+`electron-builder.yml` configured for the Windows target only in v1.0:
 
 ```yaml
 appId: ae.sobha.dl-processor
@@ -295,28 +295,15 @@ asarUnpack:
 win:
   target: [{ target: nsis, arch: [x64] }, { target: zip, arch: [x64] }]
   icon: electron/assets/icon.ico
-mac:
-  target: [{ target: dmg, arch: [x64, arm64] }]
-  icon: electron/assets/icon.icns
-  category: public.app-category.business
-linux:
-  target: [{ target: AppImage, arch: [x64] }, { target: deb, arch: [x64] }]
-  icon: electron/assets/icon.png
-  category: Office
 publish: null  # we hand-upload to the static host
 ```
 
 `npm run dist` produces:
 - `dist-electron/DL-Processor Setup 1.0.0.exe` (Windows installer, ~75 MB)
 - `dist-electron/DL-Processor-1.0.0-win.zip` (portable Windows zip)
-- `dist-electron/DL-Processor-1.0.0.dmg` (macOS — universal binary x64 + arm64)
-- `dist-electron/DL-Processor-1.0.0.AppImage` (Linux)
-- `dist-electron/dl-processor_1.0.0_amd64.deb` (Debian/Ubuntu)
 - `dist-electron/latest.yml` (update manifest)
-- `dist-electron/latest-mac.yml`
-- `dist-electron/latest-linux.yml`
 
-Mac builds run on Ali's Windows machine via `electron-builder`'s cross-compile (no notarization since unsigned). If Mac/Linux issues arise, those targets can be skipped for v1.0 (Windows-only release is acceptable).
+macOS and Linux targets (`.dmg`, `.AppImage`, `.deb`) are present in the spec history but commented out of the v1.0 build config. To re-enable in v1.1, uncomment the `mac:` / `linux:` blocks and add the corresponding icon assets to `electron/assets/`.
 
 ### Native module handling
 
@@ -324,14 +311,23 @@ Mac builds run on Ali's Windows machine via `electron-builder`'s cross-compile (
 
 ### Static host
 
-Build artifacts upload to a Cloudflare Pages site:
-- `https://dl-processor.pages.dev/latest.yml` — manifest
+**Cloudflare Pages** (decided 2026-05-11). Build artifacts upload to:
+- `https://dl-processor.pages.dev/latest.yml` — update manifest
 - `https://dl-processor.pages.dev/DL-Processor%20Setup%201.0.0.exe` — installer
+- `https://dl-processor.pages.dev/DL-Processor-1.0.0-win.zip` — portable zip
 - `https://dl-processor.pages.dev/changelog.md` — release notes
 
-Cloudflare Pages free tier covers this (100 GB / month bandwidth). If Sobha prefers SharePoint or a network share, the static-host URL is the only string that changes in `update-checker.js`.
+Cloudflare Pages free tier easily covers this: 500 builds/month and effectively unlimited bandwidth for static files.
 
-The host directory is just a git repo (`dl-processor-releases` or similar) connected to Pages. Ali pushes new releases by adding files and committing.
+**Release-publish workflow:** create a separate git repo `dl-processor-releases` (just static files, no source code). Connect it to Cloudflare Pages via the dashboard once. From then on, each release is:
+
+1. `npm run dist` in the DL-Processor repo produces the build artifacts.
+2. Copy `DL-Processor Setup 1.0.0.exe`, `DL-Processor-1.0.0-win.zip`, `latest.yml`, and the updated `changelog.md` into the `dl-processor-releases` repo.
+3. Commit + push. Cloudflare Pages auto-publishes within ~30 seconds.
+
+Colleagues' in-app "Check for updates" button polls `latest.yml` and sees the new version.
+
+If Sobha later requests a custom domain (`dl-processor.sobharealty.com`), point a CNAME at the Cloudflare Pages URL — no other change needed.
 
 ---
 
@@ -503,8 +499,10 @@ If Mac / Linux are in the v1.0 release, a similar checklist runs there (probably
 
 ## Open Questions
 
-1. **macOS support in v1.0?** Cross-compiling from Windows is doable but unsigned-Mac UX is rougher. Decision needed: ship Mac binaries day-one, or "Windows + Linux only" for v1.0?
-2. **Cloudflare Pages vs. Sobha SharePoint** for the update host. Cloudflare is technically easier; SharePoint is corporate-blessed. Probably Ali calls IT and asks before v1.0.
+None remaining. Both open questions resolved 2026-05-11:
+
+1. **macOS / Linux support in v1.0:** *Skipped.* Windows-only for v1.0. Mac + Linux revisited as a v1.1 follow-up once a Mac signing path or CI runner is available.
+2. **Update host:** *Cloudflare Pages.* The `dl-processor-releases` static repo will be hosted there at `dl-processor.pages.dev`. Custom Sobha domain optional later via CNAME.
 
 ---
 
