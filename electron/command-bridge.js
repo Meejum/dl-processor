@@ -14,6 +14,22 @@ const KNOWN_COMMANDS = [
   'projects', 'status', 'review-pending', 'apply-pending'
 ];
 
+// IPC channel names (renderer-facing) map to the CLI subcommand strings
+// that `node index.js` expects. Some divergence: 'all' = no-args = full
+// pipeline; 'import-dld' = 'import' (the CLI's name predates the renderer's).
+const CLI_COMMAND = {
+  'all':            null,   // empty argv triggers cmdAll()
+  'parse':          'parse',
+  'import-dld':     'import',
+  'import-sf':      'import-sf',
+  'compare':        'compare',
+  'diff':           'diff',
+  'projects':       'projects',
+  'status':         'status',
+  'review-pending': 'review-pending',
+  'apply-pending':  'apply-pending'
+};
+
 // Map an args[] from the renderer into the CLI argv shape expected by index.js.
 // Most commands take an optional first arg (filter or file path).
 function commandToArgv(name, args) {
@@ -66,7 +82,10 @@ async function runOverride(fn, name, args, sender) {
 function runSpawn(name, args, sender) {
   const stampedSend = (level, text) => sender.send('dlp:log:line', { level, text, ts: Date.now() });
   const indexJs = path.join(__dirname, '..', 'index.js');
-  const argv = [indexJs, name, ...commandToArgv(name, args)];
+  const cliName = CLI_COMMAND[name];
+  const argv = cliName
+    ? [indexJs, cliName, ...commandToArgv(name, args)]
+    : [indexJs, ...commandToArgv(name, args)];  // 'all' → no subcommand
   const env = Object.assign({}, process.env);
   if (currentDataFolder) env.DLP_DATA_ROOT = currentDataFolder;
 
