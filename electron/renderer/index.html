@@ -57,18 +57,50 @@
     </header>
     <main>
       <aside class="sidebar" id="sidebar">
-        <button class="cmd-btn cmd-btn-primary" data-cmd="all" data-label="Full pipeline">⚡ Run full pipeline <span class="hint">(does 1–4)</span></button>
+        <button class="cmd-btn cmd-btn-primary" data-cmd="all" data-label="Full pipeline" title="Run full pipeline (does 1–4)">
+          <span class="cmd-icon">⚡</span>
+          <span class="cmd-label">Run full pipeline <span class="hint">(does 1–4)</span></span>
+        </button>
         <div class="sidebar-section">Monthly steps</div>
-        <button class="cmd-btn" data-cmd="import-dld" data-label="Import DLD"><span class="step-num">1</span><span class="step-body">📥 Import DLD</span></button>
-        <button class="cmd-btn" data-cmd="import-sf"  data-label="Import SF"><span class="step-num">2</span><span class="step-body">📥 Import Salesforce</span></button>
-        <button class="cmd-btn" data-cmd="compare"    data-label="Compare"><span class="step-num">3</span><span class="step-body">🔍 Compare</span></button>
-        <button class="cmd-btn" data-cmd="diff"       data-label="Diff (month-over-month)"><span class="step-num">4</span><span class="step-body">📊 Diff</span></button>
-        <button class="cmd-btn" data-cmd="review-pending" data-label="Review pending"><span class="step-num">5</span><span class="step-body">📝 Review pending</span></button>
-        <button class="cmd-btn" data-cmd="apply-pending"  data-label="Apply pending"
-                data-needs-file="true"><span class="step-num">6</span><span class="step-body">✅ Apply pending</span></button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="import-dld" data-label="Import DLD" title="1 · Import DLD">
+          <span class="step-num">1</span>
+          <span class="cmd-icon">📥</span>
+          <span class="cmd-label">Import DLD</span>
+        </button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="import-sf"  data-label="Import SF" title="2 · Import Salesforce">
+          <span class="step-num">2</span>
+          <span class="cmd-icon">📥</span>
+          <span class="cmd-label">Import Salesforce</span>
+        </button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="compare"    data-label="Compare" title="3 · Compare">
+          <span class="step-num">3</span>
+          <span class="cmd-icon">🔍</span>
+          <span class="cmd-label">Compare</span>
+        </button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="diff"       data-label="Diff (month-over-month)" title="4 · Diff (month-over-month)">
+          <span class="step-num">4</span>
+          <span class="cmd-icon">📊</span>
+          <span class="cmd-label">Diff</span>
+        </button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="review-pending" data-label="Review pending" title="5 · Review pending">
+          <span class="step-num">5</span>
+          <span class="cmd-icon">📝</span>
+          <span class="cmd-label">Review pending</span>
+        </button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="apply-pending"  data-label="Apply pending" data-needs-file="true" title="6 · Apply pending">
+          <span class="step-num">6</span>
+          <span class="cmd-icon">✅</span>
+          <span class="cmd-label">Apply pending</span>
+        </button>
         <div class="sidebar-section">View</div>
-        <button class="cmd-btn" data-cmd="status"   data-label="Status">📈 Status</button>
-        <button class="cmd-btn" data-cmd="projects" data-label="Projects">🏢 Projects</button>
+        <button class="cmd-btn" data-cmd="status"   data-label="Status" title="Status">
+          <span class="cmd-icon">📈</span>
+          <span class="cmd-label">Status</span>
+        </button>
+        <button class="cmd-btn" data-cmd="projects" data-label="Projects" title="Projects">
+          <span class="cmd-icon">🏢</span>
+          <span class="cmd-label">Projects</span>
+        </button>
       </aside>
       <section class="content">
         <div class="tab-host" id="tab-host"></div>

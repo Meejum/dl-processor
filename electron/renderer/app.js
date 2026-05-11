@@ -173,14 +173,17 @@
       }
     });
 
-    // Hide / show the sidebar (main menu). Pure CSS — the flex layout
-    // gives the freed width to the tab area automatically.
+    // Collapse / expand the sidebar (main menu). When collapsed the sidebar
+    // shrinks to a 56px icon-only strip on the left — labels, step numbers,
+    // and section headings hide; each button keeps its tooltip via the
+    // `title` attribute set in index.html so users can still discover
+    // what each icon does on hover.
     const toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
     if (toggleSidebarBtn) {
       toggleSidebarBtn.addEventListener('click', () => {
-        const hidden = document.body.classList.toggle('sidebar-hidden');
-        toggleSidebarBtn.classList.toggle('is-off', hidden);
-        toggleSidebarBtn.title = hidden ? 'Show menu' : 'Hide menu';
+        const collapsed = document.body.classList.toggle('sidebar-collapsed');
+        toggleSidebarBtn.classList.toggle('is-off', collapsed);
+        toggleSidebarBtn.title = collapsed ? 'Expand menu' : 'Collapse menu';
       });
     }
 
@@ -208,8 +211,13 @@
       progressEl.hidden = false;
       progressEl.classList.remove('is-done', 'is-error');
       if (state) progressEl.classList.add(state);
-      progressFill.style.width = Math.max(0, Math.min(100, pct)) + '%';
-      progressText.textContent = text;
+      const clamped = Math.max(0, Math.min(100, pct));
+      progressFill.style.width = clamped + '%';
+      // Show the percentage as the label. The `text` arg is kept around in
+      // case the caller wants a non-percentage state (e.g. "Failed"), but
+      // for any in-progress / done state we display only the percentage.
+      if (state === 'is-error') progressText.textContent = text || 'Failed';
+      else                      progressText.textContent = clamped + '%';
     }
     const STEP_TOTAL = 5;
     let progressStep = 0;

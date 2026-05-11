@@ -43,7 +43,19 @@ main { flex: 1; display: flex; min-height: 0; }
 .tab-iframe.is-active { display: block; }
 .log-column { width: 320px; flex: 0 0 320px; display: flex; flex-direction: column; border-left: 1px solid var(--border); min-height: 0; }
 body.log-hidden .log-column { display: none; }
-body.sidebar-hidden .sidebar { display: none; }
+
+/* Sidebar collapse — narrow to an icon-only strip on the left. The
+   labels, step numbers, section headings, and primary-button hint all
+   disappear; only the cmd-icon glyph remains, centered. The titles on
+   each button (set in index.html) provide hover tooltips. */
+body.sidebar-collapsed .sidebar { width: 56px; flex: 0 0 56px; padding: 8px 4px; }
+body.sidebar-collapsed .sidebar .cmd-btn { padding: 8px 4px; justify-content: center; flex-direction: row; }
+body.sidebar-collapsed .sidebar .cmd-label,
+body.sidebar-collapsed .sidebar .step-num,
+body.sidebar-collapsed .sidebar .sidebar-section,
+body.sidebar-collapsed .sidebar .hint { display: none; }
+body.sidebar-collapsed .sidebar .cmd-icon { font-size: 20px; }
+
 #btn-toggle-log.is-off, #btn-toggle-sidebar.is-off { opacity: 0.4; }
 .log-pane { display: flex; flex-direction: column; min-height: 0; background: var(--surface-2); }
 .log-pane-info { flex: 1; }
@@ -62,7 +74,7 @@ body.sidebar-hidden .sidebar { display: none; }
 .sidebar .cmd-btn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; text-align: left; cursor: pointer; color: var(--ink); font: inherit; display: flex; align-items: center; gap: 8px; }
 /* Stepped buttons stack the number on top of the label so the monthly
    sequence reads as a vertical list 1 -> 2 -> 3 -> ... at a glance. */
-.sidebar .cmd-btn:has(.step-num) { flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 10px 8px; }
+.sidebar .cmd-btn-step { flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 10px 8px; }
 .sidebar .cmd-btn:hover { background: var(--accent-soft); border-color: var(--border-2); }
 .sidebar .cmd-btn.is-running { background: var(--warn-bg, #F5D78E); border-color: var(--warn, #8A5A08); cursor: wait; }
 .sidebar .cmd-btn:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -70,7 +82,12 @@ body.sidebar-hidden .sidebar { display: none; }
 .sidebar .cmd-btn-primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
 .sidebar .cmd-btn-primary .hint { display: block; color: rgba(255,255,255,.75); font-weight: 400; font-size: 11px; margin-top: 2px; }
 .sidebar .step-num { align-self: flex-start; display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px; background: var(--accent-soft); color: var(--accent-dark); font-size: 11px; font-weight: 700; }
-.sidebar .step-body { flex: 1; font-size: 13px; }
+.sidebar .cmd-icon { font-size: 16px; flex: 0 0 auto; }
+.sidebar .cmd-label { flex: 1; font-size: 13px; }
+.sidebar .cmd-btn-step .cmd-label { margin-left: 0; }
+.sidebar .cmd-btn-step { /* inside stepped, icon + label sit side by side under the number */ }
+.sidebar .cmd-btn-step .cmd-icon,
+.sidebar .cmd-btn-step .cmd-label { display: inline; }
 
 /* Log panel lines (level-coloured) */
 .log-body .log-line { white-space: pre-wrap; }
