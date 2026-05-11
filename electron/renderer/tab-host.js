@@ -110,13 +110,19 @@ function initTabHost() {
         if (!doc) return;
         for (const a of doc.querySelectorAll('a[href]')) {
           if (a.hasAttribute('target')) a.removeAttribute('target');
-          const target = a.getAttribute('href');
-          if (!target || target.startsWith('#') || target.startsWith('javascript:')) continue;
-          a.setAttribute('data-href', target);
+          const raw = a.getAttribute('href');
+          if (!raw || raw.startsWith('#') || raw.startsWith('javascript:')) continue;
+          // a.href is the FULLY-RESOLVED absolute URL computed against the
+          // iframe's document — capture it BEFORE we replace the attribute,
+          // otherwise relative URLs resolve against the parent renderer and
+          // we hit ERR_FILE_NOT_FOUND for electron/renderer/compare/X.html
+          // when the link meant output/compare/X.html.
+          const resolved = a.href;
+          a.setAttribute('data-href', raw);
           a.setAttribute('href', 'javascript:void(0)');
           a.addEventListener('click', (ev) => {
             ev.preventDefault();
-            iframeEl.contentWindow.location.href = target;
+            iframeEl.contentWindow.location.href = resolved;
           });
         }
       } catch (e) {
