@@ -1,4 +1,11 @@
+// Tab host: each tab is an <iframe> inside the renderer DOM. The iframes
+// sit absolutely-positioned inside .tab-content; only the active one is
+// display:block. No IPC bounds math — the CSS flex layout positions
+// everything, so the tabs always align with the surrounding chrome.
 function initTabHost() {
+  const host = document.getElementById('tab-host');
+  host.innerHTML = '';
+
   const strip = document.createElement('div');
   strip.className = 'tab-strip';
   strip.innerHTML =
@@ -8,51 +15,76 @@ function initTabHost() {
       '<button class="tab-nav-btn" data-nav="reload"  title="Reload">↻</button>' +
     '</div>' +
     '<div class="tab-strip-tabs"></div>';
-  document.getElementById('tab-host').prepend(strip);
+  host.appendChild(strip);
+
+  const content = document.createElement('div');
+  content.className = 'tab-content';
+  host.appendChild(content);
+
   const tabsContainer = strip.querySelector('.tab-strip-tabs');
+  const tabs = new Map();   // id -> { tabEl, iframeEl, title }
+  let nextTabId = 1;
+  let activeTabId = null;
 
-  strip.querySelector('[data-nav="back"]').addEventListener('click', () => {
-    if (window.dlp.tabs.goBack) window.dlp.tabs.goBack();
-  });
-  strip.querySelector('[data-nav="forward"]').addEventListener('click', () => {
-    if (window.dlp.tabs.goForward) window.dlp.tabs.goForward();
-  });
-  strip.querySelector('[data-nav="reload"]').addEventListener('click', () => {
-    if (window.dlp.tabs.reload) window.dlp.tabs.reload();
-  });
-
-  const tabs = new Map();
-
-  async function open({ url, title }) {
-    const result = await window.dlp.tabs.open({ url, title });
-    addTab(result.id, result.title);
-    return result.id;
+  function withActiveIframe(fn) {
+    const t = tabs.get(activeTabId);
+    if (!t) return;
+    try { fn(t.iframeEl); } catch (e) { console.warn('tab nav failed:', e); }
   }
 
-  function addTab(id, title) {
-    const t = document.createElement('div');
-    t.className = 'tab is-active';
-    t.dataset.tabId = id;
-    t.innerHTML = '<span class="tab-title"></span><button class="tab-close" type="button">×</button>';
-    t.querySelector('.tab-title').textContent = title;
-    t.querySelector('.tab-title').addEventListener('click', () => activate(id));
-    t.querySelector('.tab-close').addEventListener('click', () => close(id));
-    tabsContainer.appendChild(t);
-    for (const [otherId, otherEl] of tabs.entries()) otherEl.classList.remove('is-active');
-    tabs.set(id, t);
+  strip.querySelector('[data-nav="back"]').addEventListener('click', () => {
+    withActiveIframe((f) => f.contentWindow.history.back());
+  });
+  strip.querySelector('[data-nav="forward"]').addEventListener('click', () => {
+    withActiveIframe((f) => f.contentWindow.history.forward());
+  });
+  strip.querySelector('[data-nav="reload"]').addEventListener('click', () => {
+    withActiveIframe((f) => f.contentWindow.location.reload());
+  });
+
+  function open({ url, title }) {
+    const id = String(nextTabId++);
+
+    const tabEl = document.createElement('div');
+    tabEl.className = 'tab';
+    tabEl.dataset.tabId = id;
+    tabEl.innerHTML = '<span class="tab-title"></span><button class="tab-close" type="button">×</button>';
+    tabEl.querySelector('.tab-title').textContent = title;
+    tabEl.querySelector('.tab-title').addEventListener('click', () => activate(id));
+    tabEl.querySelector('.tab-close').addEventListener('click', (ev) => { ev.stopPropagation(); close(id); });
+    tabsContainer.appendChild(tabEl);
+
+    const iframeEl = document.createElement('iframe');
+    iframeEl.className = 'tab-iframe';
+    iframeEl.dataset.tabId = id;
+    iframeEl.src = url;
+    content.appendChild(iframeEl);
+
+    tabs.set(id, { tabEl, iframeEl, title });
+    activate(id);
+    return { id, title, url };
   }
 
   function activate(id) {
-    window.dlp.tabs.activate(id);
-    for (const [otherId, otherEl] of tabs.entries()) {
-      otherEl.classList.toggle('is-active', otherId === id);
+    activeTabId = id;
+    for (const [otherId, t] of tabs.entries()) {
+      const isActive = otherId === id;
+      t.tabEl.classList.toggle('is-active', isActive);
+      t.iframeEl.classList.toggle('is-active', isActive);
     }
   }
 
   function close(id) {
-    window.dlp.tabs.close(id);
     const t = tabs.get(id);
-    if (t) { t.remove(); tabs.delete(id); }
+    if (!t) return;
+    t.tabEl.remove();
+    t.iframeEl.remove();
+    tabs.delete(id);
+    if (activeTabId === id) {
+      activeTabId = null;
+      const next = tabs.keys().next().value;
+      if (next) activate(next);
+    }
   }
 
   return { open, activate, close };

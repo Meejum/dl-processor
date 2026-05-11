@@ -1,4 +1,4 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const cp = require('child_process');
 const { createCommandBridge, setDataFolder } = require('./command-bridge');
@@ -19,42 +19,6 @@ const state = {
   appConfigPath: null
 };
 
-const tabs = new Map();  // tabId -> { view, url, title }
-let nextTabId = 1;
-let activeTabId = null;
-let logVisible = true;
-
-function setActiveTab(id) {
-  activeTabId = id;
-  for (const [tid, t] of tabs.entries()) {
-    if (tid === id) {
-      t.view.setBackgroundColor('#FFFFFF');
-      mainWindow.setTopBrowserView(t.view);
-      sizeActiveTab();
-    }
-  }
-}
-
-function sizeActiveTab() {
-  if (!activeTabId || !mainWindow) return;
-  const t = tabs.get(activeTabId);
-  if (!t) return;
-  const [w, h] = mainWindow.getContentSize();
-  // Constants match the explicit pixel sizes in styles.css —
-  // .top-bar height 40, .tab-strip height 30, .sidebar width 220,
-  // .log-panel width 320 (right column).
-  const TOP_BAR = 40;
-  const TAB_STRIP = 30;
-  const SIDEBAR_W = 220;
-  const LOG_W = logVisible ? 320 : 0;
-  t.view.setBounds({
-    x: SIDEBAR_W,
-    y: TOP_BAR + TAB_STRIP,
-    width:  Math.max(0, w - SIDEBAR_W - LOG_W),
-    height: Math.max(0, h - TOP_BAR - TAB_STRIP)
-  });
-}
-
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -68,7 +32,10 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false  // we need Node in the preload for require('fs') etc.
+      sandbox: false,         // we need Node in the preload for require('fs') etc.
+      webSecurity: false      // allow <iframe src="file:///...output/...html"> from the
+                              // renderer. Safe because every file we load is content
+                              // we generated ourselves into the user's data folder.
     }
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -84,7 +51,6 @@ function createWindow() {
     const levels = ['LOG', 'WARN', 'ERROR', 'INFO'];
     console.log('[renderer:' + (levels[level] || level) + '] ' + message);
   });
-  mainWindow.on('resize', sizeActiveTab);
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -141,57 +107,6 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('dlp:data-folder', () => state.dataFolder);
 
-  ipcMain.handle('dlp:tab:open', (event, { url, title }) => {
-    const id = String(nextTabId++);
-    const view = new BrowserView({
-      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
-    });
-    view.setAutoResize({ width: true, height: true });
-    mainWindow.addBrowserView(view);
-    view.webContents.loadURL(url);
-    tabs.set(id, { view, url, title });
-    setActiveTab(id);
-    return { id, title, url };
-  });
-
-  ipcMain.handle('dlp:tab:activate', (event, { id }) => {
-    setActiveTab(id);
-  });
-
-  ipcMain.handle('dlp:tab:go-back', () => {
-    if (!activeTabId) return false;
-    const t = tabs.get(activeTabId);
-    if (t && t.view.webContents.canGoBack()) { t.view.webContents.goBack(); return true; }
-    return false;
-  });
-
-  ipcMain.handle('dlp:tab:go-forward', () => {
-    if (!activeTabId) return false;
-    const t = tabs.get(activeTabId);
-    if (t && t.view.webContents.canGoForward()) { t.view.webContents.goForward(); return true; }
-    return false;
-  });
-
-  ipcMain.handle('dlp:tab:reload', () => {
-    if (!activeTabId) return false;
-    const t = tabs.get(activeTabId);
-    if (t) { t.view.webContents.reload(); return true; }
-    return false;
-  });
-
-  ipcMain.handle('dlp:tab:close', (event, { id }) => {
-    const t = tabs.get(id);
-    if (!t) return;
-    mainWindow.removeBrowserView(t.view);
-    t.view.webContents.destroy();
-    tabs.delete(id);
-    if (activeTabId === id) {
-      activeTabId = null;
-      const next = tabs.keys().next().value;
-      if (next) setActiveTab(next);
-    }
-  });
-
   ipcMain.handle('dlp:pick:csv', async (event, { initialDir, title } = {}) => {
     const start = initialDir || path.join(state.dataFolder, 'input', 'Changes Template Input');
     const result = await dialog.showOpenDialog(mainWindow, {
@@ -231,11 +146,6 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('dlp:shell:show-in-folder', (event, folder) => {
     shell.openPath(folder);
-  });
-
-  ipcMain.handle('dlp:layout:set-log-visible', (event, visible) => {
-    logVisible = !!visible;
-    sizeActiveTab();
   });
 
   ipcMain.handle('dlp:update:check', async () => {

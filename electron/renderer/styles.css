@@ -37,7 +37,10 @@ body { font: 13px/1.5 'Dubai', 'Inter', 'Segoe UI', Arial, sans-serif; }
 main { flex: 1; display: flex; min-height: 0; }
 .sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); padding: 8px; }
 .content { flex: 1; display: flex; flex-direction: row; min-width: 0; min-height: 0; }
-.tab-host { flex: 1; background: var(--surface); overflow: auto; min-width: 0; }
+.tab-host { flex: 1; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
+.tab-content { flex: 1; position: relative; background: var(--surface); }
+.tab-iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: #fff; }
+.tab-iframe.is-active { display: block; }
 .log-column { width: 320px; flex: 0 0 320px; display: flex; flex-direction: column; border-left: 1px solid var(--border); min-height: 0; }
 body.log-hidden .log-column { display: none; }
 #btn-toggle-log.is-off { opacity: 0.4; }
@@ -89,6 +92,12 @@ body.log-hidden .log-column { display: none; }
 .top-bar .spacer { flex: 1; }
 .top-bar .icon-btn { background: transparent; border: 1px solid transparent; padding: 4px 8px; cursor: pointer; border-radius: 4px; font-size: 16px; }
 .top-bar .icon-btn:hover { background: var(--accent-soft); border-color: var(--border-2); }
+.progress { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--accent-dark); font-weight: 600; }
+.progress-bar { width: 120px; height: 8px; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+.progress-fill { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, var(--accent) 0%, var(--accent-dark) 100%); transition: width 200ms ease-out; }
+.progress.is-done .progress-fill { background: #4F7A3A; }
+.progress.is-error .progress-fill { background: var(--down, #A12C1B); }
+.progress-text { min-width: 70px; white-space: nowrap; }
 
 /* Settings modal (Task 10) */
 .modal { position: fixed; inset: 0; background: rgba(28,20,10,.4); display: flex; align-items: center; justify-content: center; z-index: 200; }
