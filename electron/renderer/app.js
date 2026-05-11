@@ -139,6 +139,7 @@
       if (text.startsWith('— running:')) {
         progressStep = 0;
         progressProjectCount = 0;
+        logCapture = [];
         setProgress('Running…', 1, null);
         return;
       }
@@ -148,6 +149,8 @@
         progressTimer = setTimeout(() => setProgress(null), 3000);
         return;
       }
+      // Capture every regular output/warn line for possible page rendering.
+      if (level !== 'error') logCapture.push({ level, text });
       const stepMatch = text.match(/\[(\d+)\/(\d+)\]/);
       if (stepMatch) {
         progressStep = parseInt(stepMatch[1], 10);
@@ -223,6 +226,42 @@
     let progressStep = 0;
     let progressProjectCount = 0;
 
+    // Buffer of log lines for the in-flight command — used to render the
+    // captured output as a Sobha-styled page tab for Status / Projects.
+    let logCapture = [];
+
+    function escapeHtml(s) {
+      return String(s).replace(/[&<>"']/g, (c) => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+      }[c]));
+    }
+
+    function buildLogPage(commandName, capture) {
+      const titleMap = { status: 'Status', projects: 'Projects' };
+      const title = titleMap[commandName] || commandName;
+      const lines = capture
+        .map((e) => e.text)
+        .filter((t) => t && !/DL-PROCESSOR|Sobha Realty\s+-/i.test(t));
+      const body = lines.map((t) => escapeHtml(t)).join('\n');
+      const generated = new Date().toLocaleString();
+      return [
+        '<!doctype html><html><head><meta charset="utf-8"><title>', escapeHtml(title), '</title>',
+        '<style>',
+        "body{margin:0;padding:24px;font:13px/1.5 Dubai,Inter,'Segoe UI',Arial,sans-serif;background:#F6F1E9;color:#1F1A14;}",
+        'h1{color:#5C3D1E;font-size:18px;margin:0 0 4px 0;}',
+        '.sub{color:#8A7E69;font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px;}',
+        '.card{background:#FFFFFF;border:1px solid #E3D9C8;border-radius:8px;padding:16px 20px;box-shadow:0 1px 2px rgba(0,0,0,.04);}',
+        "pre{margin:0;font:12px 'Consolas','Cascadia Mono',monospace;white-space:pre-wrap;color:#1F1A14;}",
+        '.footer{color:#8A7E69;font-size:11px;margin-top:12px;}',
+        '</style></head><body>',
+        '<h1>', escapeHtml(title), '</h1>',
+        '<div class="sub">DL-Processor · Sobha Realty · Registration</div>',
+        '<div class="card"><pre>', body, '</pre></div>',
+        '<div class="footer">Generated ', escapeHtml(generated), '</div>',
+        '</body></html>'
+      ].join('');
+    }
+
     // Copy buttons (Output / Errors).
     for (const btn of document.querySelectorAll('.log-copy-btn')) {
       btn.addEventListener('click', async () => {
@@ -258,6 +297,15 @@
         getProjectFilter: () => currentProjectFilter,
         onCommandDone: async (result) => {
           if (result.exitCode !== 0) return;
+          // Status and Projects render the captured terminal output as a
+          // Sobha-styled page tab so the data is available outside the log
+          // column.
+          if (result.command === 'status' || result.command === 'projects') {
+            const srcdoc = buildLogPage(result.command, logCapture);
+            const title = result.command === 'status' ? 'Status' : 'Projects';
+            window.__tabHost.open({ srcdoc, title });
+            return;
+          }
           const builder = reportPathsByCommand[result.command];
           if (!builder || !currentDataFolder) return;
           const url = builder(currentDataFolder);

@@ -42,7 +42,7 @@ function initTabHost() {
     withActiveIframe((f) => f.contentWindow.location.reload());
   });
 
-  function open({ url, title }) {
+  function open({ url, srcdoc, title }) {
     const id = String(nextTabId++);
 
     const tabEl = document.createElement('div');
@@ -57,12 +57,13 @@ function initTabHost() {
     const iframeEl = document.createElement('iframe');
     iframeEl.className = 'tab-iframe';
     iframeEl.dataset.tabId = id;
-    iframeEl.src = url;
+    if (srcdoc) iframeEl.srcdoc = srcdoc;
+    else        iframeEl.src    = url;
     content.appendChild(iframeEl);
 
     tabs.set(id, { tabEl, iframeEl, title });
     activate(id);
-    return { id, title, url };
+    return { id, title, url: url || null };
   }
 
   function activate(id) {
