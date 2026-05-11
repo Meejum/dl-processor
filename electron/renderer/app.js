@@ -127,6 +127,31 @@
       appendWarn:  (text) => appendLog('warn',  text)
     };
 
+    // Top-bar progress widget. State + setProgress must be initialized
+    // before window.dlp.onLog below, which references them. Defined here
+    // to keep the order top-down even though `let` hoists.
+    const progressEl   = document.getElementById('progress');
+    const progressFill = document.getElementById('progress-fill');
+    const progressText = document.getElementById('progress-text');
+    let progressTimer = null;
+    const STEP_TOTAL = 5;
+    let progressStep = 0;
+    let progressProjectCount = 0;
+    let logCapture = [];
+
+    function setProgress(text, pct, state) {
+      if (!progressEl) return;
+      if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
+      if (text == null) { progressEl.hidden = true; return; }
+      progressEl.hidden = false;
+      progressEl.classList.remove('is-done', 'is-error');
+      if (state) progressEl.classList.add(state);
+      const clamped = Math.max(0, Math.min(100, pct));
+      progressFill.style.width = clamped + '%';
+      if (state === 'is-error') progressText.textContent = text || 'Failed';
+      else                      progressText.textContent = clamped + '%';
+    }
+
     // Pipe main-process command-bridge log events into the right panel and
     // also derive a top-bar progress percentage from the markers the CLI
     // emits ("[N/5]" step headers, "-> Project Name" per-item lines, plus
@@ -200,35 +225,6 @@
         toggleLogBtn.title = hidden ? 'Show log' : 'Hide log';
       });
     }
-
-    // Top-bar progress widget. Stays visible even when the log column is
-    // hidden so the user can still see how far along a command is.
-    const progressEl   = document.getElementById('progress');
-    const progressFill = document.getElementById('progress-fill');
-    const progressText = document.getElementById('progress-text');
-    let progressTimer = null;
-    function setProgress(text, pct, state) {
-      if (!progressEl) return;
-      if (progressTimer) { clearTimeout(progressTimer); progressTimer = null; }
-      if (text == null) { progressEl.hidden = true; return; }
-      progressEl.hidden = false;
-      progressEl.classList.remove('is-done', 'is-error');
-      if (state) progressEl.classList.add(state);
-      const clamped = Math.max(0, Math.min(100, pct));
-      progressFill.style.width = clamped + '%';
-      // Show the percentage as the label. The `text` arg is kept around in
-      // case the caller wants a non-percentage state (e.g. "Failed"), but
-      // for any in-progress / done state we display only the percentage.
-      if (state === 'is-error') progressText.textContent = text || 'Failed';
-      else                      progressText.textContent = clamped + '%';
-    }
-    const STEP_TOTAL = 5;
-    let progressStep = 0;
-    let progressProjectCount = 0;
-
-    // Buffer of log lines for the in-flight command — used to render the
-    // captured output as a Sobha-styled page tab for Status / Projects.
-    let logCapture = [];
 
     function escapeHtml(s) {
       return String(s).replace(/[&<>"']/g, (c) => ({
@@ -493,9 +489,14 @@
             filters: [{ name: 'Zip', extensions: ['zip'] }]
           });
           if (!out) return;
+          if (sidebarApi) sidebarApi.setRunning(true, btn);
           logPanel.appendInfo('— running: Export DB —');
-          const result = await window.dlp.runCommand('db-export', [out]);
-          logPanel.appendInfo('— done: Export DB (exit ' + result.exitCode + ') —');
+          try {
+            const result = await window.dlp.runCommand('db-export', [out]);
+            logPanel.appendInfo('— done: Export DB (exit ' + result.exitCode + ') —');
+          } finally {
+            if (sidebarApi) sidebarApi.setRunning(false, btn);
+          }
           return;
         }
         if (action === 'db-import') {
@@ -505,17 +506,29 @@
           });
           if (!inPath) return;
           if (!confirm('Importing will REPLACE the current database.\n\nThe current DB is backed up automatically as .bak-<timestamp> in your data/ folder.\n\nContinue?')) return;
+          if (sidebarApi) sidebarApi.setRunning(true, btn);
           logPanel.appendInfo('— running: Import DB —');
-          const result = await window.dlp.runCommand('db-import', [inPath]);
-          logPanel.appendInfo('— done: Import DB (exit ' + result.exitCode + ') —');
+          try {
+            const result = await window.dlp.runCommand('db-import', [inPath]);
+            logPanel.appendInfo('— done: Import DB (exit ' + result.exitCode + ') —');
+            // After a successful import the project list and master_data
+            // counts have changed — refresh the top-bar dropdown so the
+            // picker reflects the restored DB without requiring a restart.
+            if (result.exitCode === 0 && topBar && topBar.refreshProjects) {
+              topBar.refreshProjects();
+            }
+          } finally {
+            if (sidebarApi) sidebarApi.setRunning(false, btn);
+          }
           return;
         }
       });
     }
 
     // Initialize sidebar buttons.
+    let sidebarApi = null;
     if (window.__initSidebar) {
-      window.__initSidebar({
+      sidebarApi = window.__initSidebar({
         logPanel,
         getProjectFilter: () => currentProjectFilter,
         onCommandDone: async (result) => {

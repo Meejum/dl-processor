@@ -4,10 +4,12 @@
 const PROJECT_FILTERED_COMMANDS = new Set(['compare', 'diff', 'review-pending']);
 
 function initSidebar({ logPanel, onCommandDone, getProjectFilter = () => null }) {
-  // Only buttons that actually run a CLI command (i.e. have data-cmd) —
-  // the data-action buttons (open-dashboard, reveal-output) are handled
-  // directly in app.js.
+  // Buttons that actually run a CLI command go through run(); the
+  // data-action buttons (open-dashboard, reveal-output, db-export,
+  // db-import) are handled in app.js but share the same disable set
+  // so the user can't fire a backup mid-pipeline.
   const buttons = Array.from(document.querySelectorAll('.cmd-btn[data-cmd]'));
+  const allButtons = Array.from(document.querySelectorAll('.cmd-btn'));
 
   async function run(btn) {
     const cmd = btn.getAttribute('data-cmd');
@@ -44,7 +46,7 @@ function initSidebar({ logPanel, onCommandDone, getProjectFilter = () => null })
   }
 
   function setRunning(running, activeBtn) {
-    for (const b of buttons) {
+    for (const b of allButtons) {
       b.disabled = running;
       b.classList.toggle('is-running', running && b === activeBtn);
     }
@@ -53,6 +55,10 @@ function initSidebar({ logPanel, onCommandDone, getProjectFilter = () => null })
   for (const b of buttons) {
     b.addEventListener('click', () => run(b));
   }
+
+  // Expose so app.js can also toggle the disable state for its
+  // non-CLI data-action buttons (db-export, db-import, etc.).
+  return { setRunning };
 }
 
 window.__initSidebar = initSidebar;

@@ -8,7 +8,13 @@
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; background: var(--bg); color: var(--ink); height: 100%; }
-body { font: 13px/1.5 'Dubai', 'Inter', 'Segoe UI', Arial, sans-serif; }
+body { font: 13px/1.5 'Segoe UI', Tahoma, Arial, sans-serif; }
+
+/* Keyboard focus — visible on every interactive element. */
+button:focus-visible, input:focus-visible, select:focus-visible, [tabindex]:focus-visible, a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 
 /* Respect HTML's hidden attribute even when display:flex/grid overrides it. */
 [hidden] { display: none !important; }

@@ -50,8 +50,11 @@ function usage() {
 }
 
 function main() {
-  banner();
   const [cmd, ...rest] = process.argv.slice(2);
+  // --json subcommands need clean JSON on stdout; suppress the banner so
+  // callers (the Electron renderer's projects:list IPC) can parse the
+  // first character without stripping prelude lines.
+  if (!rest.includes('--json')) banner();
 
   if (cmd === '-h' || cmd === '--help') { usage(); return; }
 

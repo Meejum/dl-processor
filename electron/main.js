@@ -176,9 +176,9 @@ app.whenReady().then(async () => {
       child.on('error', () => resolve([]));
       child.on('close', () => {
         try {
-          const start = out.indexOf('[');
-          if (start < 0) { resolve([]); return; }
-          resolve(JSON.parse(out.slice(start)));
+          // CLI suppresses the banner when --json is passed, so stdout is
+          // pure JSON. Still trim defensively in case anything else leaks.
+          resolve(JSON.parse(out.trim()));
         } catch { resolve([]); }
       });
     });
