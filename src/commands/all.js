@@ -1,5 +1,5 @@
 const { INPUT_DIR, SF_INPUT_DIR, listFiles } = require('./shared');
-const { cmdImport }   = require('./import');
+const { cmdImport }   = require('./import-dld');
 const { cmdImportSf } = require('./import-sf');
 const { cmdCompare }  = require('./compare');
 const { cmdDiff }     = require('./diff');

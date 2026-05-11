@@ -11,7 +11,7 @@ const {
 } = require('./src/commands/shared');
 
 const { cmdParse }          = require('./src/commands/parse');
-const { cmdImport }         = require('./src/commands/import');
+const { cmdImport }         = require('./src/commands/import-dld');
 const { cmdImportSf }       = require('./src/commands/import-sf');
 const { cmdCompare }        = require('./src/commands/compare');
 const { cmdDiff }           = require('./src/commands/diff');
