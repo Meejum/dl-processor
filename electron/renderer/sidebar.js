@@ -11,15 +11,42 @@ function initSidebar({ logPanel, onCommandDone, getProjectFilter = () => null })
   const buttons = Array.from(document.querySelectorAll('.cmd-btn[data-cmd]'));
   const allButtons = Array.from(document.querySelectorAll('.cmd-btn'));
 
+  // Multi-file picker filter map keyed by data-pick-multi attribute.
+  const MULTI_PICK_FILTERS = {
+    dld: [
+      { name: 'DLD reports (.xps, .csv)', extensions: ['xps', 'csv'] },
+      { name: 'All files',                extensions: ['*'] }
+    ],
+    sf: [
+      { name: 'Salesforce export (.xlsx)', extensions: ['xlsx'] },
+      { name: 'All files',                 extensions: ['*'] }
+    ]
+  };
+
   async function run(btn) {
     const cmd = btn.getAttribute('data-cmd');
     const label = btn.getAttribute('data-label') || cmd;
     const needsFile = btn.getAttribute('data-needs-file') === 'true';
+    const pickMulti = btn.getAttribute('data-pick-multi');
 
     let args = [];
     const projectFilter = getProjectFilter && getProjectFilter();
     if (PROJECT_FILTERED_COMMANDS.has(cmd) && projectFilter) {
       args = [projectFilter];
+    }
+    if (pickMulti && MULTI_PICK_FILTERS[pickMulti]) {
+      // Open native file picker with multi-selection. User can pick files
+      // from anywhere on the system; filenames can be anything — the CLI
+      // takes absolute paths.
+      const picked = await window.dlp.pickOpenMulti({
+        title: 'Choose ' + (pickMulti === 'dld' ? 'DLD' : 'Salesforce') + ' file(s)',
+        filters: MULTI_PICK_FILTERS[pickMulti]
+      });
+      if (!picked || picked.length === 0) {
+        logPanel.appendInfo('cancelled — no file picked');
+        return;
+      }
+      args = picked;       // each path becomes a positional CLI arg
     }
     if (needsFile) {
       const csvPath = await window.dlp.pickCsv({

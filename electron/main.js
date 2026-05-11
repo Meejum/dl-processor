@@ -168,6 +168,17 @@ app.whenReady().then(async () => {
     return result.filePaths[0];
   });
 
+  ipcMain.handle('dlp:pick:open-multi', async (event, { title, filters, initialDir } = {}) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: title || 'Choose files',
+      properties: ['openFile', 'multiSelections'],
+      defaultPath: initialDir || undefined,
+      filters: filters || [{ name: 'All files', extensions: ['*'] }]
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    return result.filePaths;
+  });
+
   ipcMain.handle('dlp:pick:csv', async (event, { initialDir, title } = {}) => {
     const start = initialDir || path.join(state.dataFolder, 'input', 'Changes Template Input');
     const result = await dialog.showOpenDialog(mainWindow, {
