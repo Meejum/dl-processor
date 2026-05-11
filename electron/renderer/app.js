@@ -1,4 +1,5 @@
 (async function() {
+  let currentDataFolder = null;
   console.log('[wizard] boot');
   try {
     console.log('[wizard] window.dlp =', !!window.dlp, 'firstRun =', !!(window.dlp && window.dlp.firstRun));
@@ -64,13 +65,18 @@
     alert('App init failed:\n\n' + (e && e.message ? e.message : String(e)));
   }
 
-  function showAppShell(dataFolder) {
+  async function showAppShell(dataFolder) {
+    if (!dataFolder) dataFolder = await window.dlp.getDataFolder();
+    currentDataFolder = dataFolder;
     document.getElementById('app-shell').hidden = false;
     if (dataFolder) document.getElementById('header-data-folder').textContent = dataFolder;
 
     // Wipe the placeholder text in the log panel before we start streaming.
     const logEl = document.getElementById('log-panel');
     logEl.innerHTML = '';
+
+    // Initialize the tab host (creates the tab strip inside #tab-host).
+    window.__tabHost = window.__initTabHost();
 
     const logPanel = {
       appendInfo:  (text) => appendLog('info',  text),
@@ -93,12 +99,27 @@
       appendLog(level, text);
     });
 
+    const reportPathsByCommand = {
+      'review-pending': (df) => 'file:///' + df.replace(/\\/g, '/') + '/output/approve-pending.html',
+      'compare':        (df) => 'file:///' + df.replace(/\\/g, '/') + '/output/dashboard.html',
+      'all':            (df) => 'file:///' + df.replace(/\\/g, '/') + '/output/dashboard.html'
+    };
+    const tabTitles = {
+      'review-pending': 'Approve pending',
+      'compare':        'Dashboard',
+      'all':            'Dashboard'
+    };
+
     // Initialize sidebar buttons.
     if (window.__initSidebar) {
       window.__initSidebar({
         logPanel,
-        onCommandDone: (result) => {
-          // Task 9 will open HTML report tabs here. For now, no-op.
+        onCommandDone: async (result) => {
+          if (result.exitCode !== 0) return;
+          const builder = reportPathsByCommand[result.command];
+          if (!builder || !currentDataFolder) return;
+          const url = builder(currentDataFolder);
+          await window.__tabHost.open({ url, title: tabTitles[result.command] });
         }
       });
     }

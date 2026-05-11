@@ -4,6 +4,12 @@ contextBridge.exposeInMainWorld('dlp', {
   version:    () => ipcRenderer.invoke('dlp:version'),
   runCommand: (name, args) => ipcRenderer.invoke('dlp:cmd:' + name, args || []),
   pickCsv:    (opts) => ipcRenderer.invoke('dlp:pick:csv', opts || {}),
+  getDataFolder: () => ipcRenderer.invoke('dlp:data-folder'),
+  tabs: {
+    open:     ({ url, title }) => ipcRenderer.invoke('dlp:tab:open',     { url, title }),
+    activate: (id)             => ipcRenderer.invoke('dlp:tab:activate', { id }),
+    close:    (id)             => ipcRenderer.invoke('dlp:tab:close',    { id })
+  },
   onLog: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('dlp:log:line', listener);

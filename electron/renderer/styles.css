@@ -51,3 +51,12 @@ main { flex: 1; display: flex; min-height: 0; }
 .log-panel .log-info  { color: var(--ink-2); }
 .log-panel .log-warn  { color: var(--warn, #8A5A08); }
 .log-panel .log-error { color: var(--down, #A12C1B); }
+
+/* Tab strip (Task 9) */
+.tab-strip { height: 30px; background: var(--surface-2); border-bottom: 1px solid var(--border); display: flex; align-items: stretch; }
+.tab-strip-tabs { display: flex; gap: 1px; flex: 1; overflow-x: auto; }
+.tab { display: flex; align-items: center; padding: 4px 10px; background: var(--surface); border-right: 1px solid var(--border); cursor: pointer; font-size: 12px; max-width: 200px; }
+.tab.is-active { background: var(--accent-soft); border-bottom: 2px solid var(--accent); }
+.tab-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tab-close { background: transparent; border: 0; margin-left: 8px; color: var(--muted); cursor: pointer; font-size: 14px; }
+.tab-close:hover { color: var(--down, #A12C1B); }

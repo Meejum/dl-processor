@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog } = require('electron');
 const path = require('path');
 const { createCommandBridge, setDataFolder } = require('./command-bridge');
 const {
@@ -16,6 +16,38 @@ const state = {
   dataFolder: null,
   appConfigPath: null
 };
+
+const tabs = new Map();  // tabId -> { view, url, title }
+let nextTabId = 1;
+let activeTabId = null;
+
+function setActiveTab(id) {
+  activeTabId = id;
+  for (const [tid, t] of tabs.entries()) {
+    if (tid === id) {
+      t.view.setBackgroundColor('#FFFFFF');
+      mainWindow.setTopBrowserView(t.view);
+      sizeActiveTab();
+    }
+  }
+}
+
+function sizeActiveTab() {
+  if (!activeTabId || !mainWindow) return;
+  const t = tabs.get(activeTabId);
+  if (!t) return;
+  const [w, h] = mainWindow.getContentSize();
+  const TOP_BAR = 40;
+  const TAB_STRIP = 30;
+  const SIDEBAR_W = 220;
+  const LOG_H = Math.floor(h * 0.3);
+  t.view.setBounds({
+    x: SIDEBAR_W,
+    y: TOP_BAR + TAB_STRIP,
+    width: w - SIDEBAR_W,
+    height: h - TOP_BAR - TAB_STRIP - LOG_H
+  });
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -46,6 +78,7 @@ function createWindow() {
     const levels = ['LOG', 'WARN', 'ERROR', 'INFO'];
     console.log('[renderer:' + (levels[level] || level) + '] ' + message);
   });
+  mainWindow.on('resize', sizeActiveTab);
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
@@ -95,6 +128,38 @@ app.whenReady().then(async () => {
     state.dataFolder = folder;
     setDataFolder(folder);  // updates the command-bridge's env-var target
     return { folder, summary };
+  });
+
+  ipcMain.handle('dlp:data-folder', () => state.dataFolder);
+
+  ipcMain.handle('dlp:tab:open', (event, { url, title }) => {
+    const id = String(nextTabId++);
+    const view = new BrowserView({
+      webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true }
+    });
+    view.setAutoResize({ width: true, height: true });
+    mainWindow.addBrowserView(view);
+    view.webContents.loadURL(url);
+    tabs.set(id, { view, url, title });
+    setActiveTab(id);
+    return { id, title, url };
+  });
+
+  ipcMain.handle('dlp:tab:activate', (event, { id }) => {
+    setActiveTab(id);
+  });
+
+  ipcMain.handle('dlp:tab:close', (event, { id }) => {
+    const t = tabs.get(id);
+    if (!t) return;
+    mainWindow.removeBrowserView(t.view);
+    t.view.webContents.destroy();
+    tabs.delete(id);
+    if (activeTabId === id) {
+      activeTabId = null;
+      const next = tabs.keys().next().value;
+      if (next) setActiveTab(next);
+    }
   });
 
   ipcMain.handle('dlp:pick:csv', async (event, { initialDir, title } = {}) => {
