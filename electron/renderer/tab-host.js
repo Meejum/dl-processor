@@ -61,6 +61,28 @@ function initTabHost() {
     else        iframeEl.src    = url;
     content.appendChild(iframeEl);
 
+    // Suppress Chromium's bottom-left "file:///..." link-hover preview by
+    // rewriting every <a href> in the loaded document to use an onclick
+    // handler instead. webSecurity:false lets us reach into the iframe.
+    iframeEl.addEventListener('load', () => {
+      try {
+        const doc = iframeEl.contentDocument;
+        if (!doc) return;
+        for (const a of doc.querySelectorAll('a[href]')) {
+          const target = a.getAttribute('href');
+          if (!target || target.startsWith('#') || target.startsWith('javascript:')) continue;
+          a.setAttribute('data-href', target);
+          a.setAttribute('href', 'javascript:void(0)');
+          a.addEventListener('click', (ev) => {
+            ev.preventDefault();
+            iframeEl.contentWindow.location.href = target;
+          });
+        }
+      } catch (e) {
+        console.warn('iframe link patch failed:', e);
+      }
+    });
+
     tabs.set(id, { tabEl, iframeEl, title });
     activate(id);
     return { id, title, url: url || null };
