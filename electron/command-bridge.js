@@ -12,7 +12,7 @@ const pkg = require('../package.json');
 const KNOWN_COMMANDS = [
   'all', 'parse', 'import-dld', 'import-sf', 'compare', 'diff',
   'projects', 'status', 'review-pending', 'apply-pending',
-  'audit', 'area-template'
+  'audit', 'area-template', 'db-export', 'db-import'
 ];
 
 // IPC channel names (renderer-facing) map to the CLI subcommand strings
@@ -30,7 +30,9 @@ const CLI_COMMAND = {
   'review-pending': 'review-pending',
   'apply-pending':  'apply-pending',
   'audit':          'audit',
-  'area-template':  'area-template'
+  'area-template':  'area-template',
+  'db-export':      'db-export',
+  'db-import':      'db-import'
 };
 
 // Map an args[] from the renderer into the CLI argv shape expected by index.js.
@@ -50,6 +52,8 @@ function commandToArgv(name, args) {
     case 'apply-pending':  return args[0] ? [args[0]] : [];
     case 'audit':          return [];
     case 'area-template':  return args[0] ? [args[0]] : [];
+    case 'db-export':      return args[0] ? [args[0]] : [];
+    case 'db-import':      return args[0] ? [args[0]] : [];
     default: return args;
   }
 }

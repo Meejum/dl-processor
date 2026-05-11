@@ -91,6 +91,17 @@ function main() {
   if (cmd === 'projects') { cmdProjects({ json: rest.includes('--json') }); return; }
   if (cmd === 'status')   { cmdStatus();   return; }
 
+  if (cmd === 'db-export') {
+    const { cmdDbExport } = require('./src/commands/db-backup');
+    cmdDbExport(rest);
+    return;
+  }
+  if (cmd === 'db-import') {
+    const { cmdDbImport } = require('./src/commands/db-backup');
+    cmdDbImport(rest);
+    return;
+  }
+
   if (cmd === 'audit') {
     const { runAudit } = require('./src/audit-report');
     const db = openDb();

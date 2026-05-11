@@ -4,6 +4,8 @@ contextBridge.exposeInMainWorld('dlp', {
   version:    () => ipcRenderer.invoke('dlp:version'),
   runCommand: (name, args) => ipcRenderer.invoke('dlp:cmd:' + name, args || []),
   pickCsv:    (opts) => ipcRenderer.invoke('dlp:pick:csv', opts || {}),
+  pickSave:   (opts) => ipcRenderer.invoke('dlp:pick:save', opts || {}),
+  pickOpen:   (opts) => ipcRenderer.invoke('dlp:pick:open', opts || {}),
   getDataFolder: () => ipcRenderer.invoke('dlp:data-folder'),
   projects: { list: () => ipcRenderer.invoke('dlp:projects:list') },
   shell:    { showInFolder: (p) => ipcRenderer.invoke('dlp:shell:show-in-folder', p) },

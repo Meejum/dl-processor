@@ -467,19 +467,48 @@
       'all':            'Dashboard'
     };
 
-    // Non-CLI sidebar actions — buttons that just open a tab or call
-    // shell.showInFolder, without spawning a child node process.
+    // Non-CLI sidebar actions — buttons that just open a tab, show a
+    // file picker before running a CLI command, or call shell.showInFolder.
     for (const btn of document.querySelectorAll('.cmd-btn[data-action]')) {
-      btn.addEventListener('click', () => {
+      btn.addEventListener('click', async () => {
         const action = btn.dataset.action;
         if (action === 'open-dashboard' && currentDataFolder) {
           const url = 'file:///' + currentDataFolder.replace(/\\/g, '/') + '/output/dashboard.html';
           window.__tabHost.open({ url, title: 'Dashboard' });
-        } else if (action === 'reveal-output' && currentDataFolder) {
+          return;
+        }
+        if (action === 'reveal-output' && currentDataFolder) {
           const folder = currentDataFolder + '\\output';
           if (window.dlp.shell && window.dlp.shell.showInFolder) {
             window.dlp.shell.showInFolder(folder);
           }
+          return;
+        }
+        if (action === 'db-export') {
+          const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+          const defaultName = 'dl-processor-backup-' + stamp + '.zip';
+          const out = await window.dlp.pickSave({
+            title: 'Save database backup',
+            defaultPath: defaultName,
+            filters: [{ name: 'Zip', extensions: ['zip'] }]
+          });
+          if (!out) return;
+          logPanel.appendInfo('— running: Export DB —');
+          const result = await window.dlp.runCommand('db-export', [out]);
+          logPanel.appendInfo('— done: Export DB (exit ' + result.exitCode + ') —');
+          return;
+        }
+        if (action === 'db-import') {
+          const inPath = await window.dlp.pickOpen({
+            title: 'Choose a DL-Processor backup zip',
+            filters: [{ name: 'Zip', extensions: ['zip'] }]
+          });
+          if (!inPath) return;
+          if (!confirm('Importing will REPLACE the current database.\n\nThe current DB is backed up automatically as .bak-<timestamp> in your data/ folder.\n\nContinue?')) return;
+          logPanel.appendInfo('— running: Import DB —');
+          const result = await window.dlp.runCommand('db-import', [inPath]);
+          logPanel.appendInfo('— done: Import DB (exit ' + result.exitCode + ') —');
+          return;
         }
       });
     }

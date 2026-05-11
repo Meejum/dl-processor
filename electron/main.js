@@ -126,6 +126,27 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('dlp:data-folder', () => state.dataFolder);
 
+  ipcMain.handle('dlp:pick:save', async (event, { title, defaultPath, filters } = {}) => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: title || 'Save file',
+      defaultPath: defaultPath || undefined,
+      filters: filters || [{ name: 'All files', extensions: ['*'] }]
+    });
+    if (result.canceled || !result.filePath) return null;
+    return result.filePath;
+  });
+
+  ipcMain.handle('dlp:pick:open', async (event, { title, filters, initialDir } = {}) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: title || 'Open file',
+      properties: ['openFile'],
+      defaultPath: initialDir || undefined,
+      filters: filters || [{ name: 'All files', extensions: ['*'] }]
+    });
+    if (result.canceled || !result.filePaths[0]) return null;
+    return result.filePaths[0];
+  });
+
   ipcMain.handle('dlp:pick:csv', async (event, { initialDir, title } = {}) => {
     const start = initialDir || path.join(state.dataFolder, 'input', 'Changes Template Input');
     const result = await dialog.showOpenDialog(mainWindow, {
