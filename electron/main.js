@@ -82,7 +82,7 @@ app.whenReady().then(async () => {
     process.env.DLP_DATA_ROOT = state.dataFolder;
   } else {
     // First-run flow handled by the renderer; main exposes the helpers via IPC.
-    state.dataFolder = defaultDataFolder(app.getPath('documents'));
+    state.dataFolder = defaultDataFolder(app.getPath('desktop'));
     process.env.DLP_DATA_ROOT = state.dataFolder;
   }
 
@@ -91,13 +91,13 @@ app.whenReady().then(async () => {
   // First-run-wizard IPC handlers.
   ipcMain.handle('dlp:firstrun:needed', () => loadAppConfig(state.appConfigPath) === null);
 
-  ipcMain.handle('dlp:firstrun:default-folder', () => defaultDataFolder(app.getPath('documents')));
+  ipcMain.handle('dlp:firstrun:default-folder', () => defaultDataFolder(app.getPath('desktop')));
 
   ipcMain.handle('dlp:firstrun:pick-folder', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: 'Choose data folder',
       properties: ['openDirectory', 'createDirectory'],
-      defaultPath: defaultDataFolder(app.getPath('documents'))
+      defaultPath: defaultDataFolder(app.getPath('desktop'))
     });
     if (result.canceled || !result.filePaths[0]) return null;
     return result.filePaths[0];

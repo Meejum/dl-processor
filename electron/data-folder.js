@@ -2,12 +2,28 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 
-function defaultDataFolder(documentsPath) {
-  const docs = documentsPath || path.join(os.homedir(), 'Documents');
-  return path.join(docs, 'DL-Processor');
+function defaultDataFolder(basePath) {
+  // basePath is the user's Desktop (passed from main.js via
+  // app.getPath('desktop')). Falls back to ~/Desktop when called
+  // outside Electron.
+  const base = basePath || path.join(os.homedir(), 'Desktop');
+  return path.join(base, 'DL-Processor');
 }
 
-const SUBFOLDERS = ['db', 'input', 'input/Changes Template Input', 'output', 'sf-input', 'config'];
+const SUBFOLDERS = [
+  'data',                          // dld-sync.sqlite lives here
+  'db',                            // schema.sql + legacy compat
+  'input',                         // drop DLD .xps / .csv files here
+  'input/Changes Template Input',  // drop filled-in template CSVs here
+  'sf-input',                      // drop Salesforce .xlsx files here
+  'output',                        // root for generated artifacts
+  'output/csv',                    // per-project CSV exports
+  'output/compare',                // per-project compare HTML
+  'output/diff',                   // per-project diff HTML
+  'output/Changes Template',       // generated area template CSVs
+  'config',                        // project-mapping.json + future config
+  'logs'                           // audit.jsonl
+];
 
 function ensureDataFolderLayout(root) {
   fs.mkdirSync(root, { recursive: true });
