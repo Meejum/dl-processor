@@ -3,7 +3,7 @@
 :root {
   --bg:#F6F1E9; --surface:#FFFFFF; --surface-2:#FBF5EA;
   --border:#E3D9C8; --border-2:#C8B896;
-  --ink:#1F1A14; --ink-2:#5A4A37; --muted:#8A7E69;
+  --ink:#1F1A14; --ink-2:#5A4A37; --muted:#6B5F4B;
   --accent:#85633B; --accent-dark:#5C3D1E; --accent-soft:#F0E4CE;
 }
 * { box-sizing: border-box; }
@@ -33,7 +33,7 @@ body { font: 13px/1.5 'Dubai', 'Inter', 'Segoe UI', Arial, sans-serif; }
 .brand { display: inline-flex; align-items: center; gap: 8px; font-weight: 700; color: var(--accent-dark); font-size: 14px; letter-spacing: 0.02em; }
 .brand-logo { width: 24px; height: 24px; flex: 0 0 auto; }
 .brand-sub { color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
-.data-folder { color: var(--muted); font-size: 12px; }
+.data-folder { color: var(--muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; max-width: 40ch; }
 main { flex: 1; display: flex; min-height: 0; }
 .sidebar { width: 220px; background: var(--surface); border-right: 1px solid var(--border); padding: 8px; }
 .content { flex: 1; display: flex; flex-direction: row; min-width: 0; min-height: 0; }
@@ -59,23 +59,23 @@ body.sidebar-collapsed .sidebar .cmd-icon { font-size: 20px; }
 #btn-toggle-log.is-off, #btn-toggle-sidebar.is-off { opacity: 0.4; }
 .log-pane { display: flex; flex-direction: column; min-height: 0; background: var(--surface-2); }
 .log-pane-info { flex: 1; }
-.log-pane-error { flex: 0 0 40%; min-height: 80px; border-top: 1px solid var(--border); background: #FBEAE5; }
-.log-pane-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; background: var(--surface); border-bottom: 1px solid var(--border); }
+.log-pane-error { flex: 0 1 auto; max-height: 40%; border-top: 1px solid var(--border); background: #FBEAE5; }
+.log-pane-head { display: flex; align-items: center; justify-content: space-between; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); }
 .log-pane-label { font-size: 11px; font-weight: 600; color: var(--accent-dark); letter-spacing: 0.06em; text-transform: uppercase; }
 .log-pane-error .log-pane-label { color: var(--down, #A12C1B); }
-.log-copy-btn { font-size: 10px; padding: 2px 8px; border: 1px solid var(--border-2); border-radius: 3px; background: var(--surface); cursor: pointer; color: var(--ink-2); }
+.log-copy-btn { font-size: 11px; padding: 3px 10px; border: 1px solid var(--border-2); border-radius: 3px; background: var(--surface); cursor: pointer; color: var(--ink-2); }
 .log-copy-btn:hover { background: var(--accent-soft); }
 .log-copy-btn.copied { background: var(--accent); color: #fff; border-color: var(--accent-dark); }
 .log-body { flex: 1; overflow: auto; padding: 6px 10px; font-family: 'Consolas', 'Cascadia Mono', monospace; font-size: 11px; user-select: text; -webkit-user-select: text; }
 
 /* Sidebar */
-.sidebar { display: flex; flex-direction: column; gap: 4px; }
+.sidebar { display: flex; flex-direction: column; gap: 2px; }
 /* Match the visual treatment of .cmd-btn so the toggle sits at the top
    of the sidebar as just another menu entry. */
 .sidebar-collapse-btn { width: 100%; background: var(--surface); color: var(--accent-dark); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; cursor: pointer; font: inherit; font-size: 14px; text-align: left; display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin-bottom: 6px; }
 .sidebar-collapse-btn:hover { background: var(--accent-soft); border-color: var(--border-2); }
 body.sidebar-collapsed .sidebar-collapse-btn { justify-content: center; padding: 8px 4px; }
-.sidebar .sidebar-section { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 12px; padding: 0 4px; }
+.sidebar .sidebar-section { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin: 14px 0 4px; padding: 0 10px; font-weight: 600; }
 .sidebar .cmd-btn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; text-align: left; cursor: pointer; color: var(--ink); font: inherit; display: flex; align-items: center; gap: 8px; }
 /* Every sidebar button lays its number / icon / label on one row. */
 .sidebar .cmd-btn:hover { background: var(--accent-soft); border-color: var(--border-2); }
@@ -95,7 +95,7 @@ body.sidebar-collapsed .sidebar-collapse-btn { justify-content: center; padding:
 .log-body .log-error { color: var(--down, #A12C1B); }
 
 /* Tab strip (Task 9) */
-.tab-strip { height: 30px; background: var(--surface-2); border-bottom: 1px solid var(--border); display: flex; align-items: stretch; }
+.tab-strip { height: 30px; background: var(--surface-2); display: flex; align-items: stretch; }
 .tab-nav { display: flex; align-items: center; gap: 2px; padding: 2px 6px; border-right: 1px solid var(--border); }
 .tab-nav-btn { width: 22px; height: 22px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); color: var(--accent-dark); cursor: pointer; font-size: 11px; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .tab-nav-btn:hover { background: var(--accent-soft); border-color: var(--border-2); }
@@ -111,8 +111,9 @@ body.sidebar-collapsed .sidebar-collapse-btn { justify-content: center; padding:
 .tab { display: flex; align-items: center; padding: 4px 10px; background: var(--surface); border-right: 1px solid var(--border); cursor: pointer; font-size: 12px; max-width: 200px; }
 .tab.is-active { background: var(--accent-soft); border-bottom: 2px solid var(--accent); }
 .tab-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.tab-close { background: var(--accent-soft); border: 1px solid var(--border-2); margin-left: 10px; color: var(--accent-dark); cursor: pointer; font-size: 14px; font-weight: 700; line-height: 1; width: 20px; height: 20px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
-.tab-close:hover { background: var(--down, #A12C1B); color: #fff; border-color: var(--down, #A12C1B); }
+.tab-close { background: transparent; border: 1px solid transparent; margin-left: 6px; color: var(--muted); cursor: pointer; font-size: 14px; font-weight: 700; line-height: 1; width: 20px; height: 20px; border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; padding: 0; opacity: 0.6; }
+.tab:hover .tab-close { opacity: 1; background: var(--accent-soft); border-color: var(--border-2); color: var(--accent-dark); }
+.tab-close:hover { background: var(--down, #A12C1B) !important; color: #fff !important; border-color: var(--down, #A12C1B) !important; opacity: 1; }
 
 /* Top bar additions (Task 10) */
 .top-bar select { padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); font: inherit; }
