@@ -70,9 +70,11 @@ body.sidebar-collapsed .sidebar .cmd-icon { font-size: 20px; }
 
 /* Sidebar */
 .sidebar { display: flex; flex-direction: column; gap: 4px; }
-.sidebar-collapse-btn { align-self: flex-end; width: 30px; height: 26px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-2); color: var(--accent-dark); cursor: pointer; font-size: 14px; line-height: 1; padding: 0; display: inline-flex; align-items: center; justify-content: center; margin-bottom: 4px; }
+/* Match the visual treatment of .cmd-btn so the toggle sits at the top
+   of the sidebar as just another menu entry. */
+.sidebar-collapse-btn { width: 100%; background: var(--surface); color: var(--accent-dark); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; cursor: pointer; font: inherit; font-size: 14px; text-align: left; display: flex; align-items: center; justify-content: flex-start; gap: 8px; margin-bottom: 6px; }
 .sidebar-collapse-btn:hover { background: var(--accent-soft); border-color: var(--border-2); }
-body.sidebar-collapsed .sidebar-collapse-btn { align-self: center; }
+body.sidebar-collapsed .sidebar-collapse-btn { justify-content: center; padding: 8px 4px; }
 .sidebar .sidebar-section { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 12px; padding: 0 4px; }
 .sidebar .cmd-btn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; text-align: left; cursor: pointer; color: var(--ink); font: inherit; display: flex; align-items: center; gap: 8px; }
 /* Every sidebar button lays its number / icon / label on one row. */
