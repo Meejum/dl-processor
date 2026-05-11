@@ -76,8 +76,13 @@
     const settingsModal = window.__initSettingsModal({
       getDataFolder: () => currentDataFolder,
       onCheckForUpdates: async () => {
-        // Task 11 will wire the real update-checker; for now, return a placeholder.
-        return { message: 'update checker arrives in Task 11' };
+        const result = await window.dlp.update.check();
+        if (result.status === 'available') {
+          if (confirm(result.message + '\n\nOpen download page?')) {
+            window.dlp.update.openDownload(result.downloadUrl);
+          }
+        }
+        return result;
       }
     });
 

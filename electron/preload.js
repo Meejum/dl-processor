@@ -23,5 +23,9 @@ contextBridge.exposeInMainWorld('dlp', {
     pickFolder:    () => ipcRenderer.invoke('dlp:firstrun:pick-folder'),
     detectLegacy:  () => ipcRenderer.invoke('dlp:firstrun:detect-legacy'),
     finalize:      ({ folder, migrateFrom }) => ipcRenderer.invoke('dlp:firstrun:finalize', { folder, migrateFrom })
+  },
+  update: {
+    check:        () => ipcRenderer.invoke('dlp:update:check'),
+    openDownload: (url) => ipcRenderer.invoke('dlp:update:open-download', url)
   }
 });

@@ -2,6 +2,7 @@ const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell } = require('ele
 const path = require('path');
 const { createCommandBridge, setDataFolder } = require('./command-bridge');
 const { openDb } = require('../src/commands/shared');
+const { checkForUpdates } = require('./update-checker');
 const {
   defaultDataFolder,
   ensureDataFolderLayout,
@@ -187,6 +188,17 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('dlp:shell:show-in-folder', (event, folder) => {
     shell.openPath(folder);
+  });
+
+  ipcMain.handle('dlp:update:check', async () => {
+    return await checkForUpdates({
+      currentVersion: app.getVersion(),
+      baseUrl: 'https://dl-processor.pages.dev'
+    });
+  });
+
+  ipcMain.handle('dlp:update:open-download', (event, url) => {
+    shell.openExternal(url);
   });
 
   createWindow();
