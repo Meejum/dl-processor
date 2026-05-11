@@ -1,5 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const cp = require('child_process');
 const { createCommandBridge, setDataFolder } = require('./command-bridge');
 const { checkForUpdates } = require('./update-checker');
@@ -77,13 +78,33 @@ app.whenReady().then(async () => {
   state.appConfigPath = path.join(app.getPath('userData'), 'config.json');
   const cfg = loadAppConfig(state.appConfigPath);
 
-  if (cfg && cfg.dataFolder) {
-    state.dataFolder = cfg.dataFolder;
-    process.env.DLP_DATA_ROOT = state.dataFolder;
-  } else {
-    // First-run flow handled by the renderer; main exposes the helpers via IPC.
-    state.dataFolder = defaultDataFolder(app.getPath('desktop'));
-    process.env.DLP_DATA_ROOT = state.dataFolder;
+  // Decide the data folder:
+  //  - If a previous config picked one AND that folder still exists on disk,
+  //    keep it (user might have moved the install or chosen a custom path).
+  //  - Otherwise, in the packaged .exe default to Desktop\DL-Processor so the
+  //    end user gets a zero-config experience with everything on their desktop.
+  //  - In dev (npm run start:electron) fall back to the project root so the
+  //    existing C:\projects\DL-Processor data keeps working unchanged.
+  function pickFolder() {
+    if (cfg && cfg.dataFolder && fs.existsSync(cfg.dataFolder)) {
+      return cfg.dataFolder;
+    }
+    if (app.isPackaged) {
+      return defaultDataFolder(app.getPath('desktop'));
+    }
+    return path.join(__dirname, '..');   // project root in dev
+  }
+  state.dataFolder = pickFolder();
+  process.env.DLP_DATA_ROOT = state.dataFolder;
+
+  // Always ensure the directory layout exists — covers fresh installs, moved
+  // installs, and the case where the user deleted a subfolder by hand.
+  try { ensureDataFolderLayout(state.dataFolder); }
+  catch (e) { console.error('failed to create data folder layout:', e.message); }
+
+  // Persist the choice so next launch is identical without re-deciding.
+  if (!cfg || cfg.dataFolder !== state.dataFolder) {
+    saveAppConfig(state.appConfigPath, { dataFolder: state.dataFolder, version: app.getVersion() });
   }
 
   createCommandBridge(ipcMain, { dataFolder: state.dataFolder });

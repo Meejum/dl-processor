@@ -4,8 +4,13 @@
   console.log('[wizard] boot');
   try {
     console.log('[wizard] window.dlp =', !!window.dlp, 'firstRun =', !!(window.dlp && window.dlp.firstRun));
-    const needed = await window.dlp.firstRun.needed();
-    console.log('[wizard] needed =', needed);
+    // Main now auto-creates the data folder layout on launch (defaults to
+    // Desktop\DL-Processor in the packaged .exe, project root in dev), so
+    // the wizard is no longer needed for a fresh install. Kept the IPC
+    // surface in place in case a future "Change data folder" Settings
+    // panel wants to reuse it.
+    const needed = false;
+    console.log('[wizard] auto-mode (skipped)');
 
     if (needed) {
       document.getElementById('first-run-wizard').hidden = false;

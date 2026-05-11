@@ -47,6 +47,7 @@ nsis:
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: DL-Processor
+  include: build/installer.nsh          # customInstall + customUnInstall macros
   # installerIcon / uninstallerIcon disabled — same reason as win.icon
   artifactName: '${productName} Setup ${version}.${ext}'
 
