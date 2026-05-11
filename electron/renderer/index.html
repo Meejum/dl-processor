@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data:;">
   <title>DL-Processor</title>
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -14,7 +14,7 @@
       <h1>Welcome to DL-Processor</h1>
       <p class="muted">Where should DL-Processor store its data?</p>
       <div class="folder-row">
-        <input id="wizard-folder" type="text" readonly>
+        <input id="wizard-folder" type="text" placeholder="Type a path or click Choose…">
         <button id="wizard-pick">Choose…</button>
       </div>
       <div id="wizard-legacy" hidden>

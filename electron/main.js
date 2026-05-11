@@ -34,6 +34,15 @@ function createWindow() {
     }
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  // Auto-open DevTools during v1.0 development to make renderer errors visible.
+  // Remove or gate behind --enable-logging once shipped.
+  mainWindow.webContents.openDevTools({ mode: 'detach' });
+  // Pipe renderer console output to the main-process terminal so we can debug
+  // even when DevTools isn't engaged. Remove for production.
+  mainWindow.webContents.on('console-message', (event, level, message, line, source) => {
+    const levels = ['LOG', 'WARN', 'ERROR', 'INFO'];
+    console.log('[renderer:' + (levels[level] || level) + '] ' + message);
+  });
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
