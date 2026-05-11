@@ -236,30 +236,106 @@
       }[c]));
     }
 
-    function buildLogPage(commandName, capture) {
-      const titleMap = { status: 'Status', projects: 'Projects' };
-      const title = titleMap[commandName] || commandName;
-      const lines = capture
-        .map((e) => e.text)
-        .filter((t) => t && !/DL-PROCESSOR|Sobha Realty\s+-/i.test(t));
-      const body = lines.map((t) => escapeHtml(t)).join('\n');
+    const PAGE_CSS = `
+      @import url('https://fonts.googleapis.com/css2?family=Dubai:wght@400;500;600;700&display=swap');
+      :root { --bg:#F6F1E9; --surface:#FFFFFF; --surface-2:#FBF5EA; --border:#E3D9C8; --border-2:#C8B896; --ink:#1F1A14; --ink-2:#5A4A37; --muted:#8A7E69; --accent:#85633B; --accent-dark:#5C3D1E; --accent-soft:#F0E4CE; }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 24px 28px; font: 13px/1.5 Dubai, 'Segoe UI', Arial, sans-serif; background: var(--bg); color: var(--ink); }
+      .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
+      .page-logo { width: 36px; height: 36px; border-radius: 8px; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); display: inline-flex; align-items: center; justify-content: center; color: var(--accent-soft); font-weight: 700; font-size: 18px; }
+      .page-title { font-size: 20px; font-weight: 700; color: var(--accent-dark); line-height: 1.1; }
+      .page-sub { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
+      .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
+      .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+      .stat-value { font-size: 22px; font-weight: 700; color: var(--accent-dark); line-height: 1.1; }
+      .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+      .info-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 2px rgba(0,0,0,.04); margin-bottom: 12px; }
+      .info-row { display: flex; gap: 14px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
+      .info-row:last-child { border-bottom: 0; }
+      .info-label { color: var(--muted); flex: 0 0 140px; }
+      .info-value { color: var(--ink); flex: 1; font-family: 'Consolas','Cascadia Mono',monospace; font-size: 12px; word-break: break-all; }
+      .tools { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+      .tools input { flex: 1; max-width: 320px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font: inherit; }
+      .count-chip { background: var(--accent-soft); color: var(--accent-dark); border: 1px solid var(--border-2); padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+      table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
+      th { background: var(--surface-2); color: var(--accent-dark); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); position: sticky; top: 0; }
+      td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
+      tr:nth-child(even) td { background: var(--surface-2); }
+      tr:hover td { background: var(--accent-soft); }
+      td.num { font-family: 'Consolas','Cascadia Mono',monospace; text-align: right; }
+      .footer { color: var(--muted); font-size: 11px; margin-top: 14px; }
+    `;
+
+    function pageShell(title, bodyHtml) {
       const generated = new Date().toLocaleString();
       return [
         '<!doctype html><html><head><meta charset="utf-8"><title>', escapeHtml(title), '</title>',
-        '<style>',
-        "body{margin:0;padding:24px;font:13px/1.5 Dubai,Inter,'Segoe UI',Arial,sans-serif;background:#F6F1E9;color:#1F1A14;}",
-        'h1{color:#5C3D1E;font-size:18px;margin:0 0 4px 0;}',
-        '.sub{color:#8A7E69;font-size:11px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:14px;}',
-        '.card{background:#FFFFFF;border:1px solid #E3D9C8;border-radius:8px;padding:16px 20px;box-shadow:0 1px 2px rgba(0,0,0,.04);}',
-        "pre{margin:0;font:12px 'Consolas','Cascadia Mono',monospace;white-space:pre-wrap;color:#1F1A14;}",
-        '.footer{color:#8A7E69;font-size:11px;margin-top:12px;}',
-        '</style></head><body>',
-        '<h1>', escapeHtml(title), '</h1>',
-        '<div class="sub">DL-Processor · Sobha Realty · Registration</div>',
-        '<div class="card"><pre>', body, '</pre></div>',
+        '<style>', PAGE_CSS, '</style></head><body>',
+        '<div class="page-head"><span class="page-logo">S</span>',
+        '<div><div class="page-title">', escapeHtml(title), '</div>',
+        '<div class="page-sub">DL-Processor · Sobha Realty · Registration</div></div></div>',
+        bodyHtml,
         '<div class="footer">Generated ', escapeHtml(generated), '</div>',
         '</body></html>'
       ].join('');
+    }
+
+    function buildStatusPage(capture) {
+      // Pull "key: value" pairs out of the captured CLI output.
+      const kv = {};
+      for (const e of capture) {
+        const m = e.text.match(/^\s*([^:]+?):\s*(.+)$/);
+        if (m) kv[m[1].trim()] = m[2].trim();
+      }
+      const stat = (label, key, fmt) => {
+        let v = kv[key];
+        if (v == null) return '';
+        if (fmt && /^[0-9]+$/.test(v)) v = Number(v).toLocaleString();
+        return '<div class="stat-card"><div class="stat-value">' + escapeHtml(v) + '</div><div class="stat-label">' + escapeHtml(label) + '</div></div>';
+      };
+      const cards = [
+        stat('Projects',       'projects',                    true),
+        stat('DLD Snapshots',  'DLD snapshots',               true),
+        stat('DLD Units',      'DLD units (all snapshots)',   true),
+        stat('DLD Tx Rows',    'DLD tx rows (all snapshots)', true),
+        stat('SF Bookings',    'SF bookings (all snapshots)', true)
+      ].join('');
+      const dbPath   = kv['DB']        || '—';
+      const latestSf = kv['latest SF'] || '—';
+      const body =
+        '<div class="stat-grid">' + cards + '</div>' +
+        '<div class="info-card">' +
+          '<div class="info-row"><div class="info-label">Database</div><div class="info-value">' + escapeHtml(dbPath) + '</div></div>' +
+          '<div class="info-row"><div class="info-label">Latest SF import</div><div class="info-value">' + escapeHtml(latestSf) + '</div></div>' +
+        '</div>';
+      return pageShell('Status', body);
+    }
+
+    async function buildProjectsPage() {
+      let rows = [];
+      try { rows = await window.dlp.projects.list(); } catch { rows = []; }
+      const cells = rows.map((p) =>
+        '<tr>' +
+          '<td>' + escapeHtml(p.project_name || '') + '</td>' +
+          '<td>' + escapeHtml(p.sf_sub_project || '—') + '</td>' +
+          '<td>' + escapeHtml(p.sf_unit_prefix || '—') + '</td>' +
+          '<td class="num">' + (p.snapshot_count || 0) + '</td>' +
+          '<td>' + escapeHtml(p.last_imported || '—') + '</td>' +
+        '</tr>'
+      ).join('');
+      const tableHtml =
+        '<div class="tools"><span class="count-chip">' + rows.length + ' project' + (rows.length === 1 ? '' : 's') + '</span>' +
+        '<input id="q" type="search" placeholder="Filter projects…"></div>' +
+        '<table><thead><tr>' +
+          '<th>Project</th><th>SF Sub-Project</th><th>Prefix</th><th>Snapshots</th><th>Last Imported</th>' +
+        '</tr></thead><tbody>' + cells + '</tbody></table>' +
+        '<script>document.getElementById("q").addEventListener("input",function(e){' +
+          'var q=e.target.value.toLowerCase();' +
+          'document.querySelectorAll("tbody tr").forEach(function(r){' +
+            'r.style.display=r.textContent.toLowerCase().indexOf(q)>=0?"":"none";' +
+          '});' +
+        '});<\/script>';
+      return pageShell('Projects', tableHtml);
     }
 
     // Copy buttons (Output / Errors).
@@ -300,10 +376,13 @@
           // Status and Projects render the captured terminal output as a
           // Sobha-styled page tab so the data is available outside the log
           // column.
-          if (result.command === 'status' || result.command === 'projects') {
-            const srcdoc = buildLogPage(result.command, logCapture);
-            const title = result.command === 'status' ? 'Status' : 'Projects';
-            window.__tabHost.open({ srcdoc, title });
+          if (result.command === 'status') {
+            window.__tabHost.open({ srcdoc: buildStatusPage(logCapture), title: 'Status' });
+            return;
+          }
+          if (result.command === 'projects') {
+            const srcdoc = await buildProjectsPage();
+            window.__tabHost.open({ srcdoc, title: 'Projects' });
             return;
           }
           const builder = reportPathsByCommand[result.command];
