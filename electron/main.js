@@ -53,6 +53,11 @@ function createWindow() {
     const names = ['LOG', 'WARN', 'ERROR', 'INFO'];
     const name = names[level] || String(level);
     console.log('[renderer:' + name + '] ' + message);
+    // Electron emits dev-only security advisories whenever webSecurity is off
+    // or insecure content is allowed; they explicitly state they "will not
+    // show up once the app is packaged". Skip them so the in-app Errors
+    // pane stays clean.
+    if (/Electron Security Warning/i.test(message)) return;
     // Surface WARN and ERROR in-app. The Chromium "violation" messages
     // (CSP, mixed content, deprecation) come through as INFO/WARN; treat
     // anything that contains "Refused to" or "Violation" as an error so
