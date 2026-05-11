@@ -1,7 +1,11 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Expose a minimal API to the renderer. Task 4+ will expand this when IPC
-// handlers exist on the main side.
 contextBridge.exposeInMainWorld('dlp', {
   version: () => ipcRenderer.invoke('dlp:version'),
+  runCommand: (name, args) => ipcRenderer.invoke('dlp:cmd:' + name, args || []),
+  onLog: (handler) => {
+    const listener = (_event, payload) => handler(payload);
+    ipcRenderer.on('dlp:log:line', listener);
+    return () => ipcRenderer.removeListener('dlp:log:line', listener);
+  }
 });

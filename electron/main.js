@@ -1,5 +1,6 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain } = require('electron');
 const path = require('path');
+const { createCommandBridge } = require('./command-bridge');
 
 let mainWindow = null;
 
@@ -23,7 +24,13 @@ function createWindow() {
   mainWindow.on('closed', () => { mainWindow = null; });
 }
 
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  // Data folder will be set by the first-run wizard in Task 6. For now,
+  // default to ~/Documents/DL-Processor.
+  const dataFolder = path.join(app.getPath('documents'), 'DL-Processor');
+  createCommandBridge(ipcMain, { dataFolder });
+  createWindow();
+});
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit();
