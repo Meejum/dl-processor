@@ -1,5 +1,6 @@
 (async function() {
   let currentDataFolder = null;
+  let currentProjectFilter = null;
   console.log('[wizard] boot');
   try {
     console.log('[wizard] window.dlp =', !!window.dlp, 'firstRun =', !!(window.dlp && window.dlp.firstRun));
@@ -71,6 +72,24 @@
     document.getElementById('app-shell').hidden = false;
     if (dataFolder) document.getElementById('header-data-folder').textContent = dataFolder;
 
+    // Settings modal + top bar (Task 10).
+    const settingsModal = window.__initSettingsModal({
+      getDataFolder: () => currentDataFolder,
+      onCheckForUpdates: async () => {
+        // Task 11 will wire the real update-checker; for now, return a placeholder.
+        return { message: 'update checker arrives in Task 11' };
+      }
+    });
+
+    const topBar = window.__initTopBar({
+      getDataFolder:    () => currentDataFolder,
+      getProjectFilter: () => currentProjectFilter,
+      setProjectFilter: (f) => { currentProjectFilter = f; },
+      openSettings:     () => settingsModal.open()
+    });
+    topBar.refreshProjects();
+    topBar.refreshDataFolder();
+
     // Wipe the placeholder text in the log panel before we start streaming.
     const logEl = document.getElementById('log-panel');
     logEl.innerHTML = '';
@@ -114,6 +133,7 @@
     if (window.__initSidebar) {
       window.__initSidebar({
         logPanel,
+        getProjectFilter: () => currentProjectFilter,
         onCommandDone: async (result) => {
           if (result.exitCode !== 0) return;
           const builder = reportPathsByCommand[result.command];

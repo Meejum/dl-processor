@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('dlp', {
     activate: (id)             => ipcRenderer.invoke('dlp:tab:activate', { id }),
     close:    (id)             => ipcRenderer.invoke('dlp:tab:close',    { id })
   },
+  projects: { list: () => ipcRenderer.invoke('dlp:projects:list') },
+  shell:    { showInFolder: (p) => ipcRenderer.invoke('dlp:shell:show-in-folder', p) },
   onLog: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('dlp:log:line', listener);

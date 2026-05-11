@@ -31,7 +31,10 @@
   <div id="app-shell" hidden>
     <header class="top-bar">
       <span class="brand">DL-Processor</span>
+      <select id="project-selector"><option value="">All projects</option></select>
       <span class="data-folder" id="header-data-folder"></span>
+      <span class="spacer"></span>
+      <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
     </header>
     <main>
       <aside class="sidebar" id="sidebar">
@@ -59,6 +62,8 @@
 
   <script src="sidebar.js"></script>
   <script src="tab-host.js"></script>
+  <script src="top-bar.js"></script>
+  <script src="settings-modal.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

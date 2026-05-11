@@ -1,7 +1,9 @@
 // Wires sidebar buttons to dlp.runCommand. Disables all buttons while one is
 // running so we don't accidentally interleave two commands' log output.
 
-function initSidebar({ logPanel, onCommandDone }) {
+const PROJECT_FILTERED_COMMANDS = new Set(['compare', 'diff', 'review-pending']);
+
+function initSidebar({ logPanel, onCommandDone, getProjectFilter = () => null }) {
   const buttons = Array.from(document.querySelectorAll('.cmd-btn'));
 
   async function run(btn) {
@@ -10,6 +12,10 @@ function initSidebar({ logPanel, onCommandDone }) {
     const needsFile = btn.getAttribute('data-needs-file') === 'true';
 
     let args = [];
+    const projectFilter = getProjectFilter && getProjectFilter();
+    if (PROJECT_FILTERED_COMMANDS.has(cmd) && projectFilter) {
+      args = [projectFilter];
+    }
     if (needsFile) {
       const csvPath = await window.dlp.pickCsv({
         title: 'Choose decisions CSV'
@@ -18,7 +24,7 @@ function initSidebar({ logPanel, onCommandDone }) {
         logPanel.appendInfo('cancelled — no file picked');
         return;
       }
-      args = [csvPath];
+      args = [csvPath];   // file picker arg OVERRIDES any project filter
     }
 
     setRunning(true, btn);

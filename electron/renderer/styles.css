@@ -65,3 +65,20 @@ main { flex: 1; display: flex; min-height: 0; }
 .tab-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tab-close { background: transparent; border: 0; margin-left: 8px; color: var(--muted); cursor: pointer; font-size: 14px; }
 .tab-close:hover { color: var(--down, #A12C1B); }
+
+/* Top bar additions (Task 10) */
+.top-bar select { padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); font: inherit; }
+.top-bar .spacer { flex: 1; }
+.top-bar .icon-btn { background: transparent; border: 1px solid transparent; padding: 4px 8px; cursor: pointer; border-radius: 4px; font-size: 16px; }
+.top-bar .icon-btn:hover { background: var(--accent-soft); border-color: var(--border-2); }
+
+/* Settings modal (Task 10) */
+.modal { position: fixed; inset: 0; background: rgba(28,20,10,.4); display: flex; align-items: center; justify-content: center; z-index: 200; }
+.modal-card { background: var(--surface); border-radius: 12px; padding: 20px 28px; width: 480px; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.modal-card h2 { margin: 0 0 12px 0; color: var(--accent-dark); font-size: 16px; }
+.settings-row { display: flex; align-items: center; gap: 12px; margin: 10px 0; }
+.settings-row label { width: 110px; color: var(--muted); }
+.settings-row code { background: var(--surface-2); padding: 2px 6px; border-radius: 3px; word-break: break-all; }
+.modal-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+.modal-actions button { padding: 6px 14px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--surface); cursor: pointer; }
+.modal .primary { background: var(--accent); color: #fff; border-color: var(--accent-dark); border: 1px solid var(--accent-dark); border-radius: 6px; padding: 6px 14px; cursor: pointer; }

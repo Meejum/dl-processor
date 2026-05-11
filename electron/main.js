@@ -1,6 +1,7 @@
-const { app, BrowserWindow, BrowserView, ipcMain, dialog } = require('electron');
+const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
 const { createCommandBridge, setDataFolder } = require('./command-bridge');
+const { openDb } = require('../src/commands/shared');
 const {
   defaultDataFolder,
   ensureDataFolderLayout,
@@ -88,9 +89,11 @@ app.whenReady().then(async () => {
 
   if (cfg && cfg.dataFolder) {
     state.dataFolder = cfg.dataFolder;
+    process.env.DLP_DATA_ROOT = state.dataFolder;
   } else {
     // First-run flow handled by the renderer; main exposes the helpers via IPC.
     state.dataFolder = defaultDataFolder(app.getPath('documents'));
+    process.env.DLP_DATA_ROOT = state.dataFolder;
   }
 
   createCommandBridge(ipcMain, { dataFolder: state.dataFolder });
@@ -126,6 +129,7 @@ app.whenReady().then(async () => {
     if (migrateFrom) summary = migrateLegacyData(migrateFrom, folder);
     saveAppConfig(state.appConfigPath, { dataFolder: folder, version: app.getVersion() });
     state.dataFolder = folder;
+    process.env.DLP_DATA_ROOT = state.dataFolder;
     setDataFolder(folder);  // updates the command-bridge's env-var target
     return { folder, summary };
   });
@@ -172,6 +176,17 @@ app.whenReady().then(async () => {
     });
     if (result.canceled || !result.filePaths[0]) return null;
     return result.filePaths[0];
+  });
+
+  ipcMain.handle('dlp:projects:list', () => {
+    const db = openDb();
+    try {
+      return db.prepare('SELECT project_id, project_name FROM dld_project ORDER BY project_name').all();
+    } finally { db.close(); }
+  });
+
+  ipcMain.handle('dlp:shell:show-in-folder', (event, folder) => {
+    shell.openPath(folder);
   });
 
   createWindow();
