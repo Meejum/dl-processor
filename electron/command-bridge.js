@@ -101,16 +101,20 @@ function runSpawn(name, args, sender) {
   return new Promise((resolve) => {
     let child;
     try {
-      // Use system `node` from PATH. Avoids Electron's bundled-Node ABI
-      // (NODE_MODULE_VERSION 119) which doesn't match the installed
-      // better-sqlite3 binary (NODE_MODULE_VERSION 137 for system Node 24).
-      child = cp.spawn('node', argv, {
-        env,
+      // Spawn Electron's own binary in Node mode (ELECTRON_RUN_AS_NODE=1).
+      // The child shares the parent's ABI, so the better-sqlite3 binary on
+      // disk (built for Electron 28 / ABI 119) loads identically in both
+      // the main process and the spawned CLI subprocess. Works the same
+      // way in `npm run start:electron` (dev) and inside the packaged .exe
+      // — no external `node` on PATH required for end users.
+      const childEnv = Object.assign({}, env, { ELECTRON_RUN_AS_NODE: '1' });
+      child = cp.spawn(process.execPath, argv, {
+        env: childEnv,
         cwd: path.join(__dirname, '..'),
         windowsHide: true
       });
     } catch (e) {
-      stampedSend('error', 'failed to spawn node: ' + e.message);
+      stampedSend('error', 'failed to spawn CLI subprocess: ' + e.message);
       resolve({ command: name, exitCode: 1, error: e.message });
       return;
     }
