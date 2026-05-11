@@ -22,12 +22,13 @@
     "xlsx": "^0.18.5"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=18 <24"
   },
   "author": "Ali Alghumlasi — Sobha Realty Registration Team",
   "license": "UNLICENSED",
   "private": true,
   "devDependencies": {
+    "@electron/rebuild": "^4.0.4",
     "electron": "^28.3.3",
     "electron-builder": "^24.13.3"
   }
