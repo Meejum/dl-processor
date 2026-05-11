@@ -35,17 +35,15 @@
     </header>
     <main>
       <aside class="sidebar" id="sidebar">
-        <button class="cmd-btn" data-cmd="all" data-label="Full pipeline">⚡ Run full pipeline</button>
-        <div class="sidebar-section">Import</div>
-        <button class="cmd-btn" data-cmd="import-dld" data-label="Import DLD">📥 Import DLD</button>
-        <button class="cmd-btn" data-cmd="import-sf"  data-label="Import SF">📥 Import Salesforce</button>
-        <div class="sidebar-section">Reconcile</div>
-        <button class="cmd-btn" data-cmd="compare" data-label="Compare">🔍 Compare</button>
-        <button class="cmd-btn" data-cmd="diff"    data-label="Diff (month-over-month)">📊 Diff</button>
-        <div class="sidebar-section">Master data</div>
-        <button class="cmd-btn" data-cmd="review-pending" data-label="Review pending">📝 Review pending</button>
+        <button class="cmd-btn cmd-btn-primary" data-cmd="all" data-label="Full pipeline">⚡ Run full pipeline <span class="hint">(does 1–4)</span></button>
+        <div class="sidebar-section">Monthly steps</div>
+        <button class="cmd-btn" data-cmd="import-dld" data-label="Import DLD"><span class="step-num">1</span><span class="step-body">📥 Import DLD</span></button>
+        <button class="cmd-btn" data-cmd="import-sf"  data-label="Import SF"><span class="step-num">2</span><span class="step-body">📥 Import Salesforce</span></button>
+        <button class="cmd-btn" data-cmd="compare"    data-label="Compare"><span class="step-num">3</span><span class="step-body">🔍 Compare</span></button>
+        <button class="cmd-btn" data-cmd="diff"       data-label="Diff (month-over-month)"><span class="step-num">4</span><span class="step-body">📊 Diff</span></button>
+        <button class="cmd-btn" data-cmd="review-pending" data-label="Review pending"><span class="step-num">5</span><span class="step-body">📝 Review pending</span></button>
         <button class="cmd-btn" data-cmd="apply-pending"  data-label="Apply pending"
-                data-needs-file="true">✅ Apply pending</button>
+                data-needs-file="true"><span class="step-num">6</span><span class="step-body">✅ Apply pending</span></button>
         <div class="sidebar-section">View</div>
         <button class="cmd-btn" data-cmd="status"   data-label="Status">📈 Status</button>
         <button class="cmd-btn" data-cmd="projects" data-label="Projects">🏢 Projects</button>
