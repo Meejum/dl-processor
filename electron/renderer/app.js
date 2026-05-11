@@ -89,7 +89,17 @@
     const topBar = window.__initTopBar({
       getDataFolder:    () => currentDataFolder,
       getProjectFilter: () => currentProjectFilter,
-      setProjectFilter: (f) => { currentProjectFilter = f; },
+      setProjectFilter: (f) => {
+        currentProjectFilter = f;
+        // Auto-open the per-project compare report when a project is picked.
+        // Falls through silently if the file doesn't exist yet (user hasn't
+        // run [3] Compare for this project).
+        if (f && currentDataFolder && window.__tabHost) {
+          const slug = f.replace(/[^A-Za-z0-9_-]+/g, '_');
+          const url = 'file:///' + currentDataFolder.replace(/\\/g, '/') + '/output/compare/' + slug + '.compare.html';
+          window.__tabHost.open({ url, title: f });
+        }
+      },
       openSettings:     () => settingsModal.open()
     });
     topBar.refreshProjects();

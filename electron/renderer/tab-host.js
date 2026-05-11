@@ -1,9 +1,25 @@
 function initTabHost() {
   const strip = document.createElement('div');
   strip.className = 'tab-strip';
-  strip.innerHTML = '<div class="tab-strip-tabs"></div>';
+  strip.innerHTML =
+    '<div class="tab-nav">' +
+      '<button class="tab-nav-btn" data-nav="back"    title="Back">◀</button>' +
+      '<button class="tab-nav-btn" data-nav="forward" title="Forward">▶</button>' +
+      '<button class="tab-nav-btn" data-nav="reload"  title="Reload">↻</button>' +
+    '</div>' +
+    '<div class="tab-strip-tabs"></div>';
   document.getElementById('tab-host').prepend(strip);
   const tabsContainer = strip.querySelector('.tab-strip-tabs');
+
+  strip.querySelector('[data-nav="back"]').addEventListener('click', () => {
+    if (window.dlp.tabs.goBack) window.dlp.tabs.goBack();
+  });
+  strip.querySelector('[data-nav="forward"]').addEventListener('click', () => {
+    if (window.dlp.tabs.goForward) window.dlp.tabs.goForward();
+  });
+  strip.querySelector('[data-nav="reload"]').addEventListener('click', () => {
+    if (window.dlp.tabs.reload) window.dlp.tabs.reload();
+  });
 
   const tabs = new Map();
 

@@ -158,6 +158,27 @@ app.whenReady().then(async () => {
     setActiveTab(id);
   });
 
+  ipcMain.handle('dlp:tab:go-back', () => {
+    if (!activeTabId) return false;
+    const t = tabs.get(activeTabId);
+    if (t && t.view.webContents.canGoBack()) { t.view.webContents.goBack(); return true; }
+    return false;
+  });
+
+  ipcMain.handle('dlp:tab:go-forward', () => {
+    if (!activeTabId) return false;
+    const t = tabs.get(activeTabId);
+    if (t && t.view.webContents.canGoForward()) { t.view.webContents.goForward(); return true; }
+    return false;
+  });
+
+  ipcMain.handle('dlp:tab:reload', () => {
+    if (!activeTabId) return false;
+    const t = tabs.get(activeTabId);
+    if (t) { t.view.webContents.reload(); return true; }
+    return false;
+  });
+
   ipcMain.handle('dlp:tab:close', (event, { id }) => {
     const t = tabs.get(id);
     if (!t) return;
