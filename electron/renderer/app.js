@@ -173,6 +173,17 @@
       }
     });
 
+    // Hide / show the sidebar (main menu). Pure CSS — the flex layout
+    // gives the freed width to the tab area automatically.
+    const toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
+    if (toggleSidebarBtn) {
+      toggleSidebarBtn.addEventListener('click', () => {
+        const hidden = document.body.classList.toggle('sidebar-hidden');
+        toggleSidebarBtn.classList.toggle('is-off', hidden);
+        toggleSidebarBtn.title = hidden ? 'Show menu' : 'Hide menu';
+      });
+    }
+
     // Hide / show the log column. With iframes (instead of BrowserView) the
     // tab area reflows automatically — no IPC bounds math needed.
     const toggleLogBtn = document.getElementById('btn-toggle-log');

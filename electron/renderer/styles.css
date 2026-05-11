@@ -43,7 +43,8 @@ main { flex: 1; display: flex; min-height: 0; }
 .tab-iframe.is-active { display: block; }
 .log-column { width: 320px; flex: 0 0 320px; display: flex; flex-direction: column; border-left: 1px solid var(--border); min-height: 0; }
 body.log-hidden .log-column { display: none; }
-#btn-toggle-log.is-off { opacity: 0.4; }
+body.sidebar-hidden .sidebar { display: none; }
+#btn-toggle-log.is-off, #btn-toggle-sidebar.is-off { opacity: 0.4; }
 .log-pane { display: flex; flex-direction: column; min-height: 0; background: var(--surface-2); }
 .log-pane-info { flex: 1; }
 .log-pane-error { flex: 0 0 40%; min-height: 80px; border-top: 1px solid var(--border); background: #FBEAE5; }
