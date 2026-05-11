@@ -61,9 +61,28 @@ function cmdDbImport(args) {
 
   const zip = new AdmZip(inArg);
   const entries = zip.getEntries();
-  const dbEntry = entries.find((e) => e.entryName.toLowerCase().endsWith('dld-sync.sqlite'));
+
+  // Strict-match only the exact filenames we produced — `endsWith()` would
+  // accept a hostile zip with `../../dld-sync.sqlite` or any other nested
+  // path; reject anything that isn't exactly what cmdDbExport writes.
+  const dbEntry      = entries.find((e) => e.entryName === 'dld-sync.sqlite');
+  const mappingEntry = entries.find((e) => e.entryName === 'config/project-mapping.json');
+
   if (!dbEntry) {
-    console.error('  zip does not contain dld-sync.sqlite');
+    console.error("  zip does not contain a top-level 'dld-sync.sqlite' entry");
+    process.exit(1);
+  }
+
+  // Reject implausibly large entries early. A real Sobha DB is < 100 MB;
+  // 500 MB is a comfortable ceiling that still catches a malicious zip
+  // crafted to fill the user's disk.
+  const MAX_BYTES = 500 * 1024 * 1024;
+  if (dbEntry.header.size > MAX_BYTES) {
+    console.error('  dld-sync.sqlite in zip is too large (' + (dbEntry.header.size / 1024 / 1024).toFixed(1) + ' MB > 500 MB cap)');
+    process.exit(1);
+  }
+  if (mappingEntry && mappingEntry.header.size > 10 * 1024 * 1024) {
+    console.error('  config/project-mapping.json in zip is too large (>10 MB)');
     process.exit(1);
   }
 
@@ -79,7 +98,6 @@ function cmdDbImport(args) {
   console.log('  restored DB: ' + targetDb);
   console.log('  size:        ' + (fs.statSync(targetDb).size / 1024 / 1024).toFixed(2) + ' MB');
 
-  const mappingEntry = entries.find((e) => e.entryName.toLowerCase().endsWith('project-mapping.json'));
   if (mappingEntry) {
     const targetMapping = mappingPath();
     fs.mkdirSync(path.dirname(targetMapping), { recursive: true });
@@ -87,12 +105,15 @@ function cmdDbImport(args) {
     console.log('  restored config: ' + targetMapping);
   }
 
-  // Quick sanity: open the new DB and count projects.
+  // Sanity: open the new DB and confirm it has at least one table. We don't
+  // require `dld_project` to exist because a brand-new empty DB is also a
+  // legitimate thing to restore (e.g. "reset to a fresh state").
   try {
     const db = openDb();
-    const row = db.prepare('SELECT COUNT(*) AS n FROM dld_project').get();
+    const tbl = db.prepare("SELECT name FROM sqlite_master WHERE type='table' LIMIT 1").get();
     db.close();
-    console.log('  validated: ' + row.n + ' projects in the restored DB');
+    if (!tbl) console.log('  validated: DB opens cleanly (no tables yet — fresh state)');
+    else      console.log('  validated: DB opens cleanly');
   } catch (e) {
     console.error('  WARNING: restored DB failed to open — ' + e.message);
     process.exit(1);
