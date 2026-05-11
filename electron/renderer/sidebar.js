@@ -4,7 +4,10 @@
 const PROJECT_FILTERED_COMMANDS = new Set(['compare', 'diff', 'review-pending']);
 
 function initSidebar({ logPanel, onCommandDone, getProjectFilter = () => null }) {
-  const buttons = Array.from(document.querySelectorAll('.cmd-btn'));
+  // Only buttons that actually run a CLI command (i.e. have data-cmd) —
+  // the data-action buttons (open-dashboard, reveal-output) are handled
+  // directly in app.js.
+  const buttons = Array.from(document.querySelectorAll('.cmd-btn[data-cmd]'));
 
   async function run(btn) {
     const cmd = btn.getAttribute('data-cmd');
