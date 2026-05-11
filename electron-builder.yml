@@ -36,7 +36,8 @@ win:
       arch: [x64]
     - target: zip
       arch: [x64]
-  icon: electron/assets/icon.ico
+  # icon: electron/assets/icon.ico   # disabled until a real multi-res .ico
+  #                                  # is supplied; default Electron icon used
   artifactName: '${productName} Setup ${version}.${ext}'
 
 nsis:
@@ -46,8 +47,7 @@ nsis:
   createDesktopShortcut: always
   createStartMenuShortcut: true
   shortcutName: DL-Processor
-  installerIcon: electron/assets/icon.ico
-  uninstallerIcon: electron/assets/icon.ico
+  # installerIcon / uninstallerIcon disabled — same reason as win.icon
   artifactName: '${productName} Setup ${version}.${ext}'
 
 # We hand-upload artifacts to Cloudflare Pages; no auto-publish.
