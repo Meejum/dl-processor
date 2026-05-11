@@ -108,9 +108,15 @@ function runSpawn(name, args, sender) {
       // way in `npm run start:electron` (dev) and inside the packaged .exe
       // — no external `node` on PATH required for end users.
       const childEnv = Object.assign({}, env, { ELECTRON_RUN_AS_NODE: '1' });
+      // CWD must be a real OS directory — in the packaged .exe,
+      // path.join(__dirname, '..') resolves INSIDE app.asar, which is a
+      // file not a directory, and cp.spawn ENOENTs on chdir. Use the
+      // user's data folder when known, otherwise the directory holding
+      // the .exe (always a real path).
+      const childCwd = currentDataFolder || path.dirname(process.execPath);
       child = cp.spawn(process.execPath, argv, {
         env: childEnv,
-        cwd: path.join(__dirname, '..'),
+        cwd: childCwd,
         windowsHide: true
       });
     } catch (e) {
