@@ -1,7 +1,7 @@
 const { app, BrowserWindow, BrowserView, ipcMain, dialog, shell } = require('electron');
 const path = require('path');
+const cp = require('child_process');
 const { createCommandBridge, setDataFolder } = require('./command-bridge');
-const { openDb } = require('../src/commands/shared');
 const { checkForUpdates } = require('./update-checker');
 const {
   defaultDataFolder,
@@ -39,15 +39,18 @@ function sizeActiveTab() {
   const t = tabs.get(activeTabId);
   if (!t) return;
   const [w, h] = mainWindow.getContentSize();
+  // Constants match the explicit pixel sizes in styles.css —
+  // .top-bar height 40, .tab-strip height 30, .sidebar width 220,
+  // .log-panel width 320 (right column).
   const TOP_BAR = 40;
   const TAB_STRIP = 30;
   const SIDEBAR_W = 220;
-  const LOG_H = Math.floor(h * 0.3);
+  const LOG_W = 320;
   t.view.setBounds({
     x: SIDEBAR_W,
     y: TOP_BAR + TAB_STRIP,
-    width: w - SIDEBAR_W,
-    height: h - TOP_BAR - TAB_STRIP - LOG_H
+    width:  Math.max(0, w - SIDEBAR_W - LOG_W),
+    height: Math.max(0, h - TOP_BAR - TAB_STRIP)
   });
 }
 
@@ -179,11 +182,29 @@ app.whenReady().then(async () => {
     return result.filePaths[0];
   });
 
+  // Spawn `node index.js projects --json` instead of opening the DB in-process —
+  // Electron's bundled Node ABI (119) differs from system Node's (137), and the
+  // installed better-sqlite3 binary is built for the latter. Spawning a child
+  // Node process keeps the native module load in a compatible runtime.
   ipcMain.handle('dlp:projects:list', () => {
-    const db = openDb();
-    try {
-      return db.prepare('SELECT project_id, project_name FROM dld_project ORDER BY project_name').all();
-    } finally { db.close(); }
+    return new Promise((resolve) => {
+      const indexJs = path.join(__dirname, '..', 'index.js');
+      const env = Object.assign({}, process.env);
+      if (state.dataFolder) env.DLP_DATA_ROOT = state.dataFolder;
+      const child = cp.spawn('node', [indexJs, 'projects', '--json'], {
+        env, cwd: path.join(__dirname, '..'), windowsHide: true
+      });
+      let out = '';
+      child.stdout.on('data', (c) => { out += c.toString(); });
+      child.on('error', () => resolve([]));
+      child.on('close', () => {
+        try {
+          const start = out.indexOf('[');
+          if (start < 0) { resolve([]); return; }
+          resolve(JSON.parse(out.slice(start)));
+        } catch { resolve([]); }
+      });
+    });
   });
 
   ipcMain.handle('dlp:shell:show-in-folder', (event, folder) => {

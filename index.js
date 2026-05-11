@@ -88,7 +88,7 @@ function main() {
     return;
   }
 
-  if (cmd === 'projects') { cmdProjects(); return; }
+  if (cmd === 'projects') { cmdProjects({ json: rest.includes('--json') }); return; }
   if (cmd === 'status')   { cmdStatus();   return; }
 
   if (cmd === 'audit') {

@@ -95,33 +95,51 @@
     topBar.refreshProjects();
     topBar.refreshDataFolder();
 
-    // Wipe the placeholder text in the log panel before we start streaming.
-    const logEl = document.getElementById('log-panel');
-    logEl.innerHTML = '';
-
     // Initialize the tab host (creates the tab strip inside #tab-host).
     window.__tabHost = window.__initTabHost();
+
+    const logInfoEl = document.getElementById('log-info');
+    const logErrorEl = document.getElementById('log-error');
+
+    function appendLog(level, text) {
+      const target = level === 'error' ? logErrorEl : logInfoEl;
+      if (!target) return;
+      const line = document.createElement('div');
+      line.className = 'log-line log-' + level;
+      line.textContent = '[' + new Date().toISOString().slice(11, 19) + '] ' + text;
+      target.appendChild(line);
+      target.scrollTop = target.scrollHeight;
+    }
 
     const logPanel = {
       appendInfo:  (text) => appendLog('info',  text),
       appendError: (text) => appendLog('error', text),
       appendWarn:  (text) => appendLog('warn',  text)
     };
-    function appendLog(level, text) {
-      const panel = document.getElementById('log-panel');
-      const line = document.createElement('div');
-      line.className = 'log-line log-' + level;
-      line.textContent = '[' + new Date().toISOString().slice(11, 19) + '] ' + text;
-      panel.appendChild(line);
-      panel.scrollTop = panel.scrollHeight;
-    }
 
-    // Pipe main-process command-bridge log events into the panel.
+    // Pipe main-process command-bridge log events into the right panel.
     window.dlp.onLog((payload) => {
       const level = (payload && payload.level) || 'info';
       const text  = (payload && payload.text)  || '';
       appendLog(level, text);
     });
+
+    // Copy buttons (Output / Errors).
+    for (const btn of document.querySelectorAll('.log-copy-btn')) {
+      btn.addEventListener('click', async () => {
+        const target = document.getElementById(btn.dataset.target);
+        const text = target ? target.innerText : '';
+        try {
+          await navigator.clipboard.writeText(text);
+          btn.classList.add('copied');
+          const orig = btn.textContent;
+          btn.textContent = 'Copied!';
+          setTimeout(() => { btn.classList.remove('copied'); btn.textContent = orig; }, 1200);
+        } catch (e) {
+          console.error('copy failed:', e);
+        }
+      });
+    }
 
     const reportPathsByCommand = {
       'review-pending': (df) => 'file:///' + df.replace(/\\/g, '/') + '/output/approve-pending.html',

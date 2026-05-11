@@ -30,7 +30,20 @@
   <!-- App shell (visible after wizard completes). Tasks 7-12 fill this in. -->
   <div id="app-shell" hidden>
     <header class="top-bar">
-      <span class="brand">DL-Processor</span>
+      <span class="brand">
+        <svg class="brand-logo" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-label="Sobha Realty">
+          <defs>
+            <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#85633B"/>
+              <stop offset="100%" stop-color="#5C3D1E"/>
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="28" height="28" rx="6" fill="url(#g1)"/>
+          <text x="16" y="22" font-family="Dubai, Inter, Arial" font-size="16" font-weight="700" text-anchor="middle" fill="#F0E4CE">S</text>
+        </svg>
+        <span>DL-Processor</span>
+        <span class="brand-sub">Sobha Realty · Registration</span>
+      </span>
       <select id="project-selector"><option value="">All projects</option></select>
       <span class="data-folder" id="header-data-folder"></span>
       <span class="spacer"></span>
@@ -53,9 +66,22 @@
       </aside>
       <section class="content">
         <div class="tab-host" id="tab-host"></div>
-        <div class="log-panel" id="log-panel">
-          <p class="muted" style="padding:8px">Log lines stream here once Task 7 wires the sidebar.</p>
-        </div>
+        <aside class="log-column" id="log-column">
+          <div class="log-pane log-pane-info">
+            <div class="log-pane-head">
+              <span class="log-pane-label">Output</span>
+              <button class="log-copy-btn" data-target="log-info" title="Copy output">Copy</button>
+            </div>
+            <div class="log-body" id="log-info"></div>
+          </div>
+          <div class="log-pane log-pane-error">
+            <div class="log-pane-head">
+              <span class="log-pane-label">Errors</span>
+              <button class="log-copy-btn" data-target="log-error" title="Copy errors">Copy</button>
+            </div>
+            <div class="log-body" id="log-error"></div>
+          </div>
+        </aside>
       </section>
     </main>
   </div>
