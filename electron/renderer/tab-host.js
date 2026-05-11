@@ -61,14 +61,15 @@ function initTabHost() {
     else        iframeEl.src    = url;
     content.appendChild(iframeEl);
 
-    // Suppress Chromium's bottom-left "file:///..." link-hover preview by
-    // rewriting every <a href> in the loaded document to use an onclick
-    // handler instead. webSecurity:false lets us reach into the iframe.
+    // Suppress Chromium's bottom-left "file:///..." link-hover preview AND
+    // strip target="_blank" so links never escape to the OS default
+    // browser. webSecurity:false lets us reach into the iframe.
     iframeEl.addEventListener('load', () => {
       try {
         const doc = iframeEl.contentDocument;
         if (!doc) return;
         for (const a of doc.querySelectorAll('a[href]')) {
+          if (a.hasAttribute('target')) a.removeAttribute('target');
           const target = a.getAttribute('href');
           if (!target || target.startsWith('#') || target.startsWith('javascript:')) continue;
           a.setAttribute('data-href', target);
