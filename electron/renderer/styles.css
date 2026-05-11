@@ -101,6 +101,13 @@ body.sidebar-collapsed .sidebar-collapse-btn { justify-content: center; padding:
 .tab-nav-btn:hover { background: var(--accent-soft); border-color: var(--border-2); }
 .tab-nav-btn:active { background: var(--accent); color: #fff; }
 .tab-strip-tabs { display: flex; gap: 1px; flex: 1; overflow-x: auto; }
+.tab-new-btn { width: 28px; height: 26px; border: 1px solid var(--border); border-radius: 3px; background: var(--surface); color: var(--accent-dark); cursor: pointer; font-size: 16px; line-height: 1; padding: 0; margin: 2px 4px; align-self: center; }
+.tab-new-btn:hover { background: var(--accent-soft); border-color: var(--border-2); }
+.tab-address-row { display: flex; align-items: center; gap: 6px; padding: 4px 6px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+.tab-address { flex: 1; padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); font: 12px 'Consolas','Cascadia Mono',monospace; color: var(--ink-2); }
+.tab-address:focus { outline: none; border-color: var(--accent); background: #FFFFFF; }
+.tab-address-go { padding: 4px 12px; border: 1px solid var(--border-2); border-radius: 4px; background: var(--surface); color: var(--accent-dark); cursor: pointer; font-size: 12px; font-weight: 600; }
+.tab-address-go:hover { background: var(--accent-soft); }
 .tab { display: flex; align-items: center; padding: 4px 10px; background: var(--surface); border-right: 1px solid var(--border); cursor: pointer; font-size: 12px; max-width: 200px; }
 .tab.is-active { background: var(--accent-soft); border-bottom: 2px solid var(--accent); }
 .tab-title { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

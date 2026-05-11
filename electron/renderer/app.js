@@ -467,6 +467,23 @@
       'all':            'Dashboard'
     };
 
+    // Non-CLI sidebar actions — buttons that just open a tab or call
+    // shell.showInFolder, without spawning a child node process.
+    for (const btn of document.querySelectorAll('.cmd-btn[data-action]')) {
+      btn.addEventListener('click', () => {
+        const action = btn.dataset.action;
+        if (action === 'open-dashboard' && currentDataFolder) {
+          const url = 'file:///' + currentDataFolder.replace(/\\/g, '/') + '/output/dashboard.html';
+          window.__tabHost.open({ url, title: 'Dashboard' });
+        } else if (action === 'reveal-output' && currentDataFolder) {
+          const folder = currentDataFolder + '\\output';
+          if (window.dlp.shell && window.dlp.shell.showInFolder) {
+            window.dlp.shell.showInFolder(folder);
+          }
+        }
+      });
+    }
+
     // Initialize sidebar buttons.
     if (window.__initSidebar) {
       window.__initSidebar({
