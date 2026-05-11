@@ -34,9 +34,12 @@ function createWindow() {
     }
   });
   mainWindow.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  // Auto-open DevTools during v1.0 development to make renderer errors visible.
-  // Remove or gate behind --enable-logging once shipped.
-  mainWindow.webContents.openDevTools({ mode: 'detach' });
+  // Auto-open DevTools only in dev mode (`npm run dev:electron` passes
+  // --enable-logging). Normal `npm run start:electron` runs without it.
+  // Set DLP_DEVTOOLS=1 to force-open from any script.
+  if (process.argv.includes('--enable-logging') || process.env.DLP_DEVTOOLS === '1') {
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
+  }
   // Pipe renderer console output to the main-process terminal so we can debug
   // even when DevTools isn't engaged. Remove for production.
   mainWindow.webContents.on('console-message', (event, level, message, line, source) => {
