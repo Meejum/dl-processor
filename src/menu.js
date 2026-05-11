@@ -164,8 +164,8 @@ async function showMenu() {
   menuLine('Z', 'Archive output',                'snapshots output/ to output/archive/<timestamp>/');
   console.log('');
   menuLine('Y', 'Area template',                 'generate / apply staff-filled SQM CSVs');
-  menuLine('V', 'Review pending changes',        'writes pending-changes.csv and opens it');
-  menuLine('B', 'Apply pending decisions',       'reads pending-changes.csv, commits decisions');
+  menuLine('V', 'Review pending changes',        'writes pending-changes.csv + opens approve-pending.html');
+  menuLine('B', 'Apply pending decisions',       'pick a CSV (HTML export, Changes Template Input, or output/csv) and commit decisions');
   console.log('');
   menuLine('Q', 'Quit',                          '');
   console.log('');
@@ -639,21 +639,37 @@ function pad(s, w) { const vis = stripAnsi(s); return s + ' '.repeat(Math.max(0,
 
 async function doReviewPending() {
   await showHeader(); sectionHeader('REVIEW PENDING CHANGES');
+  // cmdReviewPending now auto-opens approve-pending.html in the browser
+  // (the primary surface). The CSV is still written for the legacy flow but
+  // is not auto-opened — staff who want to edit it directly can use [B] or
+  // browse output/csv/.
   runNode(['review-pending']);
-  const csvPath = path.join(ROOT, 'output', 'csv', 'pending-changes.csv');
-  if (fs.existsSync(csvPath)) {
-    if (process.platform === 'win32') {
-      spawn('cmd.exe', ['/c', 'start', '', csvPath], { detached: true, stdio: 'ignore' }).unref();
-    } else {
-      spawn('xdg-open', [csvPath], { detached: true, stdio: 'ignore' }).unref();
-    }
-  }
   await pause();
 }
 
 async function doApplyPending() {
   await showHeader(); sectionHeader('APPLY PENDING DECISIONS');
-  runNode(['apply-pending']);
+  // Look in three places: input/Changes Template Input (where staff drop edited CSVs),
+  // output/csv (the freshly written pending-changes.csv), and Downloads (HTML "Export decisions").
+  const changesDir = path.join(ROOT, 'input', 'Changes Template Input');
+  const outputCsvDir = path.join(ROOT, 'output', 'csv');
+  fs.mkdirSync(changesDir, { recursive: true });
+  console.log('  Select the decisions CSV to apply.');
+  const picks = await pickFile({
+    title: 'Select decisions CSV',
+    filter: 'CSV files (*.csv)|*.csv|All files (*.*)|*.*',
+    initialDir: changesDir,
+    searchDirs: [changesDir, outputCsvDir],
+    extensions: ['.csv'],
+    multi: false
+  });
+  if (!picks || picks.length === 0) {
+    console.log('  ' + C.dim + 'cancelled — no file selected' + C.reset);
+    await pause(); return;
+  }
+  const csvPath = picks[0];
+  console.log('  applying: ' + path.relative(process.cwd(), csvPath));
+  runNode(['apply-pending', csvPath]);
   await pause();
 }
 

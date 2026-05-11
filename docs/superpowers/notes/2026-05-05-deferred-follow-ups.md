@@ -70,3 +70,39 @@ Items intentionally deferred. None are bugs blocking current behavior; each is a
 **Trigger to revisit:** A second team member needs write access OR an incorrect auto-mapping silently passes a project (forces an approval gate to prevent recurrence) OR regulatory audit asks for change history.
 
 **How to land:** Full brainstorm → spec → plan → implement cycle. Estimate 3-5 days of work given the schema migration + approval UI.
+
+---
+
+## DEF-n — Dashboard summary expansion
+
+**What:** Expand `output/dashboard.html` header to include richer summary numbers per project:
+- Number of `Sell` transactions
+- "Not Sold" count = pre-registration owner with no transaction
+- Total DLD TX count
+- Total buyers per project (deduped names? gross count?)
+- Per-project counts by `tx_type`: `Sell`, `Transfer`, `Mortgage`, `Granted`, etc.
+- (Trailing item from Ali's message — "and will will co..." — TBD; capture when brainstorming this.)
+
+**Source of ask:** Ali, 2026-05-06, mid-brainstorm of item m. Out of scope for approval-workflow extensions; deserves its own brainstorm.
+
+**Trigger to revisit:** After item m ships. Run `superpowers:brainstorming` for "dashboard analytics expansion" — confirm exact metric list, decide if this lives in dashboard.html header or in a separate `summary.html`, address the "co..." ambiguity.
+
+**How to land:** Likely a new aggregation query module (`src/dashboard-stats.js`) computed per project, rendered as cards above the existing per-project tables. Definitions of "Not Sold" vs "Sold" need explicit SQL because pre-reg owners with no transaction is a subtle case.
+
+---
+
+## DEF-o — SF importer accept .xls and .csv (not just .xlsx)
+
+**What:** Today `src/menu.js:192 validateSfPaths` rejects anything that isn't `.xlsx`. The underlying parser already supports all three formats — `salesforce.js:279 importSfSnapshot` dispatches `.csv` → `readSfCsv`, else → `readSfWorkbook` (which handles both `.xlsx` and `.xls` via SheetJS). Only the validator and the file-picker title/filter at `src/file-picker.js:144-153` block the broader formats.
+
+**Source of ask:** Ali, 2026-05-06, hit while trying to import `report1778073075760.xls`.
+
+**Trigger to revisit:** Next time Ali (or anyone) needs to import a non-xlsx SF export. Truly trivial — should be the next thing fixed after item m merges, or sooner if Ali wants a quick detour. NOT a blocker for item m design work.
+
+**How to land (≈10 min, ~5 LOC + 1 test):**
+1. `src/menu.js:192` — change validator to accept `.xlsx`, `.xls`, `.csv`.
+2. `src/file-picker.js:146` — title `"Select Salesforce export (xlsx)"` → `"Select Salesforce export (xlsx/xls/csv)"`.
+3. `src/file-picker.js:147` — filter list to include xls and csv.
+4. `src/file-picker.js:150` — `extensions: ['.xlsx', '.xls', '.csv']`.
+5. Unit test `validateSfPaths`: rejects `.docx` / `.txt` / missing-file, accepts all three target extensions.
+6. Manual smoke: import a real `.xls` file end-to-end.
