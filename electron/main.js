@@ -22,6 +22,7 @@ const state = {
 const tabs = new Map();  // tabId -> { view, url, title }
 let nextTabId = 1;
 let activeTabId = null;
+let logVisible = true;
 
 function setActiveTab(id) {
   activeTabId = id;
@@ -45,7 +46,7 @@ function sizeActiveTab() {
   const TOP_BAR = 40;
   const TAB_STRIP = 30;
   const SIDEBAR_W = 220;
-  const LOG_W = 320;
+  const LOG_W = logVisible ? 320 : 0;
   t.view.setBounds({
     x: SIDEBAR_W,
     y: TOP_BAR + TAB_STRIP,
@@ -209,6 +210,11 @@ app.whenReady().then(async () => {
 
   ipcMain.handle('dlp:shell:show-in-folder', (event, folder) => {
     shell.openPath(folder);
+  });
+
+  ipcMain.handle('dlp:layout:set-log-visible', (event, visible) => {
+    logVisible = !!visible;
+    sizeActiveTab();
   });
 
   ipcMain.handle('dlp:update:check', async () => {

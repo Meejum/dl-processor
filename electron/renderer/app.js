@@ -124,6 +124,19 @@
       appendLog(level, text);
     });
 
+    // Hide / show the log column.
+    const toggleLogBtn = document.getElementById('btn-toggle-log');
+    if (toggleLogBtn) {
+      toggleLogBtn.addEventListener('click', () => {
+        const hidden = document.body.classList.toggle('log-hidden');
+        toggleLogBtn.classList.toggle('is-off', hidden);
+        toggleLogBtn.title = hidden ? 'Show log' : 'Hide log';
+        if (window.dlp.layout && window.dlp.layout.setLogVisible) {
+          window.dlp.layout.setLogVisible(!hidden);
+        }
+      });
+    }
+
     // Copy buttons (Output / Errors).
     for (const btn of document.querySelectorAll('.log-copy-btn')) {
       btn.addEventListener('click', async () => {

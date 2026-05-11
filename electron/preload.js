@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('dlp', {
   },
   projects: { list: () => ipcRenderer.invoke('dlp:projects:list') },
   shell:    { showInFolder: (p) => ipcRenderer.invoke('dlp:shell:show-in-folder', p) },
+  layout:   { setLogVisible: (v) => ipcRenderer.invoke('dlp:layout:set-log-visible', !!v) },
   onLog: (handler) => {
     const listener = (_event, payload) => handler(payload);
     ipcRenderer.on('dlp:log:line', listener);
