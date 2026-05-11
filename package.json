@@ -25,6 +25,7 @@
     "node": ">=18 <24"
   },
   "author": "Ali Alghumlasi — Sobha Realty Registration Team",
+  "homepage": "https://dl-processor.pages.dev",
   "license": "UNLICENSED",
   "private": true,
   "devDependencies": {
