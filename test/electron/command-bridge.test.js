@@ -78,3 +78,17 @@ test('command-bridge: sets process.env.DLP_DATA_ROOT to the dataFolder before in
   finally { if (prev === undefined) delete process.env.DLP_DATA_ROOT; else process.env.DLP_DATA_ROOT = prev; }
   assert.equal(seen, 'C:/my/data');
 });
+
+test('command-bridge: setDataFolder updates the env var for subsequent invocations', async () => {
+  const handlers = {};
+  const fakeIpc = { handle(c, fn) { handlers[c] = fn; } };
+  const { createCommandBridge, setDataFolder } = require('../../electron/command-bridge');
+  let seen = [];
+  createCommandBridge(fakeIpc, { dataFolder: 'C:/initial', commandsOverride: {
+    'status': () => { seen.push(process.env.DLP_DATA_ROOT); }
+  }});
+  await handlers['dlp:cmd:status']({ sender: { send: () => {} } });
+  setDataFolder('C:/updated');
+  await handlers['dlp:cmd:status']({ sender: { send: () => {} } });
+  assert.deepEqual(seen, ['C:/initial', 'C:/updated']);
+});

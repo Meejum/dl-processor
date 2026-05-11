@@ -2,7 +2,7 @@
 // Captures console.log/error output during the call and ships it back to
 // the renderer as 'dlp:log:line' events, then resolves with a final result.
 
-const path = require('path');
+const pkg = require('../package.json');
 const { cmdAll }           = require('../src/commands/all');
 const { cmdParse }         = require('../src/commands/parse');
 const { cmdImport }        = require('../src/commands/import-dld');
@@ -39,10 +39,7 @@ function createCommandBridge(ipc, { dataFolder, commandsOverride } = {}) {
     ? Object.assign({}, DEFAULT_COMMANDS, commandsOverride)
     : DEFAULT_COMMANDS;
 
-  ipc.handle('dlp:version', () => {
-    const pkg = require('../package.json');
-    return pkg.version;
-  });
+  ipc.handle('dlp:version', () => pkg.version);
 
   for (const [name, fn] of Object.entries(commands)) {
     ipc.handle('dlp:cmd:' + name, async (event, args) => {
