@@ -1,15 +1,19 @@
 {
   "name": "dl-processor",
-  "version": "0.9.17",
+  "version": "1.0.0",
   "description": "DL-Processor — reconcile DLD Project Inquiry reports (XPS/CSV) against Salesforce. Parse, snapshot into SQLite, diff, and produce monthly audit tasks.",
-  "main": "index.js",
+  "main": "electron/main.js",
   "bin": {
     "dl-processor": "./index.js"
   },
   "scripts": {
     "start": "node index.js",
     "parse": "node index.js",
-    "test": "node --test \"test/**/*.test.js\""
+    "test": "node --test \"test/**/*.test.js\"",
+    "start:electron": "electron .",
+    "dev:electron": "electron . --enable-logging",
+    "dist": "electron-builder --win",
+    "dist:portable": "electron-builder --win portable"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
@@ -22,5 +26,9 @@
   },
   "author": "Ali Alghumlasi — Sobha Realty Registration Team",
   "license": "UNLICENSED",
-  "private": true
+  "private": true,
+  "devDependencies": {
+    "electron": "^28.3.3",
+    "electron-builder": "^24.13.3"
+  }
 }
