@@ -46,10 +46,24 @@ function createWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
   // Pipe renderer console output to the main-process terminal so we can debug
-  // even when DevTools isn't engaged. Remove for production.
+  // even when DevTools isn't engaged, AND also send WARN/ERROR/violations
+  // back into the renderer's Errors pane via the log-line channel so the
+  // user can copy them without opening DevTools.
   mainWindow.webContents.on('console-message', (event, level, message, line, source) => {
-    const levels = ['LOG', 'WARN', 'ERROR', 'INFO'];
-    console.log('[renderer:' + (levels[level] || level) + '] ' + message);
+    const names = ['LOG', 'WARN', 'ERROR', 'INFO'];
+    const name = names[level] || String(level);
+    console.log('[renderer:' + name + '] ' + message);
+    // Surface WARN and ERROR in-app. The Chromium "violation" messages
+    // (CSP, mixed content, deprecation) come through as INFO/WARN; treat
+    // anything that contains "Refused to" or "Violation" as an error so
+    // the user sees it in the Errors pane.
+    const isViolation = /Refused to|Violation|TypeError|ReferenceError/i.test(message);
+    if (level >= 2 || isViolation) {
+      const channel = mainWindow.webContents;
+      try {
+        channel.send('dlp:log:line', { level: 'error', text: '[renderer] ' + message, ts: Date.now() });
+      } catch { /* webContents may have torn down */ }
+    }
   });
   mainWindow.on('closed', () => { mainWindow = null; });
 }

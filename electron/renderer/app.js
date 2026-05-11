@@ -237,10 +237,9 @@
     }
 
     const PAGE_CSS = `
-      @import url('https://fonts.googleapis.com/css2?family=Dubai:wght@400;500;600;700&display=swap');
       :root { --bg:#F6F1E9; --surface:#FFFFFF; --surface-2:#FBF5EA; --border:#E3D9C8; --border-2:#C8B896; --ink:#1F1A14; --ink-2:#5A4A37; --muted:#8A7E69; --accent:#85633B; --accent-dark:#5C3D1E; --accent-soft:#F0E4CE; }
       * { box-sizing: border-box; }
-      body { margin: 0; padding: 24px 28px; font: 13px/1.5 Dubai, 'Segoe UI', Arial, sans-serif; background: var(--bg); color: var(--ink); }
+      body { margin: 0; padding: 24px 28px; font: 13px/1.5 'Segoe UI', Tahoma, Arial, sans-serif; background: var(--bg); color: var(--ink); }
       .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
       .page-logo { width: 36px; height: 36px; border-radius: 8px; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); display: inline-flex; align-items: center; justify-content: center; color: var(--accent-soft); font-weight: 700; font-size: 18px; }
       .page-title { font-size: 20px; font-weight: 700; color: var(--accent-dark); line-height: 1.1; }
@@ -249,6 +248,16 @@
       .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
       .stat-value { font-size: 22px; font-weight: 700; color: var(--accent-dark); line-height: 1.1; }
       .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
+      .stat-card.stat-tone-ok   { border-left: 4px solid #4F7A3A; }
+      .stat-card.stat-tone-ok   .stat-value { color: #3F6A2A; }
+      .stat-card.stat-tone-warn { border-left: 4px solid #B98410; }
+      .stat-card.stat-tone-warn .stat-value { color: #8A5A08; }
+      .stat-card.stat-tone-down { border-left: 4px solid #A12C1B; }
+      .stat-card.stat-tone-down .stat-value { color: #8A2415; }
+      .callout { background: #FBEAE5; border: 1px solid #E7B5A8; color: #7A2415; border-radius: 8px; padding: 12px 16px; margin: 10px 0 14px; font-size: 12px; }
+      .next-list { margin: 0; padding-left: 18px; }
+      .next-list li { margin: 4px 0; }
+      .next-list b { color: var(--accent-dark); }
       .info-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 2px rgba(0,0,0,.04); margin-bottom: 12px; }
       .info-row { display: flex; gap: 14px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
       .info-row:last-child { border-bottom: 0; }
@@ -270,8 +279,14 @@
 
     function pageShell(title, bodyHtml) {
       const generated = new Date().toLocaleString();
+      // Self-CSP for the srcdoc so inline <style> + small inline <script>
+      // (used for the Projects filter) work — the iframe otherwise inherits
+      // the parent's strict policy which blocks inline scripts.
+      const cspMeta = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:;\">";
       return [
-        '<!doctype html><html><head><meta charset="utf-8"><title>', escapeHtml(title), '</title>',
+        '<!doctype html><html><head>',
+        '<meta charset="utf-8">', cspMeta,
+        '<title>', escapeHtml(title), '</title>',
         '<style>', PAGE_CSS, '</style></head><body>',
         '<div class="page-head"><span class="page-logo">S</span>',
         '<div><div class="page-title">', escapeHtml(title), '</div>',
@@ -332,6 +347,69 @@
         : '';
       const body = '<div class="stat-grid">' + cards + '</div>' + dbCard + sfCard;
       return pageShell('Status', body);
+    }
+
+    function buildApplyPendingPage(capture) {
+      // Pull the summary numbers from apply-pending's CLI output.
+      let approvals = 0, rejections = 0, deferred = 0;
+      let errorRows = 0, canonicalRows = null;
+      let warnCount = 0;
+      for (const e of capture) {
+        const t = e.text || '';
+        let m;
+        if ((m = t.match(/applied\s+(\d+)\s+approvals\D+(\d+)\s+rejections\D+(\d+)\s+deferred/i))) {
+          approvals  = parseInt(m[1], 10);
+          rejections = parseInt(m[2], 10);
+          deferred   = parseInt(m[3], 10);
+        }
+        if ((m = t.match(/(\d+)\s+rows? had errors/i))) {
+          errorRows = parseInt(m[1], 10);
+        }
+        if ((m = t.match(/master_data now has\s+(\d+)\s+canonical rows/i))) {
+          canonicalRows = parseInt(m[1], 10);
+        }
+        if (/^\s*warn /i.test(t)) warnCount++;
+      }
+      const stat = (value, label, tone) => {
+        const cls = tone ? ' stat-tone-' + tone : '';
+        const fmt = typeof value === 'number' ? value.toLocaleString() : value;
+        return '<div class="stat-card' + cls + '"><div class="stat-value">' + escapeHtml(String(fmt)) + '</div><div class="stat-label">' + escapeHtml(label) + '</div></div>';
+      };
+      const cards = [
+        stat(approvals,  'Approved',  'ok'),
+        stat(rejections, 'Rejected',  rejections > 0 ? 'down' : null),
+        stat(deferred,   'Deferred',  deferred > 0 ? 'warn' : null),
+        stat(errorRows,  'Skipped',   errorRows > 0 ? 'warn' : null)
+      ].join('');
+
+      const masterCard = canonicalRows != null
+        ? '<h2 class="section-h">Master Data</h2>' +
+          '<div class="info-card">' +
+            '<div class="info-row"><div class="info-label">Canonical rows</div><div class="info-value">' + canonicalRows.toLocaleString() + '</div></div>' +
+          '</div>'
+        : '';
+
+      const warnNote = errorRows > 0
+        ? '<div class="callout"><strong>' + errorRows.toLocaleString() + '</strong> row' + (errorRows === 1 ? '' : 's') +
+          ' were skipped because they were already decided in a prior run. The Output / Errors panes on the right have the full list.</div>'
+        : '';
+
+      const nextSteps =
+        '<h2 class="section-h">What’s next</h2>' +
+        '<div class="info-card">' +
+          '<ul class="next-list">' +
+            '<li>Click <b>[3] Compare</b> to refresh the reconciliation against your new master data.</li>' +
+            '<li>Click <b>[4] Diff</b> to see month-over-month changes since the last snapshot.</li>' +
+            '<li>Click <b>[⚡] Run full pipeline</b> to do all of the above in one go.</li>' +
+          '</ul>' +
+        '</div>';
+
+      const body =
+        '<div class="stat-grid">' + cards + '</div>' +
+        warnNote +
+        masterCard +
+        nextSteps;
+      return pageShell('Apply pending · Results', body);
     }
 
     async function buildProjectsPage() {
@@ -406,6 +484,13 @@
           if (result.command === 'projects') {
             const srcdoc = await buildProjectsPage();
             window.__tabHost.open({ srcdoc, title: 'Projects' });
+            return;
+          }
+          if (result.command === 'apply-pending') {
+            window.__tabHost.open({
+              srcdoc: buildApplyPendingPage(logCapture),
+              title: 'Apply pending'
+            });
             return;
           }
           const builder = reportPathsByCommand[result.command];
