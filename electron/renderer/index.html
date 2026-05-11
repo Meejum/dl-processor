@@ -4,15 +4,50 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com;">
   <title>DL-Processor</title>
-  <style>
-    /* Minimal placeholder — Task 6 will load the full Sobha-branded stylesheet. */
-    body { font-family: 'Dubai', 'Inter', 'Segoe UI', sans-serif; background: #F6F1E9; color: #1F1A14; margin: 0; padding: 40px; }
-    h1 { color: #5C3D1E; font-weight: 700; }
-    .stamp { color: #8A7E69; font-size: 13px; margin-top: 12px; }
-  </style>
+  <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <h1>DL-Processor</h1>
-  <p class="stamp">Electron shell booted. Sidebar / log panel / tab host arrive in subsequent tasks.</p>
+
+  <!-- First-run wizard. Hidden by default; app.js will show it if needed. -->
+  <div id="first-run-wizard" hidden>
+    <div class="wizard-card">
+      <h1>Welcome to DL-Processor</h1>
+      <p class="muted">Where should DL-Processor store its data?</p>
+      <div class="folder-row">
+        <input id="wizard-folder" type="text" readonly>
+        <button id="wizard-pick">Choose…</button>
+      </div>
+      <div id="wizard-legacy" hidden>
+        <p>We found an existing DL-Processor install at <code id="wizard-legacy-path"></code>.</p>
+        <label><input type="checkbox" id="wizard-migrate" checked> Copy <code>db/ input/ output/ sf-input/ config/</code> from the old install</label>
+      </div>
+      <div class="wizard-actions">
+        <button id="wizard-continue" class="primary">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App shell (visible after wizard completes). Tasks 7-12 fill this in. -->
+  <div id="app-shell" hidden>
+    <header class="top-bar">
+      <span class="brand">DL-Processor</span>
+      <span class="data-folder" id="header-data-folder"></span>
+    </header>
+    <main>
+      <aside class="sidebar" id="sidebar">
+        <p class="muted">Sidebar buttons land in Task 7.</p>
+      </aside>
+      <section class="content">
+        <div class="tab-host" id="tab-host">
+          <p class="muted" style="padding:20px">Tabs land in Task 9.</p>
+        </div>
+        <div class="log-panel" id="log-panel">
+          <p class="muted" style="padding:8px">Log lines stream here once Task 7 wires the sidebar.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
 </body>
 </html>
