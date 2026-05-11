@@ -37,3 +37,17 @@ main { flex: 1; display: flex; min-height: 0; }
 .content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .tab-host { flex: 1; background: var(--surface); border-bottom: 1px solid var(--border); overflow: auto; }
 .log-panel { height: 30%; min-height: 120px; background: var(--surface-2); padding: 8px 12px; overflow: auto; font-family: 'Consolas', 'Cascadia Mono', monospace; font-size: 12px; }
+
+/* Sidebar */
+.sidebar { display: flex; flex-direction: column; gap: 4px; }
+.sidebar .sidebar-section { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; margin-top: 12px; padding: 0 4px; }
+.sidebar .cmd-btn { background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; text-align: left; cursor: pointer; color: var(--ink); font: inherit; }
+.sidebar .cmd-btn:hover { background: var(--accent-soft); border-color: var(--border-2); }
+.sidebar .cmd-btn.is-running { background: var(--warn-bg, #F5D78E); border-color: var(--warn, #8A5A08); cursor: wait; }
+.sidebar .cmd-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+/* Log panel lines (level-coloured) */
+.log-panel .log-line { white-space: pre-wrap; }
+.log-panel .log-info  { color: var(--ink-2); }
+.log-panel .log-warn  { color: var(--warn, #8A5A08); }
+.log-panel .log-error { color: var(--down, #A12C1B); }

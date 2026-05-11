@@ -35,7 +35,20 @@
     </header>
     <main>
       <aside class="sidebar" id="sidebar">
-        <p class="muted">Sidebar buttons land in Task 7.</p>
+        <button class="cmd-btn" data-cmd="all" data-label="Full pipeline">⚡ Run full pipeline</button>
+        <div class="sidebar-section">Import</div>
+        <button class="cmd-btn" data-cmd="import-dld" data-label="Import DLD">📥 Import DLD</button>
+        <button class="cmd-btn" data-cmd="import-sf"  data-label="Import SF">📥 Import Salesforce</button>
+        <div class="sidebar-section">Reconcile</div>
+        <button class="cmd-btn" data-cmd="compare" data-label="Compare">🔍 Compare</button>
+        <button class="cmd-btn" data-cmd="diff"    data-label="Diff (month-over-month)">📊 Diff</button>
+        <div class="sidebar-section">Master data</div>
+        <button class="cmd-btn" data-cmd="review-pending" data-label="Review pending">📝 Review pending</button>
+        <button class="cmd-btn" data-cmd="apply-pending"  data-label="Apply pending"
+                data-needs-file="true">✅ Apply pending</button>
+        <div class="sidebar-section">View</div>
+        <button class="cmd-btn" data-cmd="status"   data-label="Status">📈 Status</button>
+        <button class="cmd-btn" data-cmd="projects" data-label="Projects">🏢 Projects</button>
       </aside>
       <section class="content">
         <div class="tab-host" id="tab-host">
@@ -48,6 +61,7 @@
     </main>
   </div>
 
+  <script src="sidebar.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
