@@ -288,9 +288,12 @@ CREATE TABLE IF NOT EXISTS pending_change (
     ('buyer_name','purchase_price_aed','status','procedure_number','area_sqm')),
   old_value            TEXT,
   proposed_value       TEXT,
+  override_value       TEXT,
+  change_type          TEXT NOT NULL DEFAULT 'MISMATCH'
+                       CHECK (change_type IN ('MISMATCH','DLD_DRIFT','SF_DRIFT')),
   source_snapshot_id   INTEGER REFERENCES dld_snapshot ON DELETE SET NULL,
   decision             TEXT NOT NULL DEFAULT 'pending'
-                       CHECK (decision IN ('pending','approved','rejected')),
+                       CHECK (decision IN ('pending','approved','rejected','auto_applied')),
   decision_notes       TEXT,
   proposed_at          TEXT NOT NULL DEFAULT (datetime('now')),
   decided_at           TEXT,
@@ -299,6 +302,7 @@ CREATE TABLE IF NOT EXISTS pending_change (
 
 CREATE INDEX IF NOT EXISTS idx_pending_proj_unit ON pending_change(project_id, unit_number_norm);
 CREATE INDEX IF NOT EXISTS idx_pending_decision  ON pending_change(decision);
+CREATE INDEX IF NOT EXISTS idx_pending_type      ON pending_change(change_type);
 
 -- ─────────────────────────────────────────────────────────────────────
 -- v1.1 — audit_log + buyer_alias. Migrations 001/002 also create these

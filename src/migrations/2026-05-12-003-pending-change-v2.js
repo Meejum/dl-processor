@@ -4,16 +4,17 @@ module.exports = {
     // SQLite can't alter CHECK constraints in place. We must rebuild the
     // table: create new with widened CHECK, copy data, drop old, rename.
     //
-    // Guard: if pending_change doesn't exist (e.g. truly fresh in-memory DB
+    // Guard 1: if pending_change doesn't exist (e.g. truly fresh in-memory DB
     // used by unit tests), skip — there's nothing to widen.
     const exists = db.prepare(
       "SELECT 1 FROM sqlite_master WHERE type='table' AND name='pending_change'"
     ).get();
     if (!exists) return;
+    // Guard 2: if pending_change is already in v1.1 shape (a fresh DB
+    // initialized from updated schema.sql), skip — nothing to do.
+    const cols = db.prepare("PRAGMA table_info(pending_change)").all().map(c => c.name);
+    if (cols.includes('change_type') && cols.includes('override_value')) return;
     db.exec(`
-      ALTER TABLE pending_change ADD COLUMN change_type    TEXT NOT NULL DEFAULT 'MISMATCH';
-      ALTER TABLE pending_change ADD COLUMN override_value TEXT;
-
       CREATE TABLE pending_change_new (
         change_id            INTEGER PRIMARY KEY AUTOINCREMENT,
         project_id           INTEGER NOT NULL REFERENCES dld_project ON DELETE CASCADE,
@@ -36,12 +37,10 @@ module.exports = {
 
       INSERT INTO pending_change_new
         (change_id, project_id, unit_number_norm, field_name, old_value, proposed_value,
-         override_value, change_type, source_snapshot_id, decision, decision_notes,
-         proposed_at, decided_at, decided_by)
+         source_snapshot_id, decision, decision_notes, proposed_at, decided_at, decided_by)
       SELECT
         change_id, project_id, unit_number_norm, field_name, old_value, proposed_value,
-        override_value, change_type, source_snapshot_id, decision, decision_notes,
-        proposed_at, decided_at, decided_by
+        source_snapshot_id, decision, decision_notes, proposed_at, decided_at, decided_by
       FROM pending_change;
 
       DROP TABLE pending_change;

@@ -1,9 +1,12 @@
 const { test } = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const Database = require('better-sqlite3');
 const { runMigrations, MIGRATIONS } = require('../src/migrations');
 
 function freshDb() { return new Database(':memory:'); }
+const SCHEMA_SQL = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
 
 test('runMigrations creates schema_migration table on fresh DB', () => {
   const db = freshDb();
@@ -84,6 +87,36 @@ test('003 widens pending_change.decision CHECK to allow auto_applied', () => {
   const cols = db.prepare("PRAGMA table_info(pending_change)").all().map(c => c.name);
   assert.ok(cols.includes('change_type'));
   assert.ok(cols.includes('override_value'));
+});
+
+test('003 is a no-op when schema.sql already created pending_change in v1.1 shape', () => {
+  // Fresh DB initialized from updated schema.sql (which has the new shape).
+  const db = freshDb();
+  db.exec(SCHEMA_SQL);
+  // Capture the table's CREATE SQL as produced by schema.sql.
+  const sqlBefore = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='pending_change'"
+  ).get().sql;
+  // Seed a row with the new 'auto_applied' decision directly.
+  db.prepare(`INSERT INTO dld_project (project_name) VALUES ('P1')`).run();
+  const projectId = db.prepare(`SELECT project_id FROM dld_project WHERE project_name = 'P1'`).get().project_id;
+  const insertedChangeId = db.prepare(`
+    INSERT INTO pending_change (project_id, unit_number_norm, field_name, decision)
+    VALUES (?, '101', 'buyer_name', 'auto_applied')
+  `).run(projectId).lastInsertRowid;
+  // Run migrations — 003 must skip rebuilding the table.
+  runMigrations(db);
+  // The CREATE TABLE SQL should be unchanged (table NOT rebuilt).
+  const sqlAfter = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='pending_change'"
+  ).get().sql;
+  assert.equal(sqlAfter, sqlBefore, 'pending_change table was rebuilt — expected no-op');
+  // The seeded row must still be present with the same change_id.
+  const row = db.prepare(
+    "SELECT change_id, decision FROM pending_change WHERE unit_number_norm = '101'"
+  ).get();
+  assert.equal(row.change_id, insertedChangeId);
+  assert.equal(row.decision, 'auto_applied');
 });
 
 test('004 seeds at least 40 buyer_alias rows with project_id NULL', () => {
