@@ -97,6 +97,20 @@ If we sign later (an Authenticode cert + a Windows-signing dance) the prompt goe
 7. **Verify.** Cloudflare Pages publishes within ~30 seconds. Open `https://dl-processor.pages.dev/latest.yml` and confirm the new version.
 8. **Notify.** Colleagues using the desktop app see the new version on next launch via **Settings → Check for updates**.
 
+## Schema migrations
+
+v1.1 introduces a migration framework at `src/migrations/`. Migrations run automatically at every `openDb()` call — there's no separate "upgrade" step. Applied migrations are tracked in a `schema_migration` table (`id TEXT PRIMARY KEY, name TEXT, applied_at TEXT`); only un-applied ids execute on a given launch.
+
+Each migration is wrapped in a single transaction — failure rolls back cleanly. If a migration takes longer than ~2 seconds the renderer shows a brief *"Upgrading database…"* splash so the user knows the app isn't hung.
+
+To inspect what's been applied to a given DB:
+
+```bat
+sqlite3 data\dld-sync.sqlite "SELECT * FROM schema_migration ORDER BY applied_at;"
+```
+
+Migrations are idempotent — safe to re-run. Adding a new migration is a single append to the array in `src/migrations/index.js`; don't edit or renumber previously-shipped entries.
+
 ## Common troubleshooting
 
 **`npm run dist` fails inside "rebuilding native dependencies"**

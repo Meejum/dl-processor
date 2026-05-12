@@ -14,16 +14,19 @@ Lives inside the P-Charter repo as a git subtree: `Desktop\p-charter\dl-processo
 2. [Install & launch](#install--launch)
 3. [Quick start — the monthly flow](#quick-start--the-monthly-flow)
 4. [The menu in detail](#the-menu-in-detail)
-5. [CLI subcommands](#cli-subcommands)
-6. [Data model & file layout](#data-model--file-layout)
-7. [How projects are mapped](#how-projects-are-mapped)
-8. [Multi-applicant name matching](#multi-applicant-name-matching)
-9. [Area cross-check (SQM)](#area-cross-check-sqm)
-10. [HTML reports — what the filters do](#html-reports--what-the-filters-do)
-11. [Audit-flag reference (A-codes)](#audit-flag-reference-a-codes)
-12. [Project ↔ SF SUB ↔ PREFIX reference](#project--sf-sub--prefix-reference)
-13. [Troubleshooting](#troubleshooting)
-14. [Changelog](#changelog)
+5. [Reviewing changes (v1.1)](#reviewing-changes-v11)
+6. [Viewing change history](#viewing-change-history)
+7. [Restoring from backup](#restoring-from-backup)
+8. [CLI subcommands](#cli-subcommands)
+9. [Data model & file layout](#data-model--file-layout)
+10. [How projects are mapped](#how-projects-are-mapped)
+11. [Multi-applicant name matching](#multi-applicant-name-matching)
+12. [Area cross-check (SQM)](#area-cross-check-sqm)
+13. [HTML reports — what the filters do](#html-reports--what-the-filters-do)
+14. [Audit-flag reference (A-codes)](#audit-flag-reference-a-codes)
+15. [Project ↔ SF SUB ↔ PREFIX reference](#project--sf-sub--prefix-reference)
+16. [Troubleshooting](#troubleshooting)
+17. [Changelog](#changelog)
 
 ---
 
@@ -103,6 +106,10 @@ The `.bat` launcher auto-discovers Node, auto-installs dependencies on first run
 
 Launch `p-charter.bat` → menu option `[D] DLD Audit` — runs inline (same window since v9.3.x).
 
+### Desktop app (v1.1)
+
+For staff users, the Windows desktop build is the recommended surface — see `BUILDING.md` for how to produce the installer. The sidebar is always full-width (icon + text — the v1.0 collapse button has been removed); a single project selector in the top bar filters every page and includes Salesforce-only projects in addition to DLD-imported ones. Schema migrations run automatically at every app launch; on a v1.0→v1.1 upgrade the renderer briefly shows an *"Upgrading database…"* splash if the migration takes more than ~2 seconds.
+
 ### Non-interactive
 
 ```bat
@@ -125,10 +132,11 @@ See [CLI subcommands](#cli-subcommands).
    - Open in Excel, fill the `area_sqm` column for the units you have data on, save into `input/Changes Template Input/`.
    - `[Y] Area template` → `[2] Apply filled template` → upserts into `master_data.area_sqm`.
    - Re-run `[3] Compare` to see new A11 / AREA_MISMATCH signals.
-5. **(Optional)** Review DLD-proposed changes:
-   - `[V] Review pending changes` → opens `output/csv/pending-changes.csv`.
-   - Set `decision` to `approved` or `rejected` for each row, save.
-   - `[B] Apply pending decisions` → commits approved changes to `master_data`.
+5. **Review DLD-proposed changes (inline, v1.1).** In the desktop app, click `5. Review pending` in the sidebar. The Review Pending page opens with two tabs:
+   - **Needs review** — per-row `✓ Approve` / `✗ Reject`; the `New (edit)` cell lets you override the proposed value before approving. BUYER_MISMATCH rows expose `🔗 Teach alias` so the same false-positive doesn't recur next month.
+   - **Drift log** — read-only list of values silently overwritten at compare time when a fresh DLD or SF snapshot disagrees with the previous one.
+
+   Every action writes the change directly to `master_data` and appends to `audit_log` — no more CSV roundtrip. See [Reviewing changes (v1.1)](#reviewing-changes-v11) below.
 6. When done:
    - `[O]` opens `output/dashboard.html` (cross-project summary).
    - `[R]` reveals the `output/` folder in Explorer.
@@ -156,8 +164,8 @@ Re-running `compare` after any change is cheap — it rebuilds from what's alrea
 [R]  Reveal output folder
 
 [Y]  Area template            generate / apply staff-filled SQM CSVs
-[V]  Review pending changes   writes output/csv/pending-changes.csv and opens it
-[B]  Apply pending decisions  reads pending-changes.csv, commits approve/reject decisions
+[V]  Review pending changes   v1.1 — prints a hint pointing at the desktop app's inline page
+[B]  Apply pending decisions  legacy — reads a CSV with change_id+decision, commits approvals
 
 [L]  Last drop                run full pipeline on the newest DLD + SF files
 [Z]  Archive output           snapshot output/ to output/archive/<timestamp>/
@@ -173,11 +181,13 @@ DLD transactions sometimes have a bank (mortgage holder) as the last party when 
 
 ### `[V] Review pending changes`
 
-Writes `output/csv/pending-changes.csv` listing every row in `pending_change` whose `decision = 'pending'`. Opens the CSV in the default application (Excel). Staff set the `decision` column to `approved` or `rejected` and save.
+> **v1.1 — primary workflow is the desktop app.** Click `5. Review pending` in the sidebar to open the inline Review Pending page (two tabs, override/approve/reject/teach-alias per row). See [Reviewing changes (v1.1)](#reviewing-changes-v11).
+
+The terminal `[V]` entry / `node index.js review-pending` CLI no longer produces an HTML+CSV roundtrip — it prints a hint pointing at the desktop app. Kept as a no-op shim for one release cycle.
 
 ### `[B] Apply pending decisions`
 
-Reads the saved `pending-changes.csv` back, applies each approved row to `master_data`, marks rejected rows as decided, and reports the counts.
+> **Legacy — deprecated for v1.1, will be removed in v1.2.** Reads a CSV with `change_id` + `decision` columns and commits approved rows to `master_data`. Retained for users who still drive reconciliation through `apply-pending.csv` files. The recommended path is the inline Review Pending page; the CSV roundtrip is no longer used by the desktop app.
 
 ### `[Y] Area template`
 
@@ -208,6 +218,107 @@ Every run is written to `logs/audit.jsonl`.
 
 ---
 
+## Reviewing changes (v1.1)
+
+> Replaces the legacy `review-pending` → CSV → `apply-pending` two-step.
+
+In the desktop app, click **`5. Review pending`** in the sidebar. The page opens with a project filter on top and two tabs:
+
+### `Needs review` tab
+
+Actionable rows — every `pending_change` whose `decision='pending'`. One row per `(unit, field)`.
+
+| Column        | Behavior                                                                                          |
+|---------------|---------------------------------------------------------------------------------------------------|
+| `☐`           | Multi-select for batch actions                                                                    |
+| `Unit + Project` | Clickable — opens the [per-unit history side panel](#viewing-change-history)                   |
+| `Field + Type` | E.g. `purchase_price_aed MISMATCH`, `buyer_name BUYER_MISMATCH`                                  |
+| `Current`     | Read-only current `master_data` value (with source label `staff` / `dld_approved`)                |
+| `New (edit)`  | Editable input prefilled with the proposed value. Type to override before approving.              |
+| `Actions`     | `✓ Approve` / `✗ Reject` per row. BUYER_MISMATCH rows additionally show `🔗 Teach alias`.        |
+
+Filter chips above the table: `All` / `MISMATCH` / `BUYER_MISMATCH` / `AREA_MISMATCH` / `PRICE_UP` / `PRICE_DOWN`. Batch actions at the bottom: `[Approve selected (N)]` / `[Reject selected]`.
+
+**Approve** writes the final value (your typed override if you edited the cell, else the proposed value) straight to `master_data`, marks the `pending_change` row `approved`, and appends an `audit_log` row.
+
+**Reject** marks the row `rejected` and leaves `master_data` unchanged. An `audit_log` entry still records the action so the queue is reproducible.
+
+**`🔗 Teach alias`** (BUYER_MISMATCH only) opens a modal: *"Always treat 'AlGhumlasi' = 'Alghumlasi' for project ONE? (or globally)"*. Confirming inserts a `buyer_alias` row and auto-approves every other pending BUYER_MISMATCH with the same normalized name pair on the page — saves the same false-positive from recurring next month.
+
+### `Drift log` tab
+
+Read-only. Lists every `pending_change` whose `decision='auto_applied'` — values silently overwritten at compare time because a fresh DLD or SF snapshot disagreed with the previous one. Columns: `When`, `Unit + Project` (clickable → side panel), `Field`, `Old → New`, `Source` (`DLD import` / `SF import`). Use this to spot price corrections or buyer changes that landed without review.
+
+No CSV roundtrip is involved. The legacy `apply-pending` CLI still works for one release cycle (deprecated in v1.1, removed in v1.2).
+
+---
+
+## Viewing change history
+
+### Global `📜 History` page
+
+New sidebar entry between `Tools` and `Backup`. Shows every change to live data across all projects, newest first.
+
+**Filters** (all combine with AND):
+
+- `Range` — `Today` / `Last 7 days` / `Last 30 days` / `Last 90 days` / `All time` / `Custom…`
+- `Project` — populated from the same projects-list query used by the top bar (now includes Salesforce-only projects, see below)
+- `Action` — `All` / `approve` / `override` / `reject` / `auto_apply` / `learn_alias`
+- `Source` — `All` / `review_pending` / `import_dld` / `import_sf` / `apply_pending`
+- `Unit` — free-text exact match on `unit_number`
+
+**Columns** (sortable): `When` (default desc), `Project`, `Unit` (clickable → side panel), `Field`, `Old → New`, `Action + Source`.
+
+**Export CSV** dumps the current filtered set (not just the visible page) to `audit-log-YYYYMMDD-HHmm.csv` via the system save dialog.
+
+### Per-unit history side panel
+
+Click any unit cell — in Review Pending, the History page, the Projects page, or the Status page — to slide in a 400px-wide panel from the right showing that unit's full audit trail:
+
+- **Current state** (live values from `master_data`): `buyer_name`, `purchase_price_aed`, `area_sqm`, `status`, `procedure_number`.
+- **History** — every `audit_log` event for that `(project_id, unit_number_norm)`, newest first, grouped by timestamp. Each event shows the field, old → new value, and `action · source` (e.g. `override · review_pending`).
+- `[×]` or `Esc` closes the panel; `[View in global History →]` deep-links to the `📜 History` page pre-filtered to that unit.
+
+---
+
+## Restoring from backup
+
+> v1.1 adds an impact-summary modal before any DB swap.
+
+Click **`Import DB`** in the desktop app and pick a `.zip` backup. The app extracts to a temp directory, reads the embedded `meta.json`, opens the contained `dld-sync.sqlite` read-only, and shows a confirmation modal:
+
+```
+┌─ Import database backup ────────────────────────────────────┐
+│ File: dl-processor-backup-2026-05-11T09-00-24.zip            │
+│ Size: 4.2 MB                                                 │
+│ Created: 2026-05-11 09:00 (1 day ago)                        │
+│ App version: 1.1.0                                           │
+│                                                              │
+│ This backup contains:                                        │
+│   • 1,738 sales units                                        │
+│   • 23 pending changes                                       │
+│   • 12 projects                                              │
+│   • 4,521 audit log entries                                  │
+│                                                              │
+│ Current database (will be replaced):                         │
+│   • 1,742 sales units (+4 to remove)                         │
+│   • 31 pending changes (+8 to remove)                        │
+│   • 12 projects (unchanged)                                  │
+│   • 4,605 audit log entries (+84 to remove)                  │
+│                                                              │
+│ ⚠ This replaces your current database. Cannot be undone      │
+│   unless you exported a backup of the current state first.   │
+│                                                              │
+│         [Cancel]                  [Confirm import]            │
+└──────────────────────────────────────────────────────────────┘
+```
+
+`[Cancel]` deletes the temp directory and leaves your DB untouched. `[Confirm import]` first writes a `dld-sync.sqlite.bak.{timestamp}` safety copy of the current DB, then moves the imported file into place and restarts the DB connection.
+
+**Old backups without `meta.json`** (anything exported before v1.1) fall back to *"Created: unknown, contents not verified"* — the modal shows only current-DB counts. The import still works after `[Confirm]`; the safety `.bak.{timestamp}` is still written.
+
+---
+
 ## CLI subcommands
 
 | Subcommand                                        | Does                                                                                  |
@@ -223,8 +334,8 @@ Every run is written to `logs/audit.jsonl`.
 | `node index.js apply-areas <csv>`                 | Apply filled-in area CSV to `manual_area` table                                       |
 | `node index.js audit`                             | Reconciliation report (counts, cross-checks) — the `[V]` menu option                  |
 | `node index.js audit-log [N]`                     | Show last N entries of `logs/audit.jsonl` (default 30)                                |
-| `node index.js review-pending`                    | Write `output/csv/pending-changes.csv` of all pending `pending_change` rows. The `[V]` menu option. |
-| `node index.js apply-pending`                     | Read `pending-changes.csv`, apply approved decisions to `master_data`. The `[B]` menu option. |
+| `node index.js review-pending`                    | **(v1.1)** Prints a hint to use the desktop app's inline Review Pending page. The legacy HTML+CSV roundtrip has been replaced — no files are written. |
+| `node index.js apply-pending [csv]`               | **(Legacy — deprecated v1.1, removed v1.2.)** Reads a `change_id`+`decision` CSV and commits approved rows to `master_data`. Kept for backward compatibility; the desktop app no longer drives reconciliation through CSVs. |
 | `node index.js audit-delta`                       | **(Legacy.)** Cross-checks manual audit flags vs tool output. Useless since v0.9.4.    |
 | `node index.js import-audit <xlsx>`               | **(Legacy — don't use.)** Imported the Projects Verification workbook. Replaced by the reference table in this README. |
 | `node index.js projects`                          | List DLD projects in the DB with their mapping                                        |
@@ -257,7 +368,7 @@ dl-processor/
 │   ├── compare/               # per-project <name>.compare.html reports
 │   ├── diff/                  # per-project <name>.diff.html reports
 │   ├── csv/                   # per-project .compare.csv, .diff.csv, .audit-tasks.csv
-│   │   └── pending-changes.csv    # written by review-pending; edited by staff; read by apply-pending
+│   │   └── pending-changes.csv    # (legacy v1.0 path) consumed by the apply-pending CLI
 │   ├── Changes Template/      # generated area-template-<slug>.csv files (output of [Y] → 1)
 │   ├── audit-delta/           # per-project <name>.audit-delta.html (legacy)
 │   └── dashboard.html         # cross-project summary (regenerated on every compare run)
@@ -297,7 +408,10 @@ dl-processor/
 - **`sf_booking`** — one row per SF booking; includes primary applicant + co-applicants 2–4 + `applicant_details`.
 - **`project_mapping`** — overrides for DLD ↔ SF translation, including per-project `area_threshold_pct`.
 - **`master_data`** — wide table, one row per `(project_id, unit_number_norm)`. Single source of truth for staff-curated values (`buyer_name`, `purchase_price_aed`, `area_sqm`, etc.). Each field has a `_source` provenance column (`staff` / `dld_approved`) and a `_decided_at` timestamp. Seeded from `manual_override` + `manual_area` on first run.
-- **`pending_change`** — tall audit trail. One row per `(unit, field)` DLD-proposed change. `decision` starts as `pending`; staff set it to `approved` or `rejected` via the CSV round-trip. Approved rows are applied to `master_data` by `apply-pending`.
+- **`pending_change`** — tall audit trail. One row per `(unit, field)` proposed change. `decision` starts as `pending` and is set to `approved` / `rejected` (review_pending UI) or `auto_applied` (compare-time drift). v1.1 adds `change_type` (`MISMATCH` / `DLD_DRIFT` / `SF_DRIFT`) and `override_value` (the user-typed final value, when an inline override happened). Approved rows are applied to `master_data` from the inline Review Pending page.
+- **`audit_log`** — **(v1.1.)** Append-only event log; one row per change to live data. Records `action` (`approve`/`override`/`reject`/`auto_apply`/`learn_alias`), `source` (`review_pending`/`import_dld`/`import_sf`/`apply_pending`/`compare`), `old_value`/`new_value`, and FK `change_id` into `pending_change`. Indexed by `(project_id, unit_number_norm, ts DESC)` for the per-unit side panel and by `(project_id, ts DESC)` for the global History page.
+- **`buyer_alias`** — **(v1.1.)** Learnable equivalence pairs for buyer-name normalization. `(variant, canonical)` are stored already-normalized; `project_id NULL` = global alias. Populated by the `🔗 Teach alias` button on the Review Pending page and seeded with a built-in transliteration map (~50 Sobha-context Arabic-Latin pairs).
+- **`schema_migration`** — **(v1.1.)** One row per applied migration (`id`, `name`, `applied_at`). Driven by `src/migrations/`; idempotent — only un-applied migrations execute at each `openDb()` call.
 - **`manual_override`** — **(legacy, frozen after migration to `master_data`).** Pre-v0.9.16 per-unit buyer overrides. Still readable; no new writes.
 - **`manual_area`** — **(legacy, frozen after migration to `master_data`).** Pre-v0.9.16 staff-recorded SQM. Still readable; no new writes.
 
