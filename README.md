@@ -24,7 +24,8 @@ Lives inside the P-Charter repo as a git subtree: `Desktop\p-charter\dl-processo
 5. [Reviewing changes (v1.1)](#reviewing-changes-v11)
 6. [Viewing change history](#viewing-change-history)
 7. [Restoring from backup](#restoring-from-backup)
-8. [CLI subcommands](#cli-subcommands)
+8. [Receiving patches (v1.2+)](#receiving-patches-v12)
+9. [CLI subcommands](#cli-subcommands)
 9. [Data model & file layout](#data-model--file-layout)
 10. [How projects are mapped](#how-projects-are-mapped)
 11. [Multi-applicant name matching](#multi-applicant-name-matching)
@@ -323,6 +324,29 @@ Click **`Import DB`** in the desktop app and pick a `.zip` backup. The app extra
 `[Cancel]` deletes the temp directory and leaves your DB untouched. `[Confirm import]` first writes a `dld-sync.sqlite.bak.{timestamp}` safety copy of the current DB, then moves the imported file into place and restarts the DB connection.
 
 **Old backups without `meta.json`** (anything exported before v1.1) fall back to *"Created: unknown, contents not verified"* — the modal shows only current-DB counts. The import still works after `[Confirm]`; the safety `.bak.{timestamp}` is still written.
+
+---
+
+## Receiving patches (v1.2+)
+
+> From v1.2 onward, updates are distributed as small zip patches (~5-15 MB) instead of full 78 MB installers. Your admin builds the patch and shares it (OneDrive / email / network drive).
+
+To apply a patch:
+
+1. Save the `dlp-patch-vA-to-vB.zip` somewhere on your machine (Downloads is fine).
+2. Open DL-Processor → sidebar → **⬆ Apply update**.
+3. Click **Choose patch file…** and pick the zip.
+4. App verifies the patch (checks app ID, version compatibility, SHA-256 of the contents) and shows a summary:
+   - Current version → target version
+   - Build date and SHA-256 (compare against what your admin posted if you want)
+   - Release notes
+   - Warning that the app will close and restart
+5. Click **Apply & Restart**. The app quits, swaps `app.asar`, and relaunches with the new version.
+6. Your data in `Desktop\DL-Processor\` is NOT affected — only the app code changes. Any new schema migrations run automatically at first launch.
+
+If the patched version misbehaves, open Settings → **Revert last patch** to restore the previous `app.asar` (the app keeps a `.bak` of the last working version). The app restarts automatically.
+
+See [TROUBLESHOOTING.md → Patch update problems](TROUBLESHOOTING.md#patch-update-problems-v12) for failure modes and recovery.
 
 ---
 
