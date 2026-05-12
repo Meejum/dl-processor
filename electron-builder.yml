@@ -1,0 +1,55 @@
+appId: ae.sobha.dl-processor
+productName: DL-Processor
+copyright: Copyright © 2026 Sobha Realty — Registration Team
+
+directories:
+  output: dist-electron
+  buildResources: electron/assets
+
+# What goes into the packaged .exe / .zip
+files:
+  - 'src/**/*'
+  - 'index.js'
+  - 'electron/**/*'
+  - 'db/schema.sql'
+  - 'config/**/*'
+  - 'package.json'
+  - 'node_modules/**/*'
+  - '!**/*.test.js'
+  - '!docs/**/*'
+  - '!test/**/*'
+  - '!_smoke/**/*'
+  - '!input/**/*'
+  - '!sf-input/**/*'
+  - '!output/**/*'
+  - '!data/**/*'
+  - '!logs/**/*'
+
+# better-sqlite3 carries a native .node binary. It must be unpacked from the
+# asar archive so Node can load it as a native module at runtime.
+asarUnpack:
+  - 'node_modules/better-sqlite3/**/*'
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: zip
+      arch: [x64]
+  # icon: electron/assets/icon.ico   # disabled until a real multi-res .ico
+  #                                  # is supplied; default Electron icon used
+  artifactName: '${productName} Setup ${version}.${ext}'
+
+nsis:
+  oneClick: false                       # show the install-location step
+  perMachine: false                     # install per-user — no admin needed
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: DL-Processor
+  include: build/installer.nsh          # customInstall + customUnInstall macros
+  # installerIcon / uninstallerIcon disabled — same reason as win.icon
+  artifactName: '${productName} Setup ${version}.${ext}'
+
+# We hand-upload artifacts to Cloudflare Pages; no auto-publish.
+publish: null

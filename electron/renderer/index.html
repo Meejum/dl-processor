@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com data:; img-src 'self' data: file:; frame-src 'self' file: data:;">
+  <title>DL-Processor</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- First-run wizard. Hidden by default; app.js will show it if needed. -->
+  <div id="first-run-wizard" hidden>
+    <div class="wizard-card">
+      <h1>Welcome to DL-Processor</h1>
+      <p class="muted">Where should DL-Processor store its data?</p>
+      <div class="folder-row">
+        <input id="wizard-folder" type="text" placeholder="Type a path or click Choose…">
+        <button id="wizard-pick">Choose…</button>
+      </div>
+      <div id="wizard-legacy" hidden>
+        <p>We found an existing DL-Processor install at <code id="wizard-legacy-path"></code>.</p>
+        <label><input type="checkbox" id="wizard-migrate" checked> Copy <code>db/ input/ output/ sf-input/ config/</code> from the old install</label>
+      </div>
+      <div class="wizard-actions">
+        <button id="wizard-continue" class="primary">Continue</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- App shell (visible after wizard completes). Tasks 7-12 fill this in. -->
+  <div id="app-shell" hidden>
+    <header class="top-bar">
+      <span class="brand">
+        <svg class="brand-logo" viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg" aria-label="Sobha Realty">
+          <defs>
+            <linearGradient id="g1" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#85633B"/>
+              <stop offset="100%" stop-color="#5C3D1E"/>
+            </linearGradient>
+          </defs>
+          <rect x="2" y="2" width="28" height="28" rx="6" fill="url(#g1)"/>
+          <text x="16" y="22" font-family="Dubai, Inter, Arial" font-size="16" font-weight="700" text-anchor="middle" fill="#F0E4CE">S</text>
+        </svg>
+        <span>DL-Processor</span>
+        <span class="brand-sub">Sobha Realty · Registration</span>
+      </span>
+      <select id="project-selector"><option value="">All projects</option></select>
+      <span class="data-folder" id="header-data-folder"></span>
+      <span class="spacer"></span>
+      <span id="progress" class="progress" hidden>
+        <span class="progress-bar"><span class="progress-fill" id="progress-fill"></span></span>
+        <span class="progress-text" id="progress-text"></span>
+      </span>
+      <button id="btn-toggle-log" class="icon-btn" title="Hide / show log">📋</button>
+      <button id="btn-settings" class="icon-btn" title="Settings">⚙</button>
+    </header>
+    <main>
+      <aside class="sidebar" id="sidebar">
+        <button class="cmd-btn cmd-btn-primary" data-cmd="all" data-label="Full pipeline" title="Run full pipeline (does 1–4)">
+          <span class="cmd-icon">⚡</span>
+          <span class="cmd-label">Run full pipeline <span class="hint">(does 1–4)</span></span>
+        </button>
+        <div class="sidebar-section">Monthly steps</div>
+        <button class="cmd-btn cmd-btn-step" data-cmd="import-dld" data-label="Import DLD"
+                data-pick-multi="dld" title="1 · Import DLD — pick .xps / .csv files">
+          <span class="step-num">1</span>
+          <span class="cmd-icon">📥</span>
+          <span class="cmd-label">Import DLD</span>
+        </button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="import-sf"  data-label="Import SF"
+                data-pick-multi="sf" title="2 · Import Salesforce — pick .xlsx file(s)">
+          <span class="step-num">2</span>
+          <span class="cmd-icon">📥</span>
+          <span class="cmd-label">Import Salesforce</span>
+        </button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="compare"    data-label="Compare" title="3 · Compare">
+          <span class="step-num">3</span>
+          <span class="cmd-icon">🔍</span>
+          <span class="cmd-label">Compare</span>
+        </button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="diff"       data-label="Diff (month-over-month)" title="4 · Diff (month-over-month)">
+          <span class="step-num">4</span>
+          <span class="cmd-icon">📊</span>
+          <span class="cmd-label">Diff</span>
+        </button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="review-pending" data-label="Review pending" title="5 · Review pending">
+          <span class="step-num">5</span>
+          <span class="cmd-icon">📝</span>
+          <span class="cmd-label">Review pending</span>
+        </button>
+        <button class="cmd-btn cmd-btn-step" data-cmd="apply-pending"  data-label="Apply pending" data-needs-file="true" title="6 · Apply pending">
+          <span class="step-num">6</span>
+          <span class="cmd-icon">✅</span>
+          <span class="cmd-label">Apply pending</span>
+        </button>
+        <div class="sidebar-section">View</div>
+        <button class="cmd-btn" data-cmd="status"   data-label="Status" title="Status">
+          <span class="cmd-icon">📈</span>
+          <span class="cmd-label">Status</span>
+        </button>
+        <button class="cmd-btn" data-cmd="projects" data-label="Projects" title="Projects">
+          <span class="cmd-icon">🏢</span>
+          <span class="cmd-label">Projects</span>
+        </button>
+        <div class="sidebar-section">Tools</div>
+        <button class="cmd-btn" data-cmd="audit" data-label="Audit report" title="Audit report">
+          <span class="cmd-icon">🧾</span>
+          <span class="cmd-label">Audit report</span>
+        </button>
+        <button class="cmd-btn" data-cmd="area-template" data-label="Area template" title="Generate area template">
+          <span class="cmd-icon">📐</span>
+          <span class="cmd-label">Area template</span>
+        </button>
+        <button class="cmd-btn" data-action="open-dashboard" data-label="Open dashboard" title="Open output/dashboard.html in a tab">
+          <span class="cmd-icon">🖼️</span>
+          <span class="cmd-label">Open dashboard</span>
+        </button>
+        <button class="cmd-btn" data-action="reveal-output" data-label="Reveal output folder" title="Open the output/ folder in Explorer">
+          <span class="cmd-icon">📁</span>
+          <span class="cmd-label">Output folder</span>
+        </button>
+        <div class="sidebar-section">History</div>
+        <button class="cmd-btn" data-action="open-history" data-label="History" title="View change history across all projects">
+          <span class="cmd-icon">📜</span>
+          <span class="cmd-label">History</span>
+        </button>
+        <div class="sidebar-section">Backup</div>
+        <button class="cmd-btn" data-action="db-export" data-label="Export DB" title="Export DB and config to a zip backup">
+          <span class="cmd-icon">💾</span>
+          <span class="cmd-label">Export DB</span>
+        </button>
+        <button class="cmd-btn" data-action="db-import" data-label="Import DB" title="Restore DB from a zip backup">
+          <span class="cmd-icon">📤</span>
+          <span class="cmd-label">Import DB</span>
+        </button>
+      </aside>
+      <section class="content">
+        <div class="tab-host" id="tab-host"></div>
+        <aside class="log-column" id="log-column">
+          <div class="log-pane log-pane-info">
+            <div class="log-pane-head">
+              <span class="log-pane-label">Output</span>
+              <button class="log-copy-btn" data-target="log-info" title="Copy output">Copy</button>
+            </div>
+            <div class="log-body" id="log-info"></div>
+          </div>
+          <div class="log-pane log-pane-error">
+            <div class="log-pane-head">
+              <span class="log-pane-label">Errors</span>
+              <button class="log-copy-btn" data-target="log-error" title="Copy errors">Copy</button>
+            </div>
+            <div class="log-body" id="log-error"></div>
+          </div>
+        </aside>
+      </section>
+    </main>
+  </div>
+
+  <script src="sidebar.js"></script>
+  <script src="tab-host.js"></script>
+  <script src="top-bar.js"></script>
+  <script src="settings-modal.js"></script>
+  <script src="review-pending-page.js"></script>
+  <script src="unit-history-panel.js"></script>
+  <script src="history-page.js"></script>
+  <script src="import-db-modal.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
