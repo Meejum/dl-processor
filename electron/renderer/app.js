@@ -492,6 +492,14 @@
           openHistoryTab({});
           return;
         }
+        if (action === 'open-patch-modal') {
+          if (typeof window.__openPatchModal === 'function') {
+            window.__openPatchModal();
+          } else {
+            logPanel.appendError('patch modal not loaded — please restart the app');
+          }
+          return;
+        }
         if (action === 'open-dashboard' && currentDataFolder) {
           const url = 'file:///' + currentDataFolder.replace(/\\/g, '/') + '/output/dashboard.html';
           window.__tabHost.open({ url, title: 'Dashboard' });

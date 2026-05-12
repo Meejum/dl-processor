@@ -128,3 +128,44 @@ npm install better-sqlite3@^12.9.0
 
 **Icon is a placeholder / generic Electron icon**
 → Replace `electron/assets/icon.ico` with a multi-resolution Sobha icon (16/32/48/64/128/256 px). Tools: an online converter, ImageMagick `magick convert sobha-logo.png -define icon:auto-resize=256,128,64,48,32,16 electron/assets/icon.ico`, or Photoshop's "Save As .ico" multi-size export.
+
+---
+
+## Releasing patch updates (v1.2+)
+
+From v1.2 onward, every release also produces a small zip patch (~5-15 MB instead of the 78 MB full installer). Build flow:
+
+```bat
+REM 1. Bump version in package.json (e.g., 1.2.0 → 1.3.0)
+REM 2. Clean rebuild the full installer (also produces the unpacked asar we need)
+rmdir /s /q dist-electron
+npm run dist
+
+REM 3. Build the patch zip from the dist output
+node scripts/build-patch.js --from 1.2.0 --to 1.3.0 --notes "BP grouping for Review Pending"
+
+REM Output: dist-electron\dlp-patch-v1.2.0-to-v1.3.0.zip
+```
+
+`--from` is the **minimum** installed version the patch can be applied on top of. Use `1.2.0` if any v1.2.x install should be able to receive this patch.
+
+`--to` MUST match the current `package.json` version. The build script verifies this.
+
+The script prints the SHA-256 of the asar. Optionally share this with users so they can verify what they received hasn't been tampered with (the modal also shows the same hash).
+
+### Sharing patches with the team
+
+1. Upload `dlp-patch-vA-to-vB.zip` to OneDrive / email / shared drive
+2. Tell users to open DL-Processor → sidebar → **⬆ Apply update** → pick the zip
+3. App verifies the zip, shows summary, user clicks Apply & Restart
+4. App quits, helper script swaps the asar, app relaunches with new version
+
+If anything goes wrong: users can Settings → **Revert last patch** to restore the previous `app.asar.bak`.
+
+### What CAN'T be patched
+
+- Electron runtime version (stays at 28.x for v1.x)
+- Native modules (`better-sqlite3`) — their .node binary doesn't change across v1.x
+- The `patch-apply.cmd` helper itself — if it needs changes, requires a full installer release
+
+For any of those, ship a full `.exe` installer instead.

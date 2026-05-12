@@ -12,6 +12,7 @@ Companions: [README.md](README.md) for normal usage, [BUILDING.md](BUILDING.md) 
 - [App-launch problems](#app-launch-problems)
 - [Data-flow problems](#data-flow-problems)
 - [UI problems](#ui-problems)
+- [Patch update problems (v1.2+)](#patch-update-problems-v12)
 - [Build problems (developers)](#build-problems-developers)
 - [Test problems (developers)](#test-problems-developers)
 - [Diagnostic procedures](#diagnostic-procedures)
@@ -213,6 +214,100 @@ Modal shows "No `meta.json` — Created: unknown". This is expected for zips bui
 ### Per-unit history side panel doesn't open when I click a unit
 
 Sometimes the click handler fails if `window.__openUnitHistoryPanel` hasn't loaded yet (race condition on first page render). Refresh the tab — the panel script always loads on `index.html` startup.
+
+---
+
+## Patch update problems (v1.2+)
+
+### "This file is not a valid zip archive"
+
+The file the user picked isn't a real zip. Common causes: someone renamed a `.exe` to `.zip`, the download was corrupted mid-transfer, or the file is actually an `.xlsx` / `.7z` / other format with a `.zip` extension.
+
+**Fix:** Get a fresh copy from your admin. Verify the file size matches what was originally shared.
+
+---
+
+### "Patch zip is missing manifest.json"
+
+The zip doesn't have a `manifest.json` at the top level. It was either built with the wrong tool (not `node scripts/build-patch.js`) or the zip was repackaged after the build.
+
+**Fix:** Rebuild the patch via `node scripts/build-patch.js` from the original `dist-electron/win-unpacked/` output.
+
+---
+
+### "This patch is for a different application"
+
+The manifest's `app_id` is not `ae.sobha.dl-processor`. Someone built a patch for a different app or modified the manifest.
+
+**Fix:** Discard the file. Get a legitimate patch from your admin.
+
+---
+
+### "Your installed version is older than this patch supports"
+
+`manifest.from_version_min` is greater than your installed version. The patch was built assuming a newer base.
+
+**Fix:** Either:
+- Install the latest full `.exe` installer first, then apply the patch.
+- Or ask your admin to rebuild the patch with `--from <your-version>`.
+
+---
+
+### "Patch archive failed integrity check"
+
+The `app.asar` SHA-256 in the zip doesn't match the manifest's stated hash. The zip was tampered with or corrupted during transfer.
+
+**Fix:** Get a fresh copy. Compare the SHA-256 shown in the modal against what your admin posted alongside the zip.
+
+---
+
+### Apply succeeds but the app doesn't restart
+
+The helper script `patch-apply.cmd` ran but `start "" "%APP_EXE%"` failed (path wrong, exe locked by anti-virus, etc.). The new `app.asar` is in place, just no relaunch happened.
+
+**Fix:** Manually open the Start menu and launch DL-Processor. You'll see the new version. If launch fails too — `app.asar` may be corrupted; use the next section.
+
+---
+
+### Apply succeeds but the app won't launch after restart
+
+The patched `app.asar` is broken (rare — but possible if the patch was built incorrectly).
+
+**Fix:**
+1. Open `%LOCALAPPDATA%\Programs\DL-Processor\resources\` in Explorer.
+2. You should see `app.asar` (new, broken) and `app.asar.bak` (old, working).
+3. Delete `app.asar`.
+4. Rename `app.asar.bak` → `app.asar`.
+5. Launch DL-Processor — should boot on the previous version.
+6. Report the bad patch to your admin.
+
+Alternatively, if the app DOES boot but misbehaves: open it and Settings → **Revert last patch** does the rename for you.
+
+---
+
+### "no .bak available — nothing to revert"
+
+You clicked Revert but no `app.asar.bak` exists. Either this is a fresh install (no patches applied yet) or someone manually deleted the backup.
+
+**Fix:** Nothing to revert. If the current app version is broken, reinstall from the latest full `.exe`.
+
+---
+
+### Helper script blocks during apply ("timed out waiting for PID to exit")
+
+After 10 seconds the helper gave up waiting for the main app to quit. Likely cause: the app froze on quit (e.g., a long-running compare).
+
+**Fix:** Force-quit DL-Processor via Task Manager. The helper script will then proceed with the swap.
+
+If `app.asar.pending` still exists in `resources\`: you can manually swap it. Rename `app.asar` → `app.asar.bak` (if not already), then rename `app.asar.pending` → `app.asar`. Restart the app.
+
+---
+
+### How to verify a patch came from your admin
+
+The modal shows the SHA-256 of the patch's `app.asar`. Your admin can post the same SHA-256 alongside the download link (e.g., in the email or shared-drive description). Compare them character-by-character before clicking Apply & Restart.
+
+If they don't match: the patch was tampered with in transit. Don't apply it. Tell your admin.
 
 ---
 

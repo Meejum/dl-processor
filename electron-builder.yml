@@ -30,6 +30,13 @@ files:
 asarUnpack:
   - 'node_modules/better-sqlite3/**/*'
 
+# v1.2 patch system: the helper batch script that swaps app.asar at next launch.
+# Placed in <install-dir>\resources\patch-apply.cmd. Bundled OUTSIDE the asar so
+# it's directly runnable by Windows (cmd can't execute from inside an asar).
+extraResources:
+  - from: 'resources/patch-apply.cmd'
+    to:   'patch-apply.cmd'
+
 win:
   target:
     - target: nsis

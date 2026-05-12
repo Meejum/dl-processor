@@ -295,6 +295,50 @@ app.whenReady().then(async () => {
     shell.openExternal(url);
   });
 
+  // ─── v1.2 patch system ──────────────────────────────────────────────────
+  // probe is read-only — just verifies the zip and returns the manifest.
+  // apply stages the new asar + .patch-pending marker, launches patch-apply.cmd,
+  // and quits. The helper script waits for our PID to exit, swaps the asar,
+  // and relaunches DL-Processor.exe.
+  const patchEngine = require('./patch-engine');
+
+  ipcMain.handle('dlp:patch:probe-zip', (event, { zipPath } = {}) => {
+    return patchEngine.probeZip(zipPath);
+  });
+
+  ipcMain.handle('dlp:patch:apply', (event, { zipPath } = {}) => {
+    if (!app.isPackaged) {
+      return { ok: false, error: 'patches only apply to installed builds, not dev' };
+    }
+    const installDir = path.dirname(process.execPath);
+    const probe = patchEngine.probeZip(zipPath);
+    if (!probe.ok) return probe;
+    try {
+      patchEngine.stagePatch(zipPath, installDir);
+    } catch (e) {
+      return { ok: false, error: 'stage failed: ' + e.message };
+    }
+    const helper = path.join(installDir, 'resources', 'patch-apply.cmd');
+    const resDir = path.join(installDir, 'resources');
+    const pid    = String(process.pid);
+    cp.spawn('cmd.exe', ['/c', 'start', '""', helper, pid, resDir, process.execPath], {
+      detached: true, stdio: 'ignore', windowsHide: true
+    }).unref();
+    setTimeout(() => app.quit(), 500);
+    return { ok: true, scheduled: true };
+  });
+
+  ipcMain.handle('dlp:patch:revert-last', () => {
+    if (!app.isPackaged) {
+      return { ok: false, error: 'revert only works on installed builds' };
+    }
+    const installDir = path.dirname(process.execPath);
+    const result = patchEngine.revertLast(installDir);
+    if (!result.canRevert) return { ok: false, ...result };
+    setTimeout(() => app.quit(), 300);
+    return { ok: true, scheduled: true };
+  });
+
   createWindow();
 });
 

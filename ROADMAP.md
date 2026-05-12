@@ -14,9 +14,29 @@
 
 ## Near horizon (v1.2 → v1.4, next ~6 weeks)
 
-### v1.2 — Business Process grouping
+### v1.2 — Patch-based updates *(re-scoped 2026-05-12)*
 
-**Status:** spec'd + planned. Ready to dispatch.
+**Status:** spec'd, in progress.
+
+**What ships:**
+- App accepts patch zips (`dlp-patch-vA-to-vB.zip`) via a native **Apply update** sidebar action — no iframe, no HTML page, just a renderer-DOM modal matching the v1.1 unit-history-panel pattern
+- Build script `scripts/build-patch.js` produces patch zips from `npm run dist` output (~5-15 MB instead of full 78 MB installer)
+- File swap happens at next launch via a bundled `patch-apply.cmd` helper (waits for app quit, swaps `app.asar`, relaunches)
+- Manifest carries `from_version_min`, `to_version`, `asar_sha256`, `app_id` for safe verification
+- Automatic rollback on swap failure; manual **Revert last patch** action in case the new version misbehaves
+- First patch-capable version is v1.2.0 itself; v1.1.0 users do one last full reinstall
+
+**Why:** v1.1 ships as a 78 MB installer per release. For a team running monthly cycles with multiple users, that's expensive to redistribute and high-friction to install. Patch updates cut the per-release size by ~5-15× and let team members update through the app instead of running an installer.
+
+**Estimate:** ~1 week (10 tasks). Test target 322 → ~340.
+
+**Spec:** `docs/superpowers/specs/2026-05-12-v1.2-patch-update-design.md`
+
+---
+
+### v1.3 — Business Process grouping *(formerly v1.2)*
+
+**Status:** spec'd + planned. Ready to dispatch once v1.2 ships.
 
 **What ships:**
 - Replace per-field rows on Review Pending with collapsible Business Process cards
@@ -28,16 +48,18 @@
 - Filter bar above cards: Project, Tower, BP type, SF state, Assigned to, Procedure #, Date range, free-text search
 - `[Open in SF →]` deep link per card using `booking_record_id`
 - Umbrella audit_log entries (`approve_bp` / `reject_bp` / `acknowledge_bp`) for queryable BP-level history
+- **First version distributed AS A PATCH** to v1.2 users — proves the patch system works
 
-**Why:** Real-world smoke-test revealed that one business event (resale) produces 3 separate pending rows at the same timestamp. Reviewing them as a fragmented list loses context and forces mental re-grouping. Also v1.1 doesn't surface SF workflow state — reviewers risk approving while a BP is still mid-process or has a DLD issue.
+**Why:** Real-world smoke-test of v1.1 revealed that one business event (resale) produces 3 separate pending rows at the same timestamp. Reviewing them as a fragmented list loses context and forces mental re-grouping. Also v1.1 doesn't surface SF workflow state — reviewers risk approving while a BP is still mid-process or has a DLD issue.
 
-**Estimate:** ~2 weeks subagent-driven execution. 14 tasks across 4 phases. Test target 322 → ~360.
+**Estimate:** ~2 weeks subagent-driven execution. 14 tasks across 4 phases. Test target ~340 → ~378.
 
-**Plan:** `docs/superpowers/plans/2026-05-12-v1.2-bp-grouping.md`
+**Spec:** `docs/superpowers/specs/2026-05-12-v1.3-bp-grouping-design.md`
+**Plan:** `docs/superpowers/plans/2026-05-12-v1.3-bp-grouping.md`
 
 ---
 
-### v1.3 — DLD drift detection
+### v1.4 — DLD drift detection
 
 **Status:** deferred from v1.1 (scope reduction).
 
@@ -55,7 +77,7 @@
 
 ---
 
-### v1.4 — Audit & compliance hardening
+### v1.5 — Audit & compliance hardening *(formerly v1.4)*
 
 **Status:** not yet designed.
 

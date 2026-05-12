@@ -40,5 +40,10 @@ contextBridge.exposeInMainWorld('dlp', {
   update: {
     check:        () => ipcRenderer.invoke('dlp:update:check'),
     openDownload: (url) => ipcRenderer.invoke('dlp:update:open-download', url)
+  },
+  patch: {
+    probeZip:   (args) => ipcRenderer.invoke('dlp:patch:probe-zip',   args || {}),
+    apply:      (args) => ipcRenderer.invoke('dlp:patch:apply',       args || {}),
+    revertLast: ()     => ipcRenderer.invoke('dlp:patch:revert-last')
   }
 });

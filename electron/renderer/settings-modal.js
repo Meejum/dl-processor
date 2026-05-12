@@ -20,6 +20,10 @@ function initSettingsModal({ getDataFolder, onCheckForUpdates }) {
         <button id="settings-check-updates" class="primary">Check for updates</button>
         <span id="settings-update-status" class="muted"></span>
       </div>
+      <div class="settings-row">
+        <button id="settings-revert-patch">Revert last patch</button>
+        <span id="settings-revert-status" class="muted">Restores the previous app.asar from .bak — used if a patch causes problems.</span>
+      </div>
       <div class="modal-actions">
         <button id="settings-close">Close</button>
       </div>
@@ -55,6 +59,20 @@ function initSettingsModal({ getDataFolder, onCheckForUpdates }) {
     try {
       const result = await onCheckForUpdates();
       statusEl.textContent = (result && result.message) || 'no update info';
+    } catch (e) { statusEl.textContent = 'error: ' + (e && e.message ? e.message : String(e)); }
+  });
+
+  modal.querySelector('#settings-revert-patch').addEventListener('click', async () => {
+    const statusEl = document.getElementById('settings-revert-status');
+    if (!confirm('Revert to the previous app.asar? The app will restart.')) return;
+    statusEl.textContent = 'reverting…';
+    try {
+      const result = await window.dlp.patch.revertLast();
+      if (result && result.ok) {
+        statusEl.textContent = 'Reverting — app will restart momentarily.';
+      } else {
+        statusEl.textContent = (result && result.error) || 'no .bak available — nothing to revert';
+      }
     } catch (e) { statusEl.textContent = 'error: ' + (e && e.message ? e.message : String(e)); }
   });
 

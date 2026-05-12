@@ -172,3 +172,80 @@ body.log-hidden .log-column { display: none; }
 #unit-history-panel .uhp-footer { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
 #unit-history-panel .uhp-deeplink { color: var(--accent); text-decoration: none; font-size: 12px; }
 #unit-history-panel .uhp-deeplink:hover { text-decoration: underline; }
+
+/* Patch update modal — v1.2 Task 6. Renderer-native overlay at body
+   level (NOT an iframe). Mirrors the .modal pattern but with its own
+   id-scoped styles so the layout / states render predictably. */
+#patch-modal {
+  position: fixed; inset: 0; background: rgba(28,20,10,.45);
+  display: flex; align-items: center; justify-content: center; z-index: 300;
+}
+#patch-modal[hidden] { display: none !important; }
+#patch-modal .patch-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 12px; width: 540px; max-width: 92vw; max-height: 88vh;
+  display: flex; flex-direction: column;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.22);
+  font-family: Inter, 'Segoe UI', Tahoma, Arial, sans-serif;
+  color: var(--ink);
+}
+#patch-modal .patch-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px 10px; border-bottom: 1px solid var(--border);
+}
+#patch-modal .patch-head h2 { margin: 0; font-size: 16px; color: var(--accent-dark); font-weight: 700; }
+#patch-modal .patch-close {
+  background: none; border: 0; font-size: 22px; cursor: pointer;
+  color: var(--muted); line-height: 1; padding: 0 4px;
+}
+#patch-modal .patch-close:hover { color: var(--ink); }
+#patch-modal .patch-body { padding: 16px 20px 20px; overflow-y: auto; }
+#patch-modal .patch-intro { margin: 0 0 14px 0; color: var(--ink-2); font-size: 13px; }
+#patch-modal .patch-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+#patch-modal .patch-btn {
+  padding: 7px 16px; border: 1px solid var(--border-2); border-radius: 6px;
+  background: var(--surface); color: var(--ink); cursor: pointer; font: inherit; font-size: 13px;
+}
+#patch-modal .patch-btn:hover { background: var(--accent-soft); }
+#patch-modal .patch-btn-primary {
+  background: var(--accent); color: #fff; border-color: var(--accent-dark);
+}
+#patch-modal .patch-btn-primary:hover { background: var(--accent-dark); }
+#patch-modal .patch-btn:disabled { opacity: 0.55; cursor: not-allowed; }
+#patch-modal .patch-status {
+  display: flex; align-items: center; gap: 12px;
+  padding: 18px 8px; color: var(--ink-2); font-size: 13px;
+}
+#patch-modal .patch-spinner {
+  width: 18px; height: 18px; border: 2px solid var(--accent-soft);
+  border-top-color: var(--accent); border-radius: 50%;
+  animation: patch-spin 0.8s linear infinite; flex: 0 0 auto;
+}
+@keyframes patch-spin { to { transform: rotate(360deg); } }
+#patch-modal .patch-banner {
+  border-radius: 6px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px;
+}
+#patch-modal .patch-banner strong { display: block; margin-bottom: 2px; font-size: 13px; }
+#patch-modal .patch-banner p { margin: 0; font-size: 12px; }
+#patch-modal .patch-banner-ok {
+  background: #E8F1DD; border: 1px solid #B3CC93; color: #34541C;
+}
+#patch-modal .patch-banner-error {
+  background: #FBEAE5; border: 1px solid #E7B5A8; color: #7A2415;
+}
+#patch-modal .patch-meta {
+  display: grid; grid-template-columns: 130px 1fr; gap: 6px 14px;
+  margin: 4px 0 8px; font-size: 12px;
+}
+#patch-modal .patch-meta dt { color: var(--muted); }
+#patch-modal .patch-meta dd { margin: 0; word-break: break-word; color: var(--ink); }
+#patch-modal .patch-sha {
+  display: inline-block; background: var(--surface-2); padding: 2px 5px;
+  border-radius: 3px; font: 11px/1.4 'Consolas','Cascadia Mono',monospace;
+  color: var(--ink-2); word-break: break-all; overflow-wrap: anywhere;
+}
+#patch-modal .patch-notes { white-space: pre-wrap; }
+#patch-modal .patch-warn {
+  margin-top: 10px; padding: 8px 12px; border-radius: 6px;
+  background: #FFF6E0; border: 1px solid #E5C681; color: #6A4A0A; font-size: 12px;
+}
