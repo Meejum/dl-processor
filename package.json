@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node index.js",
     "parse": "node index.js",
-    "test": "node --test \"test/**/*.test.js\"",
+    "test": "node scripts/run-tests.js",
     "start:electron": "electron .",
     "dev:electron": "electron . --enable-logging",
     "dist": "electron-builder --win",
