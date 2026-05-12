@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-labelledby="dl-title">
+  <title id="dl-title">DL-Processor</title>
+  <!--
+    DL monogram inspired by the source bitmap at electron/assets/icon-source.png,
+    redrawn as a clean vector. Two filled silhouettes (D + L) using currentColor,
+    so the same file works on light and dark backgrounds via CSS.
+
+    Geometry:
+      D — flat side at x=10, top/bottom at y=12/88, curved side bulges to x≈80.
+          Inner cutout uses fill-rule="evenodd" so the loop reads as a D.
+      L — vertical bar x=58..72, horizontal foot y=74..88 extending to x=90.
+
+    Exposed as <symbol id="dl"> so other SVGs can reference it via:
+      <svg viewBox="0 0 100 100"><use href="icon.svg#dl"/></svg>
+
+    The standalone <use> at the bottom makes the file ALSO render correctly
+    when opened directly in a browser or used as the document src.
+  -->
+  <symbol id="dl" viewBox="0 0 100 100">
+    <path fill="currentColor" fill-rule="evenodd" d="
+      M 10 12 H 50
+      A 30 38 0 0 1 50 88
+      H 10 Z
+      M 22 24 V 76
+      H 46
+      A 18 26 0 0 0 46 24 Z
+    "/>
+    <path fill="currentColor" d="M 58 12 H 72 V 74 H 90 V 88 H 58 Z"/>
+  </symbol>
+  <use href="#dl"/>
+</svg>

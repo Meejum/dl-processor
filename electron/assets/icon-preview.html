@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8"><title>DL-Processor icon — preview</title>
+<style>
+  body { font-family: Inter, system-ui, sans-serif; padding: 32px; background: #F6F1E9; color: #1f1c17; }
+  .row { display: flex; gap: 32px; align-items: flex-start; flex-wrap: wrap; margin-bottom: 24px; }
+  .col { display: flex; flex-direction: column; gap: 8px; align-items: center; }
+  .swatch { width: 256px; height: 256px; display: flex; align-items: center; justify-content: center; border: 1px solid #d9c9a9; border-radius: 12px; background: white; }
+  .swatch.dark { background: #1f1c17; }
+  .swatch.bronze { background: #5C3D1E; }
+  .swatch.cream { background: #F0E4CE; }
+  .size-row { display: flex; gap: 16px; align-items: center; }
+  .size-row .swatch { width: auto; height: auto; padding: 8px; }
+  h1 { font-size: 18px; margin: 0 0 4px 0; }
+  small { color: #6B5F4B; }
+  .legend { font-size: 13px; color: #5C3D1E; }
+</style>
+</head>
+<body>
+  <h1>DL-Processor icon — preview</h1>
+
+  <div class="row">
+    <div class="col">
+      <div class="swatch"><img src="icon-source.png" width="200" height="200" alt="source PNG"></div>
+      <small>icon-source.png (Sobha)</small>
+    </div>
+    <div class="col">
+      <div class="swatch" style="color:#0F0F0F"><svg viewBox="0 0 100 100" width="200" height="200"><use href="icon.svg#dl"/></svg></div>
+      <small>icon.svg — black on white</small>
+    </div>
+    <div class="col">
+      <div class="swatch dark" style="color:#F0E4CE"><svg viewBox="0 0 100 100" width="200" height="200"><use href="icon.svg#dl"/></svg></div>
+      <small>cream on near-black</small>
+    </div>
+    <div class="col">
+      <div class="swatch bronze" style="color:#F0E4CE"><svg viewBox="0 0 100 100" width="200" height="200"><use href="icon.svg#dl"/></svg></div>
+      <small>cream on Sobha bronze</small>
+    </div>
+    <div class="col">
+      <div class="swatch cream" style="color:#5C3D1E"><svg viewBox="0 0 100 100" width="200" height="200"><use href="icon.svg#dl"/></svg></div>
+      <small>bronze on cream</small>
+    </div>
+  </div>
+
+  <div class="legend">SVG redrawn from the source bitmap as a clean two-shape monogram (D + L), 100×100 viewBox, `currentColor` so any CSS color works.</div>
+
+  <h1 style="margin-top:32px">Scaled-down preview (taskbar / installer sizes)</h1>
+  <div class="size-row">
+    <div class="col"><div class="swatch" style="color:#0F0F0F; width:auto; height:auto; padding:4px"><svg viewBox="0 0 100 100" width="16"  height="16"><use href="icon.svg#dl"/></svg></div><small>16</small></div>
+    <div class="col"><div class="swatch" style="color:#0F0F0F; width:auto; height:auto; padding:4px"><svg viewBox="0 0 100 100" width="24"  height="24"><use href="icon.svg#dl"/></svg></div><small>24</small></div>
+    <div class="col"><div class="swatch" style="color:#0F0F0F; width:auto; height:auto; padding:4px"><svg viewBox="0 0 100 100" width="32"  height="32"><use href="icon.svg#dl"/></svg></div><small>32</small></div>
+    <div class="col"><div class="swatch" style="color:#0F0F0F; width:auto; height:auto; padding:4px"><svg viewBox="0 0 100 100" width="48"  height="48"><use href="icon.svg#dl"/></svg></div><small>48</small></div>
+    <div class="col"><div class="swatch" style="color:#0F0F0F; width:auto; height:auto; padding:4px"><svg viewBox="0 0 100 100" width="64"  height="64"><use href="icon.svg#dl"/></svg></div><small>64</small></div>
+    <div class="col"><div class="swatch" style="color:#0F0F0F; width:auto; height:auto; padding:4px"><svg viewBox="0 0 100 100" width="128" height="128"><use href="icon.svg#dl"/></svg></div><small>128</small></div>
+  </div>
+</body></html>
