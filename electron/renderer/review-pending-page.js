@@ -8,8 +8,8 @@
 //     both iframes share the same origin under webSecurity: false).
 //   - No external CSS/JS files — everything is inline, mirroring the
 //     buildStatusPage / buildApplyPendingPage pattern in app.js.
-//   - Task 10 ships the "Needs review" tab fully functional. The "Drift log"
-//     tab is rendered as a placeholder; Task 11 will fill it in.
+//   - Task 10 ships the "Needs review" tab fully functional. Task 11 fills in
+//     the "Drift log" tab as a read-only view of decision='auto_applied' rows.
 
 (function() {
 
@@ -108,6 +108,11 @@
     .rp-table td.rp-old, .rp-table td.rp-proposed { font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px; word-break: break-all; }
     .rp-table td.rp-unit  { font-weight: 600; }
     .rp-table td.rp-project { color: var(--ink-2); }
+    .rp-table td.rp-when { font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px; color: var(--ink-2); white-space: nowrap; }
+    .rp-unit-link { display: inline-flex; flex-direction: column; gap: 1px; color: inherit; text-decoration: none; cursor: pointer; }
+    .rp-unit-link:hover .rp-unit { text-decoration: underline; color: var(--accent-dark); }
+    .rp-unit-link .rp-unit { font-weight: 600; color: var(--ink); }
+    .rp-unit-link .rp-project-sub { font-size: 10px; color: var(--muted); }
 
     .rp-edit { width: 160px; padding: 4px 6px; border: 1px solid var(--border-2); border-radius: 4px; font: inherit; font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px; background: var(--surface); }
     .rp-edit:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
@@ -274,11 +279,101 @@
         wireRowHandlers();
       }
 
+      function fmtWhen(s) {
+        if (!s) return '';
+        // decided_at is sqlite "YYYY-MM-DD HH:MM:SS" UTC. Show YYYY-MM-DD HH:MM
+        // in local time so it lines up with what the user just did.
+        const d = new Date(String(s).replace(' ', 'T') + 'Z');
+        if (isNaN(d.getTime())) return String(s);
+        const pad = (n) => (n < 10 ? '0' + n : '' + n);
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+               ' ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+      }
+
+      function fmtSource(changeType) {
+        if (changeType === 'DLD_DRIFT') return 'DLD import';
+        if (changeType === 'SF_DRIFT')  return 'SF import';
+        return changeType || '';
+      }
+
+      function driftRows() {
+        const rows = visibleRows().filter(r => r.decision === 'auto_applied');
+        // Most-recent decided_at first; nulls last.
+        rows.sort((a, b) => {
+          const ad = a.decided_at || '';
+          const bd = b.decided_at || '';
+          if (ad === bd) return 0;
+          if (!ad) return 1;
+          if (!bd) return -1;
+          return bd.localeCompare(ad);
+        });
+        return rows;
+      }
+
+      function driftRowHtml(r) {
+        return [
+          '<tr data-change-id="' + r.change_id + '" data-project-id="' + r.project_id + '" data-unit="' + esc(r.unit_number_norm) + '">',
+            '<td class="rp-when">', esc(fmtWhen(r.decided_at)), '</td>',
+            '<td class="rp-unit-cell">',
+              '<a href="#" class="rp-unit-link" data-role="open-history">',
+                '<span class="rp-unit">', esc(r.unit_number_norm), '</span>',
+                '<span class="rp-project-sub">', esc(r.project_name), '</span>',
+              '</a>',
+            '</td>',
+            '<td>', esc(fmtField(r.field_name)), '</td>',
+            '<td class="rp-old">', esc(r.old_value), '</td>',
+            '<td class="rp-proposed">', esc(r.proposed_value), '</td>',
+            '<td><span class="rp-change-type rp-ct-', esc(r.change_type), '">', esc(fmtSource(r.change_type)), '</span></td>',
+          '</tr>'
+        ].join('');
+      }
+
       function renderDrift() {
-        contentEl.innerHTML =
-          '<div class="rp-empty"><strong>Drift log — coming in Task 11</strong>' +
-          'Auto-applied DLD-drift rows will be reviewable here. For now, run a SQL query against pending_change WHERE decision = \\'auto_applied\\' if you need to inspect them.' +
-          '</div>';
+        const rows = driftRows();
+        if (rows.length === 0) {
+          contentEl.innerHTML =
+            '<div class="rp-empty"><strong>Drift log is empty</strong>' +
+            'No drift entries — every import matched the previous snapshot.' +
+            '</div>';
+          return;
+        }
+        const MAX = 200;
+        const shown = rows.slice(0, MAX);
+        const overflow = rows.length - shown.length;
+        const html = [
+          '<table class="rp-table"><thead><tr>',
+            '<th>When</th><th>Unit</th><th>Field</th>',
+            '<th>Old</th><th>New</th><th>Source</th>',
+          '</tr></thead><tbody id="rp-drift-tbody">',
+          shown.map(driftRowHtml).join(''),
+          '</tbody></table>',
+          overflow > 0
+            ? '<div class="footer">Showing ' + shown.length + ' of ' + rows.length + ' rows (' + overflow + ' more not shown).</div>'
+            : ''
+        ].join('');
+        contentEl.innerHTML = html;
+        wireDriftHandlers();
+      }
+
+      function wireDriftHandlers() {
+        const tbody = document.getElementById('rp-drift-tbody');
+        if (!tbody) return;
+        tbody.addEventListener('click', (ev) => {
+          const link = ev.target.closest('a[data-role="open-history"]');
+          if (!link) return;
+          ev.preventDefault();
+          const tr = link.closest('tr');
+          if (!tr) return;
+          const projectId = Number(tr.getAttribute('data-project-id'));
+          const unit      = tr.getAttribute('data-unit');
+          const opener = window.parent && window.parent.__openUnitHistoryPanel;
+          if (typeof opener === 'function') {
+            try { opener(projectId, unit); }
+            catch (e) { setStatus('Could not open unit history: ' + (e && e.message ? e.message : String(e)), 'error'); }
+          } else {
+            setStatus('Unit history panel not available yet (Task 12).', 'error');
+          }
+        });
       }
 
       function render() {
@@ -437,6 +532,7 @@
       projectSel.addEventListener('change', () => {
         projectFilter = projectSel.value;
         if (activeTab === 'needs_review') renderNeedsReview();
+        else                              renderDrift();
         updateNeedsBadge();
       });
 
