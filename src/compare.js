@@ -5,6 +5,46 @@ const { getOverridesMapForProject } = require('./overrides');
 const { BANK_PREFIX_RE } = require('./common');
 const { SOBHA_STYLE_CSS, brandBar } = require('./html-styles');
 const { renderDldBuyersCell, renderSfApplicantsCell, BUYER_CELLS_CSS } = require('./buyer-cells');
+const { normalizeName } = require('./normalize-name');
+const { lookupAlias }   = require('./alias-lookup');
+
+// Apply per-token alias substitution against buyer_alias (project-scoped beats
+// global). Used so a learned alias like (variant='algumlasi', canonical='alghumlasi')
+// resolves 'ali algumlasi' → 'ali alghumlasi' even though the full string isn't
+// in buyer_alias.
+function applyAliasTokens(db, projectId, normName) {
+  if (!normName) return normName;
+  const tokens = normName.split(' ');
+  let changed = false;
+  for (let i = 0; i < tokens.length; i++) {
+    const t = tokens[i];
+    if (!t) continue;
+    const canonical = lookupAlias(db, projectId, t);
+    if (canonical && canonical !== t) {
+      tokens[i] = canonical;
+      changed = true;
+    }
+  }
+  return changed ? tokens.join(' ') : normName;
+}
+
+// Decides MATCH vs BUYER_MISMATCH after applying both built-in normalization
+// and any learned project-scoped or global aliases. Returns a status plus
+// the two normalized forms for downstream callers that want to surface them.
+function resolveBuyerComparison(db, projectId, dldRaw, sfRaw) {
+  const dldNorm = normalizeName(dldRaw);
+  const sfNorm  = normalizeName(sfRaw);
+  if (dldNorm === sfNorm) return { status: 'MATCH', dldNorm, sfNorm };
+  // Try whole-string alias resolution in both directions.
+  if (lookupAlias(db, projectId, dldNorm) === sfNorm) return { status: 'MATCH', dldNorm, sfNorm };
+  if (lookupAlias(db, projectId, sfNorm) === dldNorm) return { status: 'MATCH', dldNorm, sfNorm };
+  // Fall back to per-token alias substitution so single-token learned aliases
+  // (e.g. 'algumlasi' → 'alghumlasi') still absorb the diff in multi-token names.
+  const dldAlias = applyAliasTokens(db, projectId, dldNorm);
+  const sfAlias  = applyAliasTokens(db, projectId, sfNorm);
+  if (dldAlias === sfAlias) return { status: 'MATCH', dldNorm, sfNorm };
+  return { status: 'BUYER_MISMATCH', dldNorm, sfNorm };
+}
 
 function csvEscape(v) {
   if (v == null) return '';
@@ -315,7 +355,7 @@ function priceTag(delta) {
   return `${sign}${pct}% (${sign}${aed})`;
 }
 
-function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer, canonicalBuyer = null) {
+function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer, canonicalBuyer = null, db = null, projectId = null) {
   if (!sfRow) return {
     status: 'DLD_ONLY',
     reasons: ['no SF'],
@@ -384,10 +424,33 @@ function classifyMatch(dldUnit, dldTxs, sfRow, overrideBuyer, canonicalBuyer = n
   const reasons = [];
 
   if (nameState === 'mismatch') {
-    if (priceMeaningful) reasons.push('buyer ' + priceTag(delta));
-    else                 reasons.push('buyer');
-    if (usedOverride) reasons.push('override');
-    return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField, flags };
+    // Alias-aware second pass: normalize both sides and consult buyer_alias
+    // (project-scoped beats global). If any DLD x SF pair resolves to MATCH
+    // via the resolver, flip nameState before returning BUYER_MISMATCH. This
+    // absorbs known transliteration variants (built-in map) and learned
+    // project-scoped aliases without disturbing the existing token-overlap
+    // matching path above.
+    if (db && projectId) {
+      let aliasMatch = false;
+      outer: for (const d of dldNamesForMatch) {
+        if (!d) continue;
+        for (const s of sfApplicants) {
+          if (!s || !s.name) continue;
+          const r = resolveBuyerComparison(db, projectId, d, s.name);
+          if (r.status === 'MATCH') { aliasMatch = true; break outer; }
+        }
+      }
+      if (aliasMatch) {
+        nameState = 'match';
+        flags.push('ALIAS');
+      }
+    }
+    if (nameState !== 'match') {
+      if (priceMeaningful) reasons.push('buyer ' + priceTag(delta));
+      else                 reasons.push('buyer');
+      if (usedOverride) reasons.push('override');
+      return { status: 'BUYER_MISMATCH', reasons, priceDelta: delta, nameState, usedOverride, matchedApplicantField, flags };
+    }
   }
 
   if (priceMeaningful) {
@@ -433,6 +496,15 @@ function compareProject(db, projectId, cachedConfig) {
   if (!dldSnap) return { project, status: 'no-dld-snapshot', rows: [] };
   const sfSnap  = getLatestSfSnapshot(db);
   if (!sfSnap)  return { project, status: 'no-sf-snapshot', rows: [] };
+
+  // Drift detection: compare the just-resolved snapshots against their
+  // immediate predecessors and emit DLD_DRIFT / SF_DRIFT pending_change rows
+  // + auto_apply audit_log entries. Both calls are safe no-ops when there is
+  // no prior snapshot to diff against. DLD side is a documented stub (v1.2);
+  // SF side does real work.
+  const { detectDrift } = require('./compare-drift');
+  detectDrift(db, projectId, dldSnap.snapshot_id, 'dld');
+  if (sfSnap.sf_snapshot_id) detectDrift(db, projectId, sfSnap.sf_snapshot_id, 'sf');
 
   const dldUnits = getUnitsForSnapshot(db, dldSnap.snapshot_id);
 
@@ -563,7 +635,7 @@ function compareProject(db, projectId, cachedConfig) {
 
     const overrideBuyer = overrideMap.get(u.unit_number_norm) || null;
     const canonicalBuyer = masterRow?.buyer_name || null;
-    const cls = classifyMatch(u, dldTxs, sfRow, overrideBuyer, canonicalBuyer);
+    const cls = classifyMatch(u, dldTxs, sfRow, overrideBuyer, canonicalBuyer, db, projectId);
     if (matchedViaBuyer) cls.reasons = (cls.reasons || []).concat(['plot match']);
     if (sfRow) matchedSfUnits.add(sfRow.unit_norm);
 
@@ -1048,4 +1120,4 @@ function writeAuditTasks(outPath, project, rows) {
   return tasks;
 }
 
-module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty, collectDldBuyers, collectSfApplicants, classifyMatchPublic: classifyMatch };
+module.exports = { compareProject, summarize, writeCompareCsv, writeCompareHtml, writeAuditTasks, namesOverlap, findMatchingApplicant, SF_APPLICANT_FIELDS, computeAreaSignal, pickLatestPurchase, findLatestNonBankParty, collectDldBuyers, collectSfApplicants, classifyMatchPublic: classifyMatch, resolveBuyerComparison };
