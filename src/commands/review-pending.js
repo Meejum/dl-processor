@@ -1,93 +1,128 @@
-const fs   = require('fs');
-const path = require('path');
-const { listPending } = require('../pending-change');
-const { generateApproveHtml } = require('../approve-html');
-const { loadAutoApproveConfig } = require('../auto-approve');
-const { lookupSfUnit } = require('../sf-lookup');
-const { openFile } = require('../open-file');
-const { getMasterRow } = require('../master-data');
-const { openDb, OUTPUT_DIR, CSV_DIR } = require('./shared');
+const { openDb } = require('./shared');
+const { writeAuditLog } = require('../audit-log');
+const { MASTER_DATA_PROVENANCE } = require('../audit-fields');
+const { normalizeName } = require('../normalize-name');
 
-function cmdReviewPending(filterProjectName) {
-  const db = openDb();
-  const rows = listPending(db, filterProjectName);
-  if (rows.length === 0) {
-    console.log('  no pending changes');
-    db.close();
-    return;
-  }
-  // Group counts for terminal output.
-  const byProject = new Map();
-  for (const r of rows) {
-    if (!byProject.has(r.project_name)) byProject.set(r.project_name, { total: 0, byField: {} });
-    const slot = byProject.get(r.project_name);
-    slot.total += 1;
-    slot.byField[r.field_name] = (slot.byField[r.field_name] || 0) + 1;
-  }
-  console.log('  pending changes:');
-  for (const [name, slot] of byProject) {
-    const fields = Object.entries(slot.byField).map(([k, v]) => v + ' ' + k.replace('buyer_name', 'buyer').replace('purchase_price_aed', 'price').replace('procedure_number', 'procedure').replace('area_sqm', 'area')).join(', ');
-    console.log('    ' + name + ': ' + slot.total + ' (' + fields + ')');
-  }
-  console.log('  TOTAL: ' + rows.length + ' pending across ' + byProject.size + ' project' + (byProject.size === 1 ? '' : 's'));
-
-  // Enrich rows with SF unit, applicant, price, and current master_data buyer.
-  for (const r of rows) {
-    const sf = lookupSfUnit(db, r.project_id, r.unit_number_norm);
-    r.sf_unit      = sf ? sf.sf_unit      : null;
-    r.sf_applicant = sf ? sf.sf_applicant : null;
-    r.sf_price     = sf ? sf.sf_price     : null;
-    const masterRow = getMasterRow(db, r.project_id, r.unit_number_norm);
-    r.current_buyer = masterRow ? masterRow.buyer_name : null;
-  }
-
-  fs.mkdirSync(CSV_DIR(), { recursive: true });
-  const outPath = path.join(CSV_DIR(), 'pending-changes.csv');
-  const header = ['change_id', 'project_name', 'unit', 'field', 'old_value', 'proposed_value', 'applied_value', 'source_snapshot_date', 'proposed_at', 'decision', 'notes'];
-  const lines = [header.join(',')];
-  for (const r of rows) {
-    lines.push(header.map(h => {
-      const v = h === 'project_name' ? r.project_name :
-                h === 'unit' ? r.unit_number_norm :
-                h === 'field' ? r.field_name :
-                h === 'source_snapshot_date' ? (r.source_snapshot_date || '') :
-                h === 'decision' ? 'pending' :
-                h === 'notes' ? '' :
-                h === 'applied_value' ? '' :   // initial CSV has no override; staff fill in via HTML or edit
-                r[h] == null ? '' : r[h];
-      const s = String(v);
-      return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-    }).join(','));
-  }
-  // Excel locks files while open. If pending-changes.csv is locked from a
-  // prior run, write to a timestamped fallback so we don't crash the command
-  // (the HTML is the primary surface anyway).
-  let csvWrittenPath = outPath;
-  const csvBody = lines.join('\r\n') + '\r\n';
-  try {
-    fs.writeFileSync(outPath, csvBody, 'utf8');
-  } catch (e) {
-    if (e.code === 'EBUSY' || e.code === 'EPERM') {
-      const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 16);
-      csvWrittenPath = path.join(CSV_DIR(), 'pending-changes-' + stamp + '.csv');
-      fs.writeFileSync(csvWrittenPath, csvBody, 'utf8');
-      console.log('  (pending-changes.csv was locked — close Excel; wrote fallback)');
-    } else {
-      throw e;
-    }
-  }
-  console.log('  wrote: ' + path.relative(process.cwd(), csvWrittenPath));
-  const htmlPath = path.join(OUTPUT_DIR(), 'approve-pending.html');
-  const tolerances = loadAutoApproveConfig();
-  generateApproveHtml(rows, tolerances, htmlPath);
-  console.log('  wrote: ' + path.relative(process.cwd(), htmlPath));
-  try {
-    openFile(htmlPath);
-    console.log('  opened in browser');
-  } catch (e) {
-    console.log('  (could not auto-open: ' + e.message + ')');
-  }
-  db.close();
+function listPending(db, { tab = 'needs_review', projectId = null, typeFilter = null } = {}) {
+  const where = [];
+  const params = [];
+  if (tab === 'needs_review') where.push("decision = 'pending'");
+  else                        where.push("decision = 'auto_applied'");
+  if (projectId) { where.push("project_id = ?"); params.push(projectId); }
+  if (typeFilter) { where.push("change_type = ?"); params.push(typeFilter); }
+  const sql = `
+    SELECT pc.change_id, pc.project_id, dp.project_name, pc.unit_number_norm,
+           pc.field_name, pc.old_value, pc.proposed_value, pc.override_value,
+           pc.change_type, pc.decision, pc.decided_at, pc.proposed_at
+    FROM pending_change pc
+    JOIN dld_project dp ON dp.project_id = pc.project_id
+    WHERE ${where.join(' AND ')}
+    ORDER BY pc.project_id, pc.unit_number_norm, pc.field_name
+  `;
+  return db.prepare(sql).all(...params);
 }
 
-module.exports = { cmdReviewPending };
+function applyToMasterData(db, projectId, unitNumberNorm, fieldName, value) {
+  const prov = MASTER_DATA_PROVENANCE[fieldName];
+  if (!prov) throw new Error('unknown field: ' + fieldName);
+  const sql = `
+    UPDATE master_data
+    SET ${fieldName} = ?, ${prov.source} = 'dld_approved', ${prov.decidedAt} = datetime('now'),
+        updated_at = datetime('now')
+    WHERE project_id = ? AND unit_number_norm = ?
+  `;
+  db.prepare(sql).run(value, projectId, unitNumberNorm);
+}
+
+function approvePending(db, changeId, override = null) {
+  const tx = db.transaction(() => {
+    const row = db.prepare("SELECT * FROM pending_change WHERE change_id = ?").get(changeId);
+    if (!row) throw new Error('pending_change not found: ' + changeId);
+    const finalValue = override == null ? row.proposed_value : String(override);
+    applyToMasterData(db, row.project_id, row.unit_number_norm, row.field_name, finalValue);
+    db.prepare(`
+      UPDATE pending_change
+      SET decision = 'approved', decided_at = datetime('now'), override_value = ?
+      WHERE change_id = ?
+    `).run(override == null ? null : String(override), changeId);
+    writeAuditLog(db, {
+      projectId: row.project_id, unitNumberNorm: row.unit_number_norm,
+      tableName: 'master_data', field: row.field_name,
+      oldValue: row.old_value, newValue: finalValue,
+      action: override == null ? 'approve' : 'override',
+      source: 'review_pending', changeId
+    });
+  });
+  tx();
+}
+
+function rejectPending(db, changeId) {
+  const tx = db.transaction(() => {
+    const row = db.prepare("SELECT * FROM pending_change WHERE change_id = ?").get(changeId);
+    if (!row) throw new Error('pending_change not found: ' + changeId);
+    db.prepare("UPDATE pending_change SET decision = 'rejected', decided_at = datetime('now') WHERE change_id = ?").run(changeId);
+    writeAuditLog(db, {
+      projectId: row.project_id, unitNumberNorm: row.unit_number_norm,
+      tableName: 'master_data', field: row.field_name,
+      oldValue: row.old_value, newValue: null,
+      action: 'reject', source: 'review_pending', changeId
+    });
+  });
+  tx();
+}
+
+function teachAliasAndApprove(db, changeId, { scope = 'project' } = {}) {
+  const tx = db.transaction(() => {
+    const row = db.prepare("SELECT * FROM pending_change WHERE change_id = ?").get(changeId);
+    if (!row) throw new Error('pending_change not found: ' + changeId);
+    if (row.field_name !== 'buyer_name') throw new Error('teach-alias only for buyer_name rows');
+
+    const variantNorm   = normalizeName(row.proposed_value);
+    const canonicalNorm = normalizeName(row.old_value);
+    const display       = row.old_value;
+
+    const aliasProjectId = scope === 'global' ? null : row.project_id;
+    db.prepare(`
+      INSERT INTO buyer_alias (project_id, variant, canonical, display, created_by)
+      VALUES (?, ?, ?, ?, 'user')
+      ON CONFLICT(project_id, variant) DO UPDATE SET canonical = excluded.canonical, display = excluded.display
+    `).run(aliasProjectId, variantNorm, canonicalNorm, display);
+
+    writeAuditLog(db, {
+      projectId: row.project_id, unitNumberNorm: null,
+      tableName: 'buyer_alias', field: 'variant',
+      oldValue: null, newValue: variantNorm + ' → ' + canonicalNorm,
+      action: 'learn_alias', source: 'review_pending', changeId
+    });
+
+    // Find every other pending buyer_name row in this project whose normalized
+    // forms now resolve to MATCH. Approve them (keeping their existing master_data).
+    const sibs = db.prepare(`
+      SELECT change_id, old_value, proposed_value
+      FROM pending_change
+      WHERE project_id = ? AND field_name = 'buyer_name' AND decision = 'pending'
+    `).all(row.project_id);
+    for (const s of sibs) {
+      const sv = normalizeName(s.proposed_value);
+      const sc = normalizeName(s.old_value);
+      if (sv === variantNorm && sc === canonicalNorm) {
+        // For sibling auto-approve we keep the existing master_data value (treat
+        // the alias as absorbing the diff). Approve action = 'approve' (no override).
+        approvePending(db, s.change_id);
+      }
+    }
+  });
+  tx();
+}
+
+// New cmdReviewPending no longer writes HTML+CSV — it just exits with a hint
+// to use the Electron Review Pending page.
+function cmdReviewPending() {
+  console.log('  Review Pending now opens inline in the desktop app.');
+  console.log('  Run from the DL-Processor app sidebar: 5. Review pending');
+}
+
+module.exports = {
+  cmdReviewPending,
+  listPending, approvePending, rejectPending, teachAliasAndApprove
+};

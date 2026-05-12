@@ -9,6 +9,12 @@ contextBridge.exposeInMainWorld('dlp', {
   pickOpenMulti: (opts) => ipcRenderer.invoke('dlp:pick:open-multi', opts || {}),
   getDataFolder: () => ipcRenderer.invoke('dlp:data-folder'),
   projects: { list: () => ipcRenderer.invoke('dlp:projects:list') },
+  review: {
+    list:       (opts) => ipcRenderer.invoke('dlp:review:list', opts || {}),
+    approve:    (args) => ipcRenderer.invoke('dlp:review:approve', args),
+    reject:     (args) => ipcRenderer.invoke('dlp:review:reject', args),
+    teachAlias: (args) => ipcRenderer.invoke('dlp:review:teach-alias', args)
+  },
   shell:    { showInFolder: (p) => ipcRenderer.invoke('dlp:shell:show-in-folder', p) },
   onLog: (handler) => {
     const listener = (_event, payload) => handler(payload);

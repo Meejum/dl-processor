@@ -227,6 +227,24 @@ app.whenReady().then(async () => {
     shell.openPath(folder);
   });
 
+  // ── Review Pending IPC ────────────────────────────────────────────────
+  // The handlers open the DB in-process (Electron's Node 18, ABI 119) via
+  // src/commands/shared.openDb, which returns better-sqlite3 — the same
+  // binary the test runner uses. Each call opens + closes the DB so we
+  // don't hold a long-lived handle across renderer hot reloads.
+  const reviewCmds = require('../src/commands/review-pending');
+
+  function withDb(fn) {
+    const { openDb } = require('../src/commands/shared');
+    const db = openDb();
+    try { return fn(db); } finally { db.close(); }
+  }
+
+  ipcMain.handle('dlp:review:list',        (e, opts)                           => withDb(db => reviewCmds.listPending(db, opts || {})));
+  ipcMain.handle('dlp:review:approve',     (e, { changeId, override = null }) => withDb(db => reviewCmds.approvePending(db, changeId, override)));
+  ipcMain.handle('dlp:review:reject',      (e, { changeId })                  => withDb(db => reviewCmds.rejectPending(db, changeId)));
+  ipcMain.handle('dlp:review:teach-alias', (e, { changeId, scope })           => withDb(db => reviewCmds.teachAliasAndApprove(db, changeId, { scope })));
+
   ipcMain.handle('dlp:update:check', async () => {
     return await checkForUpdates({
       currentVersion: app.getVersion(),

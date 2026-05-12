@@ -454,6 +454,19 @@
       'all':            'Dashboard'
     };
 
+    // Task 10: hijack the "Review pending" sidebar button so it opens the
+    // new inline page instead of running the legacy CLI command + opening
+    // the HTML file. Use capture phase so we run BEFORE sidebar.js's own
+    // click handler. stopImmediatePropagation prevents the CLI run().
+    const reviewBtn = document.querySelector('.cmd-btn[data-cmd="review-pending"]');
+    if (reviewBtn && window.__buildReviewPendingPage) {
+      reviewBtn.addEventListener('click', (ev) => {
+        ev.stopImmediatePropagation();
+        const { html } = window.__buildReviewPendingPage();
+        window.__tabHost.open({ srcdoc: html, title: 'Review pending' });
+      }, true);
+    }
+
     // Non-CLI sidebar actions — buttons that just open a tab, show a
     // file picker before running a CLI command, or call shell.showInFolder.
     for (const btn of document.querySelectorAll('.cmd-btn[data-action]')) {
