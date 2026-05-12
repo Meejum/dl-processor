@@ -467,15 +467,29 @@
       }, true);
     }
 
+    // Task 13: open the History page in a tab. Used by the sidebar
+    // 📜 History button and by the dlp:open-history custom event the
+    // per-unit side panel's "View in global History →" link dispatches.
+    function openHistoryTab(initialFilters) {
+      if (!window.__buildHistoryPage) {
+        console.error('[history] __buildHistoryPage not available');
+        return;
+      }
+      const { html } = window.__buildHistoryPage(initialFilters || {});
+      window.__tabHost.open({ srcdoc: html, title: 'History' });
+    }
+
+    document.addEventListener('dlp:open-history', (ev) => {
+      openHistoryTab((ev && ev.detail) || {});
+    });
+
     // Non-CLI sidebar actions — buttons that just open a tab, show a
     // file picker before running a CLI command, or call shell.showInFolder.
     for (const btn of document.querySelectorAll('.cmd-btn[data-action]')) {
       btn.addEventListener('click', async () => {
         const action = btn.dataset.action;
         if (action === 'open-history') {
-          // Task 13 will replace this stub with a real History page.
-          const srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>History</title></head><body style="margin:0;font-family:Inter,Segoe UI,Tahoma,sans-serif;background:#F6F1E9;color:#1F1A14"><p style="padding:24px">History page coming in Task 13.</p></body></html>';
-          window.__tabHost.open({ srcdoc, title: 'History' });
+          openHistoryTab({});
           return;
         }
         if (action === 'open-dashboard' && currentDataFolder) {

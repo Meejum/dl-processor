@@ -4,7 +4,7 @@ const Database = require('better-sqlite3');
 const fs = require('fs');
 const path = require('path');
 const { runMigrations } = require('../../src/migrations');
-const { unitHistory } = require('../../src/commands/audit-query');
+const { unitHistory, globalHistory } = require('../../src/commands/audit-query');
 
 function freshDb() {
   const db = new Database(':memory:');
@@ -45,4 +45,37 @@ test('unitHistory returns current=null when master_data has no row', () => {
   const out = unitHistory(db, { projectId: 1, unitNumberNorm: '999' });
   assert.equal(out.current, null);
   assert.deepEqual(out.events, []);
+});
+
+test('globalHistory filters by date range', () => {
+  const db = freshDb();
+  const ins = db.prepare(`INSERT INTO audit_log (project_id, unit_number_norm, table_name, field, action, source, ts)
+                          VALUES (1, '101', 'master_data', 'price', 'approve', 'review_pending', ?)`);
+  ins.run('2026-01-01 10:00:00');
+  ins.run('2026-05-01 10:00:00');
+  const out = globalHistory(db, { fromTs: '2026-04-01 00:00:00' });
+  assert.equal(out.length, 1);
+});
+
+test('globalHistory filters by project + action', () => {
+  const db = freshDb();
+  db.prepare("INSERT INTO dld_project (project_id, project_name) VALUES (2, 'B')").run();
+  db.prepare(`INSERT INTO audit_log (project_id, unit_number_norm, table_name, field, action, source)
+              VALUES (1, '101', 'master_data', 'price', 'approve', 'review_pending')`).run();
+  db.prepare(`INSERT INTO audit_log (project_id, unit_number_norm, table_name, field, action, source)
+              VALUES (2, '201', 'master_data', 'price', 'override', 'review_pending')`).run();
+  assert.equal(globalHistory(db, { projectId: 1 }).length, 1);
+  assert.equal(globalHistory(db, { action: 'override' }).length, 1);
+});
+
+test('globalHistory paginates', () => {
+  const db = freshDb();
+  for (let i = 0; i < 150; i++) {
+    db.prepare(`INSERT INTO audit_log (project_id, unit_number_norm, table_name, field, action, source)
+                VALUES (1, ?, 'master_data', 'price', 'approve', 'review_pending')`).run(String(i));
+  }
+  const p1 = globalHistory(db, { limit: 100, offset: 0 });
+  const p2 = globalHistory(db, { limit: 100, offset: 100 });
+  assert.equal(p1.length, 100);
+  assert.equal(p2.length, 50);
 });

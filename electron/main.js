@@ -251,6 +251,29 @@ app.whenReady().then(async () => {
   // even if the renderer disconnects mid-call.
   const auditQuery = require('../src/commands/audit-query');
   ipcMain.handle('dlp:audit:unit-history', (e, args) => withDb(db => auditQuery.unitHistory(db, args || {})));
+  ipcMain.handle('dlp:audit:global', (e, opts) => withDb(db => auditQuery.globalHistory(db, opts || {})));
+  ipcMain.handle('dlp:audit:export-csv', async (e, opts) => {
+    const rows = withDb(db => auditQuery.globalHistory(db, Object.assign({}, opts || {}, { limit: 1000000, offset: 0 })));
+    const cols = ['ts','project_name','unit_number_norm','table_name','field','old_value','new_value','action','source','change_id','user_note'];
+    const lines = [cols.join(',')];
+    for (const r of rows) {
+      lines.push(cols.map(c => csvEscape(r[c])).join(','));
+    }
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export audit log',
+      defaultPath: 'audit-log-' + new Date().toISOString().slice(0, 16).replace(/[:T-]/g, '') + '.csv',
+      filters: [{ name: 'CSV', extensions: ['csv'] }]
+    });
+    if (result.canceled || !result.filePath) return null;
+    fs.writeFileSync(result.filePath, lines.join('\n'), 'utf8');
+    return result.filePath;
+  });
+
+  function csvEscape(v) {
+    if (v == null) return '';
+    const s = String(v);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
 
   ipcMain.handle('dlp:update:check', async () => {
     return await checkForUpdates({

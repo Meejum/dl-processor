@@ -20,4 +20,26 @@ function unitHistory(db, { projectId, unitNumberNorm }) {
   return { current, events };
 }
 
-module.exports = { unitHistory };
+function globalHistory(db, opts = {}) {
+  const { fromTs = null, toTs = null, projectId = null, action = null,
+          source = null, unitNumberNorm = null, limit = 100, offset = 0 } = opts;
+  const where = [];
+  const params = [];
+  if (fromTs)         { where.push('al.ts >= ?');               params.push(fromTs); }
+  if (toTs)           { where.push('al.ts <= ?');               params.push(toTs); }
+  if (projectId)      { where.push('al.project_id = ?');        params.push(projectId); }
+  if (action)         { where.push('al.action = ?');            params.push(action); }
+  if (source)         { where.push('al.source = ?');            params.push(source); }
+  if (unitNumberNorm) { where.push('al.unit_number_norm = ?');  params.push(unitNumberNorm); }
+  const whereSql = where.length ? 'WHERE ' + where.join(' AND ') : '';
+  return db.prepare(`
+    SELECT al.*, dp.project_name
+    FROM audit_log al
+    LEFT JOIN dld_project dp ON dp.project_id = al.project_id
+    ${whereSql}
+    ORDER BY al.ts DESC, al.audit_id DESC
+    LIMIT ? OFFSET ?
+  `).all(...params, limit, offset);
+}
+
+module.exports = { unitHistory, globalHistory };

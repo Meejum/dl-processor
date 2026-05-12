@@ -16,7 +16,9 @@ contextBridge.exposeInMainWorld('dlp', {
     teachAlias: (args) => ipcRenderer.invoke('dlp:review:teach-alias', args)
   },
   audit: {
-    unitHistory: (args) => ipcRenderer.invoke('dlp:audit:unit-history', args)
+    unitHistory: (args) => ipcRenderer.invoke('dlp:audit:unit-history', args),
+    global:      (opts) => ipcRenderer.invoke('dlp:audit:global', opts || {}),
+    exportCsv:   (opts) => ipcRenderer.invoke('dlp:audit:export-csv', opts || {})
   },
   shell:    { showInFolder: (p) => ipcRenderer.invoke('dlp:shell:show-in-folder', p) },
   onLog: (handler) => {
