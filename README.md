@@ -4,6 +4,13 @@
 
 Each month Registrations exports a DLD "Project Inquiry" report per project and needs to find where Salesforce is out-of-date: resales the DLD caught but SF didn't, price amendments, unbooked units, mortgages logged as buyers, etc. DL-Processor imports the DLD files, imports Salesforce, matches them at the unit level and produces per-project HTML dashboards and audit-task CSVs.
 
+Companion docs:
+
+| File | When to read |
+|---|---|
+| **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** | Something broke — installation, launch, data, UI, build, tests |
+| **[BUILDING.md](BUILDING.md)** | You're developing on this codebase — environment setup, schema migrations, release process |
+
 Lives inside the P-Charter repo as a git subtree: `Desktop\p-charter\dl-processor\`.
 
 ---
@@ -586,26 +593,29 @@ Ground-truth project table, derived from the current SF snapshot. Use this when 
 
 ## Troubleshooting
 
-**"no such column: sf_project" / garbage in `sf_booking`**
-→ Fixed in v0.9.2. Re-run `node index.js import-sf <xlsx>` to re-import with the correct parser.
+For everything we know goes wrong and how to fix it, see **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**. Coverage includes:
 
-**`better-sqlite3` complains about Node version mismatch**
-→ Fixed in v0.7.x with a self-heal step in the bat launcher. If it recurs: `cd dl-processor && npm rebuild better-sqlite3`.
+- Installation issues (SmartScreen, upgrade-from-v1.0 schema errors, uninstall)
+- App-launch issues (blank windows, empty dropdowns, ABI mismatches)
+- Data-flow issues (DLD_ONLY / SF_ONLY everywhere, BUYER_MISMATCH noise, drift not appearing)
+- UI quirks (sticky filters, missing collapse button, modal won't accept old zips)
+- Build problems (icon size, Python errors, winCodeSign extraction, spawn ENOENT)
+- Test problems (Node 24 vs Electron 28 ABI, fixture patterns)
+- Diagnostic procedures + log locations + recovery procedures
 
-**`Bad uncompressed size: ...` stderr spam when importing SF xlsx**
-→ Harmless; suppressed in `salesforce.js`.
+For development environment setup (Node version, electron-builder, schema migrations) see **[BUILDING.md](BUILDING.md)**.
 
-**Compare produces `DLD_ONLY` for everything**
-→ You probably imported DLD but didn't import SF. Check `[S] Status`. Import `sf-input/`.
+Quick reference — the most common ones:
 
-**`AREA` stat card shows 0 for every project**
-→ `manual_area` is empty. Fill area templates via `[Y]` (this is the expected initial state — area cross-check only triggers when staff data is present).
-
-**`apply-areas` reports `applied 0; skipped N`**
-→ The `area_sqm` column in your CSV is blank, non-numeric, or non-positive. Re-export with `area-template` if the file got out of shape; existing `manual_area` rows are pre-populated on every generate so re-runs don't lose data.
-
-**HTML filters feel sticky**
-→ Header filters + top search + stat cards compose (AND together). Hit the `Reset` button to clear everything.
+| Symptom | Fix |
+|---|---|
+| SmartScreen blocks installer | More info → Run anyway. App is unsigned. |
+| Empty project dropdown after install | Import a DLD or SF file first (fresh DB has no projects). |
+| `no such column: change_type` on every action | Reinstall current `.exe` (commit `2d692bb` or later fixes the upgrade order). |
+| `ERR_DLOPEN_FAILED` / `NODE_MODULE_VERSION` mismatch | Reinstall `.exe` (end user) or use `npm test` not `node --test` (developer). |
+| `BUYER_MISMATCH` queue is huge | Use `🔗 Teach alias` on rows that should match — persists for future months. |
+| HTML report filters feel sticky | Click **Reset** at top of table. Filters compose with AND. |
+| Lost data | Look for `dld-sync.sqlite.bak.{ts}` in the data folder. Rename → relaunch. |
 
 ---
 
