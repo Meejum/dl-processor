@@ -126,6 +126,24 @@ body.log-hidden .log-column { display: none; }
 .modal-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 .modal-actions button { padding: 6px 14px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--surface); cursor: pointer; }
 .modal .primary { background: var(--accent); color: #fff; border-color: var(--accent-dark); border: 1px solid var(--accent-dark); border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+.modal-actions button[disabled] { opacity: 0.55; cursor: progress; }
+
+/* Import DB modal — v1.1 Task 14. Wider card to fit two side-by-side
+   count tables and the file/version metadata block. */
+.import-db-card { width: 560px; }
+.import-db-card .idb-meta { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; margin: 4px 0 14px; }
+.import-db-card .idb-meta dt { color: var(--muted); font-size: 12px; }
+.import-db-card .idb-meta dd { margin: 0; font-size: 12px; word-break: break-all; }
+.import-db-card .idb-meta code { background: var(--surface-2); padding: 1px 5px; border-radius: 3px; font-size: 11px; }
+.import-db-card .idb-counts { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin: 8px 0 14px; }
+.import-db-card .idb-counts-group h3 { margin: 0 0 6px 0; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; }
+.import-db-card .idb-counts-table { width: 100%; border-collapse: collapse; background: var(--surface-2); border-radius: 6px; overflow: hidden; }
+.import-db-card .idb-counts-table td { padding: 5px 10px; font-size: 12px; border-bottom: 1px solid var(--border); }
+.import-db-card .idb-counts-table tr:last-child td { border-bottom: 0; }
+.import-db-card .idb-num { font-family: 'Consolas','Cascadia Mono',monospace; text-align: right; color: var(--accent-dark); }
+.import-db-card .idb-empty { grid-column: 1 / -1; margin: 0 0 8px 0; padding: 8px 12px; font-size: 12px; color: var(--muted); background: var(--surface-2); border-radius: 6px; border-left: 3px solid var(--border-2); }
+.import-db-card .idb-warn { background: #FBEAE5; border: 1px solid #E7B5A8; color: #7A2415; border-radius: 6px; padding: 10px 12px; margin: 4px 0 0; font-size: 12px; }
+.import-db-card .idb-warn code { background: #fff; padding: 1px 5px; border-radius: 3px; font-size: 11px; }
 
 /* Unit history side panel — v1.1 Task 12. Renders at document.body so it
    overlays iframe-hosted pages from the right edge. */

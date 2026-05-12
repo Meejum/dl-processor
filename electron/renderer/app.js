@@ -524,26 +524,21 @@
           return;
         }
         if (action === 'db-import') {
-          const inPath = await window.dlp.pickOpen({
-            title: 'Choose a DL-Processor backup zip',
-            filters: [{ name: 'Zip', extensions: ['zip'] }]
-          });
-          if (!inPath) return;
-          if (!confirm('Importing will REPLACE the current database.\n\nThe current DB is backed up automatically as .bak-<timestamp> in your data/ folder.\n\nContinue?')) return;
-          if (sidebarApi) sidebarApi.setRunning(true, btn);
-          logPanel.appendInfo('— running: Import DB —');
-          try {
-            const result = await window.dlp.runCommand('db-import', [inPath]);
-            logPanel.appendInfo('— done: Import DB (exit ' + result.exitCode + ') —');
-            // After a successful import the project list and master_data
-            // counts have changed — refresh the top-bar dropdown so the
-            // picker reflects the restored DB without requiring a restart.
-            if (result.exitCode === 0 && topBar && topBar.refreshProjects) {
-              topBar.refreshProjects();
-            }
-          } finally {
-            if (sidebarApi) sidebarApi.setRunning(false, btn);
+          // v1.1 Task 14: confirmation modal with backup metadata + current-DB
+          // impact preview before the destructive replace. The modal handles
+          // picker + probe + commit itself; we just refresh the top-bar
+          // dropdown on completion so the project picker reflects the
+          // restored DB without requiring a restart.
+          if (!window.__openImportDbModal) {
+            console.error('[import-db] __openImportDbModal not available');
+            return;
           }
+          await window.__openImportDbModal({
+            onComplete: (result) => {
+              logPanel.appendInfo('Imported DB — safety copy: ' + (result && result.backupPath ? result.backupPath : '(none — no prior DB)'));
+              if (topBar && topBar.refreshProjects) topBar.refreshProjects();
+            }
+          });
           return;
         }
       });

@@ -20,6 +20,10 @@ contextBridge.exposeInMainWorld('dlp', {
     global:      (opts) => ipcRenderer.invoke('dlp:audit:global', opts || {}),
     exportCsv:   (opts) => ipcRenderer.invoke('dlp:audit:export-csv', opts || {})
   },
+  db: {
+    probeZip:  (args) => ipcRenderer.invoke('dlp:db:probe-zip',  args || {}),
+    commitZip: (args) => ipcRenderer.invoke('dlp:db:commit-zip', args || {})
+  },
   shell:    { showInFolder: (p) => ipcRenderer.invoke('dlp:shell:show-in-folder', p) },
   onLog: (handler) => {
     const listener = (_event, payload) => handler(payload);

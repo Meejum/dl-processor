@@ -275,6 +275,15 @@ app.whenReady().then(async () => {
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   }
 
+  // ── Import DB modal IPC (v1.1 Task 14) ────────────────────────────────
+  // probeZip reads the zip + a read-only handle on the live DB so the
+  // renderer can show "what's in this backup vs. what's currently here".
+  // commitZip does the atomic swap (writes a .bak.<ISO> safety copy
+  // before replacing the DB).
+  const dbBackup = require('../src/commands/db-backup');
+  ipcMain.handle('dlp:db:probe-zip',  (e, { zipPath } = {}) => dbBackup.probeZip(zipPath,  { dataRoot: state.dataFolder }));
+  ipcMain.handle('dlp:db:commit-zip', (e, { zipPath } = {}) => dbBackup.commitZip(zipPath, { dataRoot: state.dataFolder }));
+
   ipcMain.handle('dlp:update:check', async () => {
     return await checkForUpdates({
       currentVersion: app.getVersion(),
