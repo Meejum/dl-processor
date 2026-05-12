@@ -196,22 +196,29 @@ app.whenReady().then(async () => {
   // installed better-sqlite3 binary is built for the latter. Spawning a child
   // Node process keeps the native module load in a compatible runtime.
   ipcMain.handle('dlp:projects:list', () => {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const indexJs = path.join(__dirname, '..', 'index.js');
       const env = Object.assign({}, process.env);
       if (state.dataFolder) env.DLP_DATA_ROOT = state.dataFolder;
-      const child = cp.spawn('node', [indexJs, 'projects', '--json'], {
-        env, cwd: path.join(__dirname, '..'), windowsHide: true
+      const childEnv = Object.assign({}, env, { ELECTRON_RUN_AS_NODE: '1' });
+      const cwd = state.dataFolder || path.dirname(process.execPath);
+      const child = cp.spawn(process.execPath, [indexJs, 'projects', '--json'], {
+        env: childEnv, cwd, windowsHide: true
       });
       let out = '';
+      let err = '';
       child.stdout.on('data', (c) => { out += c.toString(); });
-      child.on('error', () => resolve([]));
-      child.on('close', () => {
+      child.stderr.on('data', (c) => { err += c.toString(); });
+      child.on('error', (e) => reject(new Error('projects spawn failed: ' + e.message)));
+      child.on('close', (code) => {
+        if (code !== 0) {
+          return reject(new Error('projects exit ' + code + ': ' + err.trim()));
+        }
         try {
-          // CLI suppresses the banner when --json is passed, so stdout is
-          // pure JSON. Still trim defensively in case anything else leaks.
           resolve(JSON.parse(out.trim()));
-        } catch { resolve([]); }
+        } catch (e) {
+          reject(new Error('projects JSON parse failed. stdout=' + out.slice(0, 200) + ' stderr=' + err.slice(0, 200)));
+        }
       });
     });
   });
