@@ -320,7 +320,7 @@ CREATE TABLE IF NOT EXISTS audit_log (
   action            TEXT NOT NULL CHECK (action IN
                       ('approve','override','reject','auto_apply','learn_alias')),
   source            TEXT NOT NULL CHECK (source IN
-                      ('review_pending','import_dld','import_sf','apply_pending')),
+                      ('review_pending','import_dld','import_sf','apply_pending','compare')),
   change_id         INTEGER,
   user_note         TEXT
 );
