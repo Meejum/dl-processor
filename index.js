@@ -43,8 +43,8 @@ function usage() {
   console.log('  node index.js audit-delta [name]    cross-check tool vs auditor');
   console.log('  node index.js area-template [project|all]   emit per-unit area CSV for staff to fill');
   console.log('  node index.js apply-areas   <csv>            apply filled-in area CSV to manual_area');
-  console.log('  node index.js review-pending [name]  write pending-changes.csv for review');
-  console.log('  node index.js apply-pending [csv]    apply approve/reject decisions from a filled CSV');
+  console.log('  node index.js review-pending         deprecated — open the desktop app and use sidebar [5]');
+  console.log('  node index.js apply-pending [csv]    legacy: apply approve/reject decisions from a filled CSV');
   console.log('');
   console.log('Drop DLD .xps/.csv into input/ and SF .xlsx into sf-input/, then run with no args.');
 }

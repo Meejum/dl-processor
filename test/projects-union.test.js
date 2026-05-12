@@ -20,6 +20,9 @@ test('listProjects returns DLD-only projects', () => {
   const rows = listProjects(db);
   assert.deepEqual(rows.map(r => r.project_name), ['PROJECT_A']);
   assert.equal(rows[0].source, 'DLD only');
+  // DLD-side projects expose their dld_project.project_id so callers
+  // (renderer History filter) can pass it through to audit_log queries.
+  assert.equal(typeof rows[0].project_id, 'number');
 });
 
 test('listProjects returns SF-only projects (via sf_booking)', () => {
@@ -32,6 +35,8 @@ test('listProjects returns SF-only projects (via sf_booking)', () => {
   const rows = listProjects(db);
   assert.deepEqual(rows.map(r => r.project_name), ['PROJECT_B']);
   assert.equal(rows[0].source, 'SF only');
+  // SF-only projects have no dld_project row, so project_id is NULL.
+  assert.equal(rows[0].project_id, null);
 });
 
 test('listProjects merges DLD + SF projects with correct source labels', () => {

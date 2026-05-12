@@ -2,9 +2,17 @@ const { openDb } = require('./shared');
 
 // Pure query — returns rows that include both DLD-imported and SF-only
 // projects. Exported separately so it's testable without process.stdout.
+//
+// Each row: { project_id, project_name, source }
+//   - project_id: dld_project.project_id when the project exists on the DLD
+//     side, otherwise NULL (SF-only projects have no DLD id). The renderer
+//     History page filter needs this id to filter audit_log rows — audit_log
+//     only references dld_project.project_id anyway, so SF-only projects
+//     can't have audit rows to filter on.
+//   - source: 'DLD+SF' | 'DLD only' | 'SF only'
 function listProjects(db) {
   return db.prepare(`
-    SELECT project_name,
+    SELECT project_id, project_name,
            CASE
              WHEN in_dld = 1 AND in_sf = 1 THEN 'DLD+SF'
              WHEN in_dld = 1               THEN 'DLD only'
@@ -13,16 +21,17 @@ function listProjects(db) {
     FROM (
       SELECT
         project_name,
-        MAX(in_dld) AS in_dld,
-        MAX(in_sf)  AS in_sf
+        MAX(project_id) AS project_id,
+        MAX(in_dld)     AS in_dld,
+        MAX(in_sf)      AS in_sf
       FROM (
-        SELECT project_name, 1 AS in_dld, 0 AS in_sf
+        SELECT project_id, project_name, 1 AS in_dld, 0 AS in_sf
         FROM dld_project
         WHERE project_name IS NOT NULL
 
         UNION ALL
 
-        SELECT DISTINCT sub_project AS project_name, 0 AS in_dld, 1 AS in_sf
+        SELECT DISTINCT NULL AS project_id, sub_project AS project_name, 0 AS in_dld, 1 AS in_sf
         FROM sf_booking
         WHERE sub_project IS NOT NULL
       )
