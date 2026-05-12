@@ -1,0 +1,63 @@
+// Built-in transliteration normalization map. variant → canonical (both
+// already lowercased, whitespace-collapsed, title-stripped). Used to absorb
+// Arabic-Latin spelling differences that don't matter to the registration team.
+//
+// To extend: append new pairs at the bottom. Existing entries are stable.
+module.exports = {
+  // Al- prefix variants
+  'al ghumlasi':   'alghumlasi',
+  'al-ghumlasi':   'alghumlasi',
+  'al kaabi':      'alkaabi',
+  'al-kaabi':      'alkaabi',
+  'al maktoum':    'almaktoum',
+  'al-maktoum':    'almaktoum',
+  'al mansoori':   'almansoori',
+  'al-mansoori':   'almansoori',
+  'al marri':      'almarri',
+  'al-marri':      'almarri',
+  'al nahyan':     'alnahyan',
+  'al-nahyan':     'alnahyan',
+  'al qasimi':     'alqasimi',
+  'al-qasimi':     'alqasimi',
+  'al rashid':     'alrashid',
+  'al-rashid':     'alrashid',
+  'al shaikh':     'alshaikh',
+  'al-shaikh':     'alshaikh',
+  // gh ↔ g
+  'ghulam':        'gulam',
+  'gholam':        'gulam',
+  'gheith':        'geith',
+  // common name suffixes
+  'mohammad':      'mohamed',
+  'muhammad':      'mohamed',
+  'mohammed':      'mohamed',
+  'ahmad':         'ahmed',
+  'ahmet':         'ahmed',
+  'omar':          'omar',
+  'umar':          'omar',
+  'usama':         'osama',
+  'oussama':       'osama',
+  'youssef':       'yousef',
+  'yusuf':         'yousef',
+  'yousuf':        'yousef',
+  'ibrahem':       'ibrahim',
+  'ebrahim':       'ibrahim',
+  'sulaiman':      'suleiman',
+  'soliman':       'suleiman',
+  'khalid':        'khaled',
+  'kalid':         'khaled',
+  'rashed':        'rashid',
+  'said':          'saeed',
+  'sayed':         'sayyed',
+  'sherif':        'sharif',
+  'sheriff':       'sharif',
+  'taher':         'tahir',
+  'wael':          'wail',
+  'waleed':        'walid',
+  'zaid':          'zayed',
+  'zeyad':         'ziad',
+  'salem':         'salim',
+  'kareem':        'karim',
+  'naseer':        'nasir',
+  'nasser':        'nasir'
+};

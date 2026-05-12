@@ -177,6 +177,8 @@ function openDb(dbPath = DEFAULT_DB_PATH) {
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
   db.exec(schema);
   migrateSchema(db);
+  const { runMigrations } = require('./migrations');
+  runMigrations(db);
   return db;
 }
 
