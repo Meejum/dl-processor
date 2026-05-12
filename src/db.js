@@ -174,11 +174,17 @@ function openDb(dbPath = DEFAULT_DB_PATH) {
   const db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
+  // Order matters on upgrade DBs (v1.0 → v1.1): runMigrations FIRST so
+  // pending_change gets reshaped (change_type column added) BEFORE
+  // schema.sql's `CREATE INDEX IF NOT EXISTS idx_pending_type ON
+  // pending_change(change_type)` tries to reference the column.
+  // On fresh DBs, migrations no-op where appropriate (003 guards on
+  // table existence; 005 widens audit_log CHECK after 001 created it).
+  const { runMigrations } = require('./migrations');
+  runMigrations(db);
   const schema = fs.readFileSync(SCHEMA_PATH, 'utf8');
   db.exec(schema);
   migrateSchema(db);
-  const { runMigrations } = require('./migrations');
-  runMigrations(db);
   return db;
 }
 

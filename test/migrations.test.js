@@ -125,3 +125,58 @@ test('004 seeds at least 40 buyer_alias rows with project_id NULL', () => {
   const n = db.prepare("SELECT COUNT(*) AS n FROM buyer_alias WHERE project_id IS NULL").get().n;
   assert.ok(n >= 40, 'expected >=40 seeded global aliases, got ' + n);
 });
+
+test('REGRESSION: openDb on a v1.0-shaped DB upgrades cleanly (no "no such column: change_type")', () => {
+  const os = require('node:os');
+  const tmp = path.join(os.tmpdir(), 'dlp-upgrade-' + Date.now() + '.sqlite');
+  // Seed a minimal v1.0-shape DB on disk (no audit_log, no buyer_alias,
+  // no schema_migration; pending_change in OLD shape — no change_type,
+  // narrow decision CHECK).
+  const seed = new Database(tmp);
+  seed.exec(`
+    CREATE TABLE dld_project  (project_id INTEGER PRIMARY KEY AUTOINCREMENT, project_name TEXT);
+    CREATE TABLE dld_snapshot (snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT, project_id INTEGER, source_format TEXT, source_file TEXT, snapshot_date TEXT);
+    CREATE TABLE pending_change (
+      change_id            INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id           INTEGER NOT NULL REFERENCES dld_project ON DELETE CASCADE,
+      unit_number_norm     TEXT NOT NULL,
+      field_name           TEXT NOT NULL CHECK (field_name IN
+        ('buyer_name','purchase_price_aed','status','procedure_number','area_sqm')),
+      old_value            TEXT,
+      proposed_value       TEXT,
+      source_snapshot_id   INTEGER REFERENCES dld_snapshot ON DELETE SET NULL,
+      decision             TEXT NOT NULL DEFAULT 'pending'
+                           CHECK (decision IN ('pending','approved','rejected')),
+      decision_notes       TEXT,
+      proposed_at          TEXT NOT NULL DEFAULT (datetime('now')),
+      decided_at           TEXT,
+      decided_by           TEXT
+    );
+    INSERT INTO dld_project (project_name) VALUES ('PROJ_OLD');
+    INSERT INTO pending_change (project_id, unit_number_norm, field_name, decision)
+      VALUES (1, '101', 'buyer_name', 'pending');
+  `);
+  seed.close();
+
+  // openDb on the same file — must not throw and must upgrade in place.
+  const { openDb } = require('../src/db');
+  let db;
+  assert.doesNotThrow(() => { db = openDb(tmp); });
+
+  const cols = db.prepare('PRAGMA table_info(pending_change)').all().map(c => c.name);
+  assert.ok(cols.includes('change_type'),    'expected change_type column after upgrade');
+  assert.ok(cols.includes('override_value'), 'expected override_value column after upgrade');
+  const row = db.prepare("SELECT change_type, decision FROM pending_change WHERE unit_number_norm = '101'").get();
+  assert.equal(row.change_type, 'MISMATCH');
+  assert.equal(row.decision, 'pending');
+
+  db.prepare("INSERT INTO pending_change (project_id, unit_number_norm, field_name, decision) VALUES (1, '102', 'buyer_name', 'auto_applied')").run();
+
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name);
+  assert.ok(tables.includes('audit_log'));
+  assert.ok(tables.includes('buyer_alias'));
+  assert.ok(tables.includes('schema_migration'));
+
+  db.close();
+  try { fs.unlinkSync(tmp); } catch {}
+});
