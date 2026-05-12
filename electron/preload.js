@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('dlp', {
     reject:     (args) => ipcRenderer.invoke('dlp:review:reject', args),
     teachAlias: (args) => ipcRenderer.invoke('dlp:review:teach-alias', args)
   },
+  audit: {
+    unitHistory: (args) => ipcRenderer.invoke('dlp:audit:unit-history', args)
+  },
   shell:    { showInFolder: (p) => ipcRenderer.invoke('dlp:shell:show-in-folder', p) },
   onLog: (handler) => {
     const listener = (_event, payload) => handler(payload);

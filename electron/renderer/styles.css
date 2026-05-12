@@ -126,3 +126,31 @@ body.log-hidden .log-column { display: none; }
 .modal-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 .modal-actions button { padding: 6px 14px; border: 1px solid var(--border-2); border-radius: 6px; background: var(--surface); cursor: pointer; }
 .modal .primary { background: var(--accent); color: #fff; border-color: var(--accent-dark); border: 1px solid var(--accent-dark); border-radius: 6px; padding: 6px 14px; cursor: pointer; }
+
+/* Unit history side panel — v1.1 Task 12. Renders at document.body so it
+   overlays iframe-hosted pages from the right edge. */
+#unit-history-panel {
+  position: fixed; top: 0; right: 0; width: 400px; height: 100vh;
+  background: var(--bg); border-left: 1px solid var(--accent);
+  box-shadow: -4px 0 18px rgba(0,0,0,0.12); overflow-y: auto; z-index: 9999;
+  padding: 16px 18px; font-family: Inter, 'Segoe UI', Tahoma, Arial, sans-serif;
+  color: var(--ink);
+}
+#unit-history-panel[hidden] { display: none !important; }
+#unit-history-panel .uhp-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+#unit-history-panel .uhp-title { font-weight: 700; color: var(--accent-dark); font-size: 14px; }
+#unit-history-panel .uhp-close { background: none; border: 0; font-size: 22px; cursor: pointer; color: var(--muted); line-height: 1; padding: 0 4px; }
+#unit-history-panel .uhp-close:hover { color: var(--ink); }
+#unit-history-panel h3 { font-size: 12px; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin: 14px 0 6px 0; }
+#unit-history-panel dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 0 0 8px 0; }
+#unit-history-panel dt { color: var(--muted); font-size: 12px; }
+#unit-history-panel dd { margin: 0; font-size: 12px; word-break: break-word; }
+#unit-history-panel .uhp-empty { color: var(--muted); font-size: 12px; font-style: italic; }
+#unit-history-panel .uhp-event { padding: 8px 0; border-bottom: 1px dashed var(--border); }
+#unit-history-panel .uhp-event:last-child { border-bottom: 0; }
+#unit-history-panel .uhp-event header { color: var(--muted); font-size: 11px; }
+#unit-history-panel .uhp-event p { margin: 2px 0; font-size: 12px; word-break: break-word; }
+#unit-history-panel .uhp-event small { color: var(--muted); font-size: 11px; }
+#unit-history-panel .uhp-footer { margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--border); }
+#unit-history-panel .uhp-deeplink { color: var(--accent); text-decoration: none; font-size: 12px; }
+#unit-history-panel .uhp-deeplink:hover { text-decoration: underline; }

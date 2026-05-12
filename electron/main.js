@@ -245,6 +245,13 @@ app.whenReady().then(async () => {
   ipcMain.handle('dlp:review:reject',      (e, { changeId })                  => withDb(db => reviewCmds.rejectPending(db, changeId)));
   ipcMain.handle('dlp:review:teach-alias', (e, { changeId, scope })           => withDb(db => reviewCmds.teachAliasAndApprove(db, changeId, { scope })));
 
+  // ── Audit query IPC (v1.1 Task 12+) ───────────────────────────────────
+  // Pure SELECTs against audit_log + master_data; safe to run on every
+  // panel open. withDb() guarantees the better-sqlite3 handle is closed
+  // even if the renderer disconnects mid-call.
+  const auditQuery = require('../src/commands/audit-query');
+  ipcMain.handle('dlp:audit:unit-history', (e, args) => withDb(db => auditQuery.unitHistory(db, args || {})));
+
   ipcMain.handle('dlp:update:check', async () => {
     return await checkForUpdates({
       currentVersion: app.getVersion(),
