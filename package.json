@@ -30,6 +30,7 @@
   "private": true,
   "devDependencies": {
     "@electron/rebuild": "^4.0.4",
+    "@resvg/resvg-js": "^2.6.2",
     "electron": "^28.3.3",
     "electron-builder": "^24.13.3",
     "to-ico": "^1.1.5"
