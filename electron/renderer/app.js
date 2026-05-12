@@ -206,20 +206,6 @@
       }
     });
 
-    // Collapse / expand the sidebar (main menu). When collapsed the sidebar
-    // shrinks to a 56px icon-only strip on the left — labels, step numbers,
-    // and section headings hide; each button keeps its tooltip via the
-    // `title` attribute set in index.html so users can still discover
-    // what each icon does on hover.
-    const toggleSidebarBtn = document.getElementById('btn-toggle-sidebar');
-    if (toggleSidebarBtn) {
-      toggleSidebarBtn.addEventListener('click', () => {
-        const collapsed = document.body.classList.toggle('sidebar-collapsed');
-        toggleSidebarBtn.classList.toggle('is-off', collapsed);
-        toggleSidebarBtn.title = collapsed ? 'Expand menu' : 'Collapse menu';
-      });
-    }
-
     // Hide / show the log column. With iframes (instead of BrowserView) the
     // tab area reflows automatically — no IPC bounds math needed.
     const toggleLogBtn = document.getElementById('btn-toggle-log');
@@ -473,6 +459,12 @@
     for (const btn of document.querySelectorAll('.cmd-btn[data-action]')) {
       btn.addEventListener('click', async () => {
         const action = btn.dataset.action;
+        if (action === 'open-history') {
+          // Task 13 will replace this stub with a real History page.
+          const srcdoc = '<!DOCTYPE html><html><head><meta charset="utf-8"><title>History</title></head><body style="margin:0;font-family:Inter,Segoe UI,Tahoma,sans-serif;background:#F6F1E9;color:#1F1A14"><p style="padding:24px">History page coming in Task 13.</p></body></html>';
+          window.__tabHost.open({ srcdoc, title: 'History' });
+          return;
+        }
         if (action === 'open-dashboard' && currentDataFolder) {
           const url = 'file:///' + currentDataFolder.replace(/\\/g, '/') + '/output/dashboard.html';
           window.__tabHost.open({ url, title: 'Dashboard' });

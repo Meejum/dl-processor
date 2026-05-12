@@ -56,7 +56,6 @@
     </header>
     <main>
       <aside class="sidebar" id="sidebar">
-        <button id="btn-toggle-sidebar" class="sidebar-collapse-btn" title="Collapse menu" aria-label="Collapse menu">☰</button>
         <button class="cmd-btn cmd-btn-primary" data-cmd="all" data-label="Full pipeline" title="Run full pipeline (does 1–4)">
           <span class="cmd-icon">⚡</span>
           <span class="cmd-label">Run full pipeline <span class="hint">(does 1–4)</span></span>
@@ -119,6 +118,11 @@
         <button class="cmd-btn" data-action="reveal-output" data-label="Reveal output folder" title="Open the output/ folder in Explorer">
           <span class="cmd-icon">📁</span>
           <span class="cmd-label">Output folder</span>
+        </button>
+        <div class="sidebar-section">History</div>
+        <button class="cmd-btn" data-action="open-history" data-label="History" title="View change history across all projects">
+          <span class="cmd-icon">📜</span>
+          <span class="cmd-label">History</span>
         </button>
         <div class="sidebar-section">Backup</div>
         <button class="cmd-btn" data-action="db-export" data-label="Export DB" title="Export DB and config to a zip backup">
