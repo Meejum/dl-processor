@@ -12,9 +12,9 @@
 
 ---
 
-## Near horizon (v1.2 → v1.4, next ~6 weeks)
+## Near horizon (v1.2 → v2.0, next ~4 weeks)
 
-### v1.2 — Patch-based updates *(re-scoped 2026-05-12)*
+### v1.2 — Patch-based updates ✅ SHIPPED 2026-05-12
 
 **Status:** spec'd, in progress.
 
@@ -34,9 +34,26 @@
 
 ---
 
-### v1.3 — Business Process grouping *(formerly v1.2)*
+### v2.0 — Milestone: de-iframe + BP grouping + DLD drift *(bundled 2026-05-12, was v1.2.5 + v1.3 + v1.4)*
 
-**Status:** spec'd + planned. Ready to dispatch once v1.2 ships.
+**Status:** spec'd + planned. Ready to dispatch tomorrow.
+
+**Why bundled:** Three feature areas with shared architecture. De-iframe is the foundation; BP grouping needs native renderer DOM to work cleanly; DLD drift is an isolated backend refactor that completes v1.1's deferral. Shipping together as one milestone cuts release overhead and proves the v1.2 patch system end-to-end (v1.2.0 → v2.0.0 will be the first patch-distributed release).
+
+**Three feature areas bundled:**
+- **Feature A — De-iframe refactor.** Replace iframe-with-srcdoc pages (Review Pending, History) with native renderer-DOM panes. Tab-host becomes a `<div>`-pane controller. CSS moves to scoped selectors in `styles.css`. Same pattern as unit-history-panel / patch-modal which are already native.
+- **Feature B — Business Process grouping.** All the v1.3 design captured earlier in 2026-05-12 spec, built natively from day 1 on top of Feature A. BP cards grouped by source_snapshot_id, classified by SF state, filterable by 8 dimensions. Migrations 006 (sf_booking columns) + 007 (audit_log.action CHECK widen).
+- **Feature C — DLD drift detection.** Extract compare.js's picker functions into src/snapshot-extract.js. Make the 'dld' branch of compare-drift.js real (no longer a no-op stub).
+
+**Plan:** `docs/superpowers/plans/2026-05-13-v2.0-milestone-plan.md` — 20 tasks across 5 phases. Test target 338 → ~390.
+
+**Spec:** `docs/superpowers/specs/2026-05-13-v2.0-milestone-design.md`
+
+**Estimate:** ~3 weeks subagent-driven execution.
+
+---
+
+### v1.3 — Business Process grouping ✅ FOLDED INTO v2.0 (above)
 
 **What ships:**
 - Replace per-field rows on Review Pending with collapsible Business Process cards
