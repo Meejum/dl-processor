@@ -463,6 +463,9 @@
       reviewBtn.addEventListener('click', (ev) => {
         ev.stopImmediatePropagation();
         const { html } = window.__buildReviewPendingPage();
+        // TODO(v2.0 Task 5): convert __buildReviewPendingPage to render mode.
+        // Until then this still goes through the deprecated srcdoc path
+        // (tab-host logs a console.warn for each call).
         window.__tabHost.open({ srcdoc: html, title: 'Review pending' });
       }, true);
     }
@@ -476,6 +479,9 @@
         return;
       }
       const { html } = window.__buildHistoryPage(initialFilters || {});
+      // TODO(v2.0 Task 6): convert __buildHistoryPage to render mode.
+      // Until then this still goes through the deprecated srcdoc path
+      // (tab-host logs a console.warn for each call).
       window.__tabHost.open({ srcdoc: html, title: 'History' });
     }
 
