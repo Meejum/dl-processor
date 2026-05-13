@@ -454,19 +454,21 @@
       'all':            'Dashboard'
     };
 
-    // Task 10: hijack the "Review pending" sidebar button so it opens the
-    // new inline page instead of running the legacy CLI command + opening
+    // Task 10 (v1.1): hijack the "Review pending" sidebar button so it opens
+    // the inline page instead of running the legacy CLI command + opening
     // the HTML file. Use capture phase so we run BEFORE sidebar.js's own
     // click handler. stopImmediatePropagation prevents the CLI run().
+    //
+    // Task 5 (v2.0): converted to render-mode tab — the page builds DOM
+    // directly into the tab pane (no iframe / srcdoc).
     const reviewBtn = document.querySelector('.cmd-btn[data-cmd="review-pending"]');
-    if (reviewBtn && window.__buildReviewPendingPage) {
+    if (reviewBtn && window.__renderReviewPendingPage) {
       reviewBtn.addEventListener('click', (ev) => {
         ev.stopImmediatePropagation();
-        const { html } = window.__buildReviewPendingPage();
-        // TODO(v2.0 Task 5): convert __buildReviewPendingPage to render mode.
-        // Until then this still goes through the deprecated srcdoc path
-        // (tab-host logs a console.warn for each call).
-        window.__tabHost.open({ srcdoc: html, title: 'Review pending' });
+        window.__tabHost.open({
+          title: 'Review pending',
+          render: (container) => window.__renderReviewPendingPage(container)
+        });
       }, true);
     }
 

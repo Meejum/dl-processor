@@ -47,6 +47,12 @@ main { flex: 1; display: flex; min-height: 0; }
 .tab-content { flex: 1; position: relative; background: var(--surface); }
 .tab-iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; display: none; background: #fff; }
 .tab-iframe.is-active { display: block; }
+
+/* Render-mode tab panes (v2.0 Task 4/5): native DOM panes built by caller's
+   render(container). Must layer absolutely so they stack on top of one
+   another like iframes; only the active one is visible. */
+.tab-pane.render-pane { position: absolute; inset: 0; display: none; overflow: auto; background: var(--bg); }
+.tab-pane.render-pane.is-active { display: block; }
 .log-column { width: 320px; flex: 0 0 320px; display: flex; flex-direction: column; border-left: 1px solid var(--border); min-height: 0; }
 body.log-hidden .log-column { display: none; }
 
@@ -248,4 +254,159 @@ body.log-hidden .log-column { display: none; }
 #patch-modal .patch-warn {
   margin-top: 10px; padding: 8px 12px; border-radius: 6px;
   background: #FFF6E0; border: 1px solid #E5C681; color: #6A4A0A; font-size: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   Review Pending page (v2.0 Task 5 — moved from inline <style> in srcdoc).
+   Every selector is scoped to .review-pending-page so styles cannot leak
+   to other tabs (especially the still-iframed History page until Task 6).
+   Tokens (--bg, --accent-dark, etc.) inherit from :root at the top.
+   --------------------------------------------------------------------------- */
+.review-pending-page {
+  padding: 18px 24px;
+  font: 13px/1.5 'Segoe UI', Tahoma, Arial, sans-serif;
+  background: var(--bg); color: var(--ink);
+  /* Local tonal palette for this page (originally defined in iframe :root). */
+  --rp-ok:#3F6A2A; --rp-ok-soft:#E8F0DC; --rp-ok-border:#B9CFA0;
+  --rp-warn:#8A5A08; --rp-warn-soft:#FBEFD2; --rp-warn-border:#E5C885;
+  --rp-danger:#8A2415; --rp-danger-soft:#FBEAE5; --rp-danger-border:#E7B5A8;
+}
+.review-pending-page .rp-toolbar {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 8px 12px;
+}
+.review-pending-page .rp-toolbar label {
+  color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.review-pending-page .rp-toolbar select {
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); font: inherit; color: var(--ink); min-width: 220px;
+}
+.review-pending-page .rp-spacer { flex: 1; }
+.review-pending-page .rp-status { color: var(--muted); font-size: 11px; min-height: 14px; }
+.review-pending-page .rp-status.is-ok    { color: var(--rp-ok); }
+.review-pending-page .rp-status.is-error { color: var(--rp-danger); }
+
+.review-pending-page .rp-tabs {
+  display: flex; gap: 0; margin-bottom: 0; border-bottom: 1px solid var(--border);
+}
+.review-pending-page .rp-tab {
+  background: transparent; border: 0; border-bottom: 3px solid transparent;
+  padding: 10px 18px; color: var(--ink-2); font: inherit; cursor: pointer;
+  font-weight: 600; font-size: 13px;
+}
+.review-pending-page .rp-tab:hover { color: var(--accent-dark); }
+.review-pending-page .rp-tab.active {
+  color: var(--accent-dark); border-bottom-color: var(--accent-dark);
+  background: var(--surface);
+}
+.review-pending-page .rp-tab .rp-tab-badge {
+  display: inline-block; margin-left: 8px;
+  background: var(--accent-soft); color: var(--accent-dark);
+  border: 1px solid var(--border-2); padding: 0 7px; border-radius: 10px;
+  font-size: 10px; font-weight: 700; min-width: 18px; text-align: center;
+}
+
+.review-pending-page .rp-content {
+  background: var(--surface); border: 1px solid var(--border); border-top: 0;
+  border-radius: 0 0 8px 8px; padding: 14px;
+}
+
+.review-pending-page .rp-empty {
+  padding: 36px 24px; text-align: center; color: var(--muted);
+  border: 1px dashed var(--border-2); border-radius: 8px; background: var(--surface-2);
+}
+.review-pending-page .rp-empty strong {
+  color: var(--accent-dark); display: block; margin-bottom: 4px; font-size: 14px;
+}
+
+.review-pending-page table.rp-table {
+  width: 100%; border-collapse: collapse; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+}
+.review-pending-page .rp-table th {
+  background: var(--surface-2); color: var(--accent-dark);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0;
+}
+.review-pending-page .rp-table td {
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  font-size: 12px; vertical-align: middle;
+}
+.review-pending-page .rp-table tr:nth-child(even) td { background: var(--surface-2); }
+.review-pending-page .rp-table tr.is-resolved { opacity: 0.45; }
+.review-pending-page .rp-table td.rp-old,
+.review-pending-page .rp-table td.rp-proposed {
+  font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px; word-break: break-all;
+}
+.review-pending-page .rp-table td.rp-unit { font-weight: 600; }
+.review-pending-page .rp-table td.rp-project { color: var(--ink-2); }
+.review-pending-page .rp-table td.rp-when {
+  font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px;
+  color: var(--ink-2); white-space: nowrap;
+}
+.review-pending-page .rp-unit-link {
+  display: inline-flex; flex-direction: column; gap: 1px;
+  color: inherit; text-decoration: none; cursor: pointer;
+}
+.review-pending-page .rp-unit-link:hover .rp-unit {
+  text-decoration: underline; color: var(--accent-dark);
+}
+.review-pending-page .rp-unit-link .rp-unit { font-weight: 600; color: var(--ink); }
+.review-pending-page .rp-unit-link .rp-project-sub { font-size: 10px; color: var(--muted); }
+
+.review-pending-page .rp-edit {
+  width: 160px; padding: 4px 6px;
+  border: 1px solid var(--border-2); border-radius: 4px;
+  font: inherit; font-family: 'Consolas','Cascadia Mono',monospace;
+  font-size: 11px; background: var(--surface);
+}
+.review-pending-page .rp-edit:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+
+.review-pending-page .rp-actions { display: flex; gap: 4px; flex-wrap: wrap; }
+.review-pending-page .rp-btn {
+  border: 1px solid transparent; border-radius: 4px; padding: 4px 10px;
+  cursor: pointer; font: inherit; font-size: 11px; font-weight: 600;
+}
+.review-pending-page .rp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.review-pending-page .rp-btn-approve {
+  background: var(--rp-ok-soft); color: var(--rp-ok); border-color: var(--rp-ok-border);
+}
+.review-pending-page .rp-btn-approve:hover:not(:disabled) { background: #DCE9C8; }
+.review-pending-page .rp-btn-reject {
+  background: var(--rp-danger-soft); color: var(--rp-danger); border-color: var(--rp-danger-border);
+}
+.review-pending-page .rp-btn-reject:hover:not(:disabled) { background: #F5D9D0; }
+.review-pending-page .rp-btn-teach {
+  background: var(--accent-soft); color: var(--accent-dark); border-color: var(--border-2);
+}
+.review-pending-page .rp-btn-teach:hover:not(:disabled) { background: #E6D6B5; }
+
+.review-pending-page .rp-change-type {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 8px; text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.review-pending-page .rp-ct-MISMATCH {
+  background: var(--rp-warn-soft); color: var(--rp-warn); border: 1px solid var(--rp-warn-border);
+}
+.review-pending-page .rp-ct-DLD_DRIFT {
+  background: var(--accent-soft); color: var(--accent-dark); border: 1px solid var(--border-2);
+}
+.review-pending-page .rp-ct-SF_DRIFT {
+  background: #E5E1F3; color: #3C2E80; border: 1px solid #BDB3DD;
+}
+
+/* Inline teach-alias confirm row. */
+.review-pending-page tr.rp-teach-confirm td {
+  background: #FFF7E0 !important; border-top: 1px dashed var(--rp-warn-border);
+}
+.review-pending-page .rp-confirm-msg { font-size: 12px; color: var(--accent-dark); }
+.review-pending-page .rp-confirm-msg b { color: var(--accent-dark); }
+.review-pending-page .rp-confirm-actions { display: flex; gap: 6px; margin-top: 4px; }
+
+.review-pending-page .rp-footer {
+  color: var(--muted); font-size: 11px; margin-top: 14px; text-align: right;
 }
