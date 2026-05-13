@@ -17,6 +17,8 @@ const SF_FIELD_HEADERS = [
   { field: 'bpCreatedDate',          patterns: [/^business\s*process:?\s*created\s*date$/i, /^bp\s*created\s*date$/i] },
   { field: 'preRegStatus',           patterns: [/^(?:booking:?\s*)?pre-?\s*registration$/i, /^pre-?reg\s*status$/i] },
   { field: 'currentStepName',        patterns: [/^current\s*step\s*name$/i] },
+  { field: 'currentStepAssignedName',patterns: [/^current\s*step:?\s*assigned\s*name$/i] },
+  { field: 'comments',               patterns: [/^comments$/i] },
   { field: 'status',                 patterns: [/^status$/i] },
   { field: 'rmProcessStatus',        patterns: [/^rm\s*process\s*status$/i] },
   { field: 'dldProcessStatus',       patterns: [/^dld\s*process\s*status$/i] },
@@ -138,6 +140,8 @@ function readSfWorkbook(filePath) {
       bpCreatedDate:          cellOrNull(get(r, 'bpCreatedDate')),
       preRegStatus:           cellOrNull(get(r, 'preRegStatus')),
       currentStepName:        cellOrNull(get(r, 'currentStepName')),
+      currentStepAssignedName:cellOrNull(get(r, 'currentStepAssignedName')),
+      comments:               cellOrNull(get(r, 'comments')),
       status:                 cellOrNull(get(r, 'status')),
       rmProcessStatus:        cellOrNull(get(r, 'rmProcessStatus')),
       dldProcessStatus:       cellOrNull(get(r, 'dldProcessStatus')),
@@ -204,6 +208,8 @@ function readSfCsv(filePath) {
       bpCreatedDate:          cellOrNull(get(r, 'bpCreatedDate')),
       preRegStatus:           cellOrNull(get(r, 'preRegStatus')),
       currentStepName:        cellOrNull(get(r, 'currentStepName')),
+      currentStepAssignedName:cellOrNull(get(r, 'currentStepAssignedName')),
+      comments:               cellOrNull(get(r, 'comments')),
       status:                 cellOrNull(get(r, 'status')),
       rmProcessStatus:        cellOrNull(get(r, 'rmProcessStatus')),
       dldProcessStatus:       cellOrNull(get(r, 'dldProcessStatus')),
@@ -246,10 +252,11 @@ function importSfRows({ db, rows, generatedAt, sourceFile, sourceSha256 }) {
       tower_name, applicant_name, purchase_price, dld_amount, pre_reg_status, status,
       rm_process_status, dld_process_status, bp_created_date, pre_reg_completion_date,
       procedure_number, payment_reference_number, payment_date, booking_record_id,
-      total_dld_paid, dld_shortfall, dld_balance, current_step_name, end_date,
+      total_dld_paid, dld_shortfall, dld_balance, current_step_name,
+      current_step_assigned_name, comments, end_date,
       nationality, applicant_details,
       applicant_2_name, applicant_3_name, applicant_4_name, docusign_complete
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const run = db.transaction(() => {
@@ -262,7 +269,8 @@ function importSfRows({ db, rows, generatedAt, sourceFile, sourceSha256 }) {
         r.towerName, r.applicantName, r.purchasePrice, r.dldAmount, r.preRegStatus, r.status,
         r.rmProcessStatus, r.dldProcessStatus, r.bpCreatedDate, r.preRegCompletionDate,
         r.procedureNumber, r.paymentReferenceNumber, r.paymentDate, r.bookingRecordId,
-        r.totalDldPaid, r.dldShortfall, r.dldBalance, r.currentStepName, r.endDate,
+        r.totalDldPaid, r.dldShortfall, r.dldBalance, r.currentStepName,
+        r.currentStepAssignedName || null, r.comments || null, r.endDate,
         r.nationality, r.applicantDetails,
         r.applicant2Name || null, r.applicant3Name || null, r.applicant4Name || null,
         r.docusignComplete || null
