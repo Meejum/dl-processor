@@ -350,6 +350,30 @@ app.whenReady().then(async () => {
     return { ok: true, scheduled: true };
   });
 
+  // v2.1 Settings IPC — reads/writes %APPDATA%\dl-processor\config.json
+  ipcMain.handle('dlp:settings:get', () => {
+    const cfg = loadAppConfig(state.appConfigPath) || {};
+    // Return the v2.1-relevant keys with defaults applied
+    return {
+      audit_user:       cfg.audit_user       || '',
+      tier2_price_pct:  cfg.tier2_price_pct  != null ? cfg.tier2_price_pct  : 10,
+      tier2_price_abs:  cfg.tier2_price_abs  != null ? cfg.tier2_price_abs  : 50000,
+      tier2_area_pct:   cfg.tier2_area_pct   != null ? cfg.tier2_area_pct   : 5
+    };
+  });
+
+  ipcMain.handle('dlp:settings:set', (e, partial) => {
+    const cfg = loadAppConfig(state.appConfigPath) || {};
+    const incoming = partial || {};
+    // Merge in only the recognized keys
+    for (const k of ['audit_user', 'tier2_price_pct', 'tier2_price_abs', 'tier2_area_pct']) {
+      if (Object.prototype.hasOwnProperty.call(incoming, k)) cfg[k] = incoming[k];
+    }
+    // Persist along with whatever was already in cfg (dataFolder, etc.)
+    saveAppConfig(state.appConfigPath, cfg);
+    return { ok: true };
+  });
+
   createWindow();
 });
 

@@ -51,5 +51,9 @@ contextBridge.exposeInMainWorld('dlp', {
     probeZip:   (args) => ipcRenderer.invoke('dlp:patch:probe-zip',   args || {}),
     apply:      (args) => ipcRenderer.invoke('dlp:patch:apply',       args || {}),
     revertLast: ()     => ipcRenderer.invoke('dlp:patch:revert-last')
+  },
+  settings: {
+    get: () => ipcRenderer.invoke('dlp:settings:get'),
+    set: (partial) => ipcRenderer.invoke('dlp:settings:set', partial || {})
   }
 });
