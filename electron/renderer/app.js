@@ -206,10 +206,14 @@
       }
     });
 
-    // Hide / show the log column. With iframes (instead of BrowserView) the
-    // tab area reflows automatically — no IPC bounds math needed.
+    // Hide / show the log column. v2.1: log starts hidden by default —
+    // most users never need to read the raw CLI output. The 📋 button in
+    // the top bar toggles it visible when debugging is needed.
     const toggleLogBtn = document.getElementById('btn-toggle-log');
+    document.body.classList.add('log-hidden');
     if (toggleLogBtn) {
+      toggleLogBtn.classList.add('is-off');
+      toggleLogBtn.title = 'Show log';
       toggleLogBtn.addEventListener('click', () => {
         const hidden = document.body.classList.toggle('log-hidden');
         toggleLogBtn.classList.toggle('is-off', hidden);
