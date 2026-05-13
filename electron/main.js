@@ -245,6 +245,15 @@ app.whenReady().then(async () => {
   ipcMain.handle('dlp:review:reject',      (e, { changeId })                  => withDb(db => reviewCmds.rejectPending(db, changeId)));
   ipcMain.handle('dlp:review:teach-alias', (e, { changeId, scope })           => withDb(db => reviewCmds.teachAliasAndApprove(db, changeId, { scope })));
 
+  // ── BP grouping IPC (v2.0 Task 13) ────────────────────────────────────
+  // Card-level operations over Business Process groups (rows sharing
+  // source_snapshot_id + project + unit). Backed by src/commands/review-bps.js.
+  const reviewBps = require('../src/commands/review-bps');
+  ipcMain.handle('dlp:review:list-bps',       (e, opts)                       => withDb(db => reviewBps.listBps(db, opts || {})));
+  ipcMain.handle('dlp:review:approve-bp',     (e, { bpId, overrides })        => withDb(db => reviewBps.approveBp(db, bpId, overrides || {})));
+  ipcMain.handle('dlp:review:reject-bp',      (e, { bpId })                   => withDb(db => reviewBps.rejectBp(db, bpId)));
+  ipcMain.handle('dlp:review:acknowledge-bp', (e, { bpId })                   => withDb(db => reviewBps.acknowledgeBp(db, bpId)));
+
   // ── Audit query IPC (v1.1 Task 12+) ───────────────────────────────────
   // Pure SELECTs against audit_log + master_data; safe to run on every
   // panel open. withDb() guarantees the better-sqlite3 handle is closed

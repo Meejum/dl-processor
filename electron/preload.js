@@ -10,10 +10,15 @@ contextBridge.exposeInMainWorld('dlp', {
   getDataFolder: () => ipcRenderer.invoke('dlp:data-folder'),
   projects: { list: () => ipcRenderer.invoke('dlp:projects:list') },
   review: {
-    list:       (opts) => ipcRenderer.invoke('dlp:review:list', opts || {}),
-    approve:    (args) => ipcRenderer.invoke('dlp:review:approve', args),
-    reject:     (args) => ipcRenderer.invoke('dlp:review:reject', args),
-    teachAlias: (args) => ipcRenderer.invoke('dlp:review:teach-alias', args)
+    list:           (opts) => ipcRenderer.invoke('dlp:review:list', opts || {}),
+    approve:        (args) => ipcRenderer.invoke('dlp:review:approve', args),
+    reject:         (args) => ipcRenderer.invoke('dlp:review:reject', args),
+    teachAlias:     (args) => ipcRenderer.invoke('dlp:review:teach-alias', args),
+    // v2.0 BP grouping
+    listBps:        (opts) => ipcRenderer.invoke('dlp:review:list-bps',      opts || {}),
+    approveBp:      (args) => ipcRenderer.invoke('dlp:review:approve-bp',    args),
+    rejectBp:       (args) => ipcRenderer.invoke('dlp:review:reject-bp',     args),
+    acknowledgeBp:  (args) => ipcRenderer.invoke('dlp:review:acknowledge-bp', args)
   },
   audit: {
     unitHistory: (args) => ipcRenderer.invoke('dlp:audit:unit-history', args),
