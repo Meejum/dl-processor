@@ -23,7 +23,8 @@ contextBridge.exposeInMainWorld('dlp', {
   audit: {
     unitHistory: (args) => ipcRenderer.invoke('dlp:audit:unit-history', args),
     global:      (opts) => ipcRenderer.invoke('dlp:audit:global', opts || {}),
-    exportCsv:   (opts) => ipcRenderer.invoke('dlp:audit:export-csv', opts || {})
+    exportCsv:   (opts) => ipcRenderer.invoke('dlp:audit:export-csv', opts || {}),
+    revert:      (args) => ipcRenderer.invoke('dlp:audit:revert', args)
   },
   db: {
     probeZip:  (args) => ipcRenderer.invoke('dlp:db:probe-zip',  args || {}),
