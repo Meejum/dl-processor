@@ -536,3 +536,127 @@ body.log-hidden .log-column { display: none; }
 .history-page .hp-footer {
   color: var(--muted); font-size: 11px; margin-top: 14px; text-align: right;
 }
+
+/* ---------------------------------------------------------------------------
+   App render pages (v2.0 Task 6.5 — Status / Projects / Apply pending).
+   Moved from inline <style> in the deprecated pageShell() srcdoc helper.
+   Shared rules live under .app-render-page; each page also carries a more
+   specific class (.status-page / .projects-page / .apply-pending-page) for
+   future per-page tweaks. Tokens (--bg, --accent-dark, etc.) inherit from
+   :root at the top of this file.
+   --------------------------------------------------------------------------- */
+.app-render-page {
+  padding: 24px 28px;
+  font: 13px/1.5 'Segoe UI', Tahoma, Arial, sans-serif;
+  background: var(--bg); color: var(--ink);
+}
+.app-render-page * { box-sizing: border-box; }
+.app-render-page .page-head {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 18px;
+}
+.app-render-page .page-logo {
+  width: 36px; height: 36px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
+  display: inline-flex; align-items: center; justify-content: center;
+  color: var(--accent-soft); font-weight: 700; font-size: 18px;
+}
+.app-render-page .page-title {
+  font-size: 20px; font-weight: 700; color: var(--accent-dark); line-height: 1.1;
+}
+.app-render-page .page-sub {
+  color: var(--muted); font-size: 11px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.app-render-page .stat-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 12px; margin-bottom: 18px;
+}
+.app-render-page .stat-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.app-render-page .stat-value {
+  font-size: 22px; font-weight: 700; color: var(--accent-dark); line-height: 1.1;
+}
+.app-render-page .stat-label {
+  font-size: 11px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.06em; margin-top: 4px;
+}
+.app-render-page .stat-card.stat-tone-ok   { border-left: 4px solid #4F7A3A; }
+.app-render-page .stat-card.stat-tone-ok   .stat-value { color: #3F6A2A; }
+.app-render-page .stat-card.stat-tone-warn { border-left: 4px solid #B98410; }
+.app-render-page .stat-card.stat-tone-warn .stat-value { color: #8A5A08; }
+.app-render-page .stat-card.stat-tone-down { border-left: 4px solid #A12C1B; }
+.app-render-page .stat-card.stat-tone-down .stat-value { color: #8A2415; }
+.app-render-page .callout {
+  background: #FBEAE5; border: 1px solid #E7B5A8; color: #7A2415;
+  border-radius: 8px; padding: 12px 16px; margin: 10px 0 14px; font-size: 12px;
+}
+.app-render-page .next-list { margin: 0; padding-left: 18px; }
+.app-render-page .next-list li { margin: 4px 0; }
+.app-render-page .next-list b { color: var(--accent-dark); }
+.app-render-page .info-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 8px; padding: 14px 18px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04); margin-bottom: 12px;
+}
+.app-render-page .info-row {
+  display: flex; gap: 14px; padding: 6px 0; border-bottom: 1px dashed var(--border);
+}
+.app-render-page .info-row:last-child { border-bottom: 0; }
+.app-render-page .info-label { color: var(--muted); flex: 0 0 140px; }
+.app-render-page .info-value {
+  color: var(--ink); flex: 1;
+  font-family: 'Consolas','Cascadia Mono',monospace;
+  font-size: 12px; word-break: break-all;
+}
+.app-render-page .section-h {
+  font-size: 11px; color: var(--muted); letter-spacing: 0.08em;
+  text-transform: uppercase; margin: 14px 0 6px 4px; font-weight: 600;
+}
+.app-render-page .chip {
+  display: inline-block; background: var(--accent-soft); color: var(--accent-dark);
+  border: 1px solid var(--border-2); padding: 0 8px; border-radius: 10px;
+  font-size: 11px; font-family: Dubai, 'Segoe UI', sans-serif;
+  font-weight: 600; margin-left: 8px;
+}
+.app-render-page .tools {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+}
+.app-render-page .tools input {
+  flex: 1; max-width: 320px; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); font: inherit;
+}
+.app-render-page .count-chip {
+  background: var(--accent-soft); color: var(--accent-dark);
+  border: 1px solid var(--border-2); padding: 2px 10px;
+  border-radius: 12px; font-size: 11px; font-weight: 600;
+}
+.app-render-page table {
+  width: 100%; border-collapse: collapse; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.app-render-page th {
+  background: var(--surface-2); color: var(--accent-dark); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 12px;
+  text-align: left; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0;
+}
+.app-render-page td {
+  padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px;
+}
+.app-render-page tr:nth-child(even) td { background: var(--surface-2); }
+.app-render-page tr:hover td { background: var(--accent-soft); }
+.app-render-page td.num {
+  font-family: 'Consolas','Cascadia Mono',monospace; text-align: right;
+}
+.app-render-page .footer {
+  color: var(--muted); font-size: 11px; margin-top: 14px;
+}
+.app-render-page .loading,
+.app-render-page .error {
+  color: var(--muted); font-size: 13px; margin: 12px 0;
+}
+.app-render-page .error { color: #8A2415; }
