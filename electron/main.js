@@ -293,6 +293,46 @@ app.whenReady().then(async () => {
     return result.filePath;
   });
 
+  ipcMain.handle('dlp:audit:export-xlsx', async (e, opts = {}) => {
+    // Reuse the same query as export-csv — bound at 1,000,000 rows so we get all
+    // filtered rows (the History page paginates at 100/page in the UI, but the
+    // export takes the FULL filtered set).
+    const rows = withDb(db => auditQuery.globalHistory(db, Object.assign({}, opts, { limit: 1000000, offset: 0 })));
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export audit log to Excel',
+      defaultPath: 'audit-log-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '') + '.xlsx',
+      filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }]
+    });
+    if (result.canceled || !result.filePath) return null;
+
+    const XLSX = require('xlsx');
+    const headers = [
+      'Timestamp', 'User', 'Project', 'Unit', 'Field',
+      'Old value', 'New value', 'Action', 'Source',
+      'Tier-2', 'Justification', 'Row hash'
+    ];
+    const data = [headers, ...rows.map(r => [
+      r.ts,
+      r.user || '',
+      r.project_name || '',
+      r.unit_number_norm || '',
+      r.field || '',
+      r.old_value != null ? String(r.old_value) : '',
+      r.new_value != null ? String(r.new_value) : '',
+      r.action || '',
+      r.source || '',
+      r.tier2 ? 'TIER-2' : '',
+      r.user_note || '',
+      r.row_hash || ''
+    ])];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Audit Log');
+    XLSX.writeFile(wb, result.filePath);
+    return result.filePath;
+  });
+
   function csvEscape(v) {
     if (v == null) return '';
     const s = String(v);

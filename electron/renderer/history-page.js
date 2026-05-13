@@ -79,6 +79,7 @@
         '</label>',
         '<button class="hp-btn hp-btn-primary hp-apply">Apply</button>',
         '<button class="hp-btn hp-export">Export CSV</button>',
+        '<button class="hp-btn hp-export-xlsx">Export Excel</button>',
       '</div>',
       '<div class="hp-status"></div>',
       '<table class="hp-table">',
@@ -104,6 +105,7 @@
     const unitInput = container.querySelector('.hp-unit');
     const applyBtn  = container.querySelector('.hp-apply');
     const exportBtn = container.querySelector('.hp-export');
+    const exportXlsxBtn = container.querySelector('.hp-export-xlsx');
 
     if (!api) {
       statusEl.textContent = 'window.dlp.audit is not available — preload may not have loaded.';
@@ -384,6 +386,20 @@
         setStatus('Export failed: ' + (e && e.message ? e.message : String(e)), 'error');
       } finally {
         exportBtn.disabled = false;
+      }
+    });
+
+    exportXlsxBtn.addEventListener('click', async () => {
+      exportXlsxBtn.disabled = true;
+      setStatus('Exporting…');
+      try {
+        const filePath = await api.exportXlsx(currentFilters());
+        if (filePath) setStatus('Exported to ' + filePath, 'ok');
+        else          setStatus('Export cancelled.');
+      } catch (e) {
+        setStatus('Export failed: ' + (e && e.message ? e.message : String(e)), 'error');
+      } finally {
+        exportXlsxBtn.disabled = false;
       }
     });
 

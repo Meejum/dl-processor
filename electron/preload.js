@@ -24,6 +24,7 @@ contextBridge.exposeInMainWorld('dlp', {
     unitHistory: (args) => ipcRenderer.invoke('dlp:audit:unit-history', args),
     global:      (opts) => ipcRenderer.invoke('dlp:audit:global', opts || {}),
     exportCsv:   (opts) => ipcRenderer.invoke('dlp:audit:export-csv', opts || {}),
+    exportXlsx:  (opts) => ipcRenderer.invoke('dlp:audit:export-xlsx', opts || {}),
     revert:      (args) => ipcRenderer.invoke('dlp:audit:revert', args)
   },
   db: {
