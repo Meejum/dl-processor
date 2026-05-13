@@ -3,6 +3,14 @@ const path = require('path');
 const { expectedSfUnit, applyUnitTransforms, getAreaThreshold } = require('./project-mapping');
 const { getOverridesMapForProject } = require('./overrides');
 const { BANK_PREFIX_RE } = require('./common');
+const {
+  pickLatestOfTypes,
+  pickLatestPurchase,
+  pickLatestMarketPrice,
+  findLatestNonBankParty,
+  MARKET_PRICE_TX,
+  PURCHASE_TX_TYPES
+} = require('./snapshot-extract');
 const { SOBHA_STYLE_CSS, brandBar } = require('./html-styles');
 const { renderDldBuyersCell, renderSfApplicantsCell, BUYER_CELLS_CSS } = require('./buyer-cells');
 const { normalizeName } = require('./normalize-name');
@@ -97,45 +105,6 @@ function getSfBookingsForSub(db, sfSnapshotId, subProject) {
     SELECT * FROM sf_booking
     WHERE sf_snapshot_id = ? AND sub_project = ?
   `).all(sfSnapshotId, subProject);
-}
-
-const MARKET_PRICE_TX = new Set([
-  'Complete Delayed Sell', 'Sell - Pre registration', 'Sale', 'Delayed Sell'
-]);
-
-const PURCHASE_TX_TYPES = new Set([
-  ...MARKET_PRICE_TX, 'Grant', 'Lease to Own Registration'
-]);
-
-function pickLatestOfTypes(dldTxs, typeSet) {
-  const hits = dldTxs.filter(t => typeSet.has(t.tx_type));
-  if (hits.length === 0) return null;
-  hits.sort((a, b) => {
-    const da = a.tx_date_iso || '';
-    const db = b.tx_date_iso || '';
-    return db.localeCompare(da);
-  });
-  const top = hits[0];
-  const sameDate = hits.filter(t => (t.tx_date_iso || '') === (top.tx_date_iso || ''));
-  const withName = sameDate.find(t => t.party_name && !BANK_PREFIX_RE.test(t.party_name));
-  return withName || top;
-}
-
-function pickLatestPurchase(dldTxs) {
-  return pickLatestOfTypes(dldTxs, PURCHASE_TX_TYPES);
-}
-
-function pickLatestMarketPrice(dldTxs) {
-  return pickLatestOfTypes(dldTxs, MARKET_PRICE_TX);
-}
-
-function findLatestNonBankParty(dldTxs) {
-  if (!dldTxs || !dldTxs.length) return null;
-  const sorted = dldTxs.slice().sort((a, b) => (b.tx_date_iso || '').localeCompare(a.tx_date_iso || ''));
-  for (const t of sorted) {
-    if (t.party_name && !BANK_PREFIX_RE.test(t.party_name)) return t.party_name;
-  }
-  return null;
 }
 
 const GENERIC_COMMERCIAL_TOKENS = new Set([
