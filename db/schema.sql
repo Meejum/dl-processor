@@ -129,7 +129,9 @@ CREATE TABLE IF NOT EXISTS sf_booking (
   applicant_2_name  TEXT,
   applicant_3_name  TEXT,
   applicant_4_name  TEXT,
-  docusign_complete TEXT
+  docusign_complete TEXT,
+  current_step_assigned_name TEXT,
+  comments       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_sfb_snapshot ON sf_booking(sf_snapshot_id);
@@ -318,7 +320,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
   old_value         TEXT,
   new_value         TEXT,
   action            TEXT NOT NULL CHECK (action IN
-                      ('approve','override','reject','auto_apply','learn_alias')),
+                      ('approve','override','reject','auto_apply','learn_alias',
+                       'approve_bp','reject_bp','acknowledge_bp')),
   source            TEXT NOT NULL CHECK (source IN
                       ('review_pending','import_dld','import_sf','apply_pending','compare')),
   change_id         INTEGER,

@@ -147,6 +147,178 @@ test('detectDrift SF: idempotent — second call does not duplicate pending row'
   assert.equal(pendingCount, 1);
 });
 
+// ─── DLD-side drift tests (Task 3) ──────────────────────────────────────
+
+function insertDldSnapshot(db, projectId, sourceFile, snapshotDate) {
+  return db.prepare(
+    "INSERT INTO dld_snapshot (project_id, source_format, source_file, snapshot_date) VALUES (?, 'csv', ?, ?)"
+  ).run(projectId, sourceFile, snapshotDate).lastInsertRowid;
+}
+
+function insertDldUnit(db, snapshotId, projectId, unitNumberNorm, netArea) {
+  return db.prepare(
+    "INSERT INTO dld_unit (snapshot_id, project_id, unit_number_norm, net_area) VALUES (?, ?, ?, ?)"
+  ).run(snapshotId, projectId, unitNumberNorm, netArea).lastInsertRowid;
+}
+
+function insertDldSaleTx(db, unitId, snapshotId, projectId, partyName, txDate, amountAed) {
+  return db.prepare(
+    "INSERT INTO dld_transaction (unit_id, snapshot_id, project_id, party_name, tx_type, tx_date, tx_date_iso, amount_aed) VALUES (?, ?, ?, ?, 'Sale', ?, ?, ?)"
+  ).run(unitId, snapshotId, projectId, partyName, txDate, txDate, amountAed).lastInsertRowid;
+}
+
+test('detectDrift dld: no drift when consecutive snapshots are identical', () => {
+  const db = freshDb();
+  const pid = seedProject(db, 'A');
+
+  const s1 = insertDldSnapshot(db, pid, 'apr.csv', '2026-04-01');
+  const u1 = insertDldUnit(db, s1, pid, '101', 100.5);
+  insertDldSaleTx(db, u1, s1, pid, 'Ali', '2026-04-01', 1485000);
+
+  const s2 = insertDldSnapshot(db, pid, 'may.csv', '2026-05-01');
+  const u2 = insertDldUnit(db, s2, pid, '101', 100.5);
+  insertDldSaleTx(db, u2, s2, pid, 'Ali', '2026-04-01', 1485000);
+
+  detectDrift(db, pid, s2, 'dld');
+
+  const pendingCount = db.prepare("SELECT COUNT(*) AS c FROM pending_change").get().c;
+  const auditCount   = db.prepare("SELECT COUNT(*) AS c FROM audit_log").get().c;
+  assert.equal(pendingCount, 0);
+  assert.equal(auditCount, 0);
+});
+
+test('detectDrift dld: single-field drift (purchase_price) emits DLD_DRIFT pending + auto_apply audit', () => {
+  const db = freshDb();
+  const pid = seedProject(db, 'A');
+
+  const s1 = insertDldSnapshot(db, pid, 'apr.csv', '2026-04-01');
+  const u1 = insertDldUnit(db, s1, pid, '101', 100.5);
+  insertDldSaleTx(db, u1, s1, pid, 'Ali', '2026-04-01', 1485000);
+
+  const s2 = insertDldSnapshot(db, pid, 'may.csv', '2026-05-01');
+  const u2 = insertDldUnit(db, s2, pid, '101', 100.5);
+  insertDldSaleTx(db, u2, s2, pid, 'Ali', '2026-05-01', 1500000);
+
+  detectDrift(db, pid, s2, 'dld');
+
+  const pendingRows = db.prepare("SELECT * FROM pending_change").all();
+  assert.equal(pendingRows.length, 1);
+  const p = pendingRows[0];
+  assert.equal(p.project_id, pid);
+  assert.equal(p.unit_number_norm, '101');
+  assert.equal(p.field_name, 'purchase_price_aed');
+  assert.equal(p.old_value, '1485000');
+  assert.equal(p.proposed_value, '1500000');
+  assert.equal(p.change_type, 'DLD_DRIFT');
+  assert.equal(p.decision, 'auto_applied');
+  assert.equal(p.source_snapshot_id, s2);
+
+  const auditRows = db.prepare("SELECT * FROM audit_log").all();
+  assert.equal(auditRows.length, 1);
+  const a = auditRows[0];
+  assert.equal(a.project_id, pid);
+  assert.equal(a.unit_number_norm, '101');
+  assert.equal(a.table_name, 'master_data');
+  assert.equal(a.field, 'purchase_price_aed');
+  assert.equal(a.old_value, '1485000');
+  assert.equal(a.new_value, '1500000');
+  assert.equal(a.action, 'auto_apply');
+  assert.equal(a.source, 'compare');
+  assert.equal(a.change_id, p.change_id);
+});
+
+test('detectDrift dld: multi-field drift (buyer + price) emits 2 DLD_DRIFT rows + 2 audits', () => {
+  const db = freshDb();
+  const pid = seedProject(db, 'A');
+
+  const s1 = insertDldSnapshot(db, pid, 'apr.csv', '2026-04-01');
+  const u1 = insertDldUnit(db, s1, pid, '101', 100.5);
+  insertDldSaleTx(db, u1, s1, pid, 'Ali', '2026-04-01', 1485000);
+
+  const s2 = insertDldSnapshot(db, pid, 'may.csv', '2026-05-01');
+  const u2 = insertDldUnit(db, s2, pid, '101', 100.5);
+  insertDldSaleTx(db, u2, s2, pid, 'Sara', '2026-05-01', 1500000);
+
+  detectDrift(db, pid, s2, 'dld');
+
+  const pendingRows = db.prepare("SELECT * FROM pending_change ORDER BY field_name").all();
+  assert.equal(pendingRows.length, 2);
+  const byField = Object.fromEntries(pendingRows.map(r => [r.field_name, r]));
+  assert.ok(byField.buyer_name);
+  assert.equal(byField.buyer_name.old_value, 'Ali');
+  assert.equal(byField.buyer_name.proposed_value, 'Sara');
+  assert.equal(byField.buyer_name.change_type, 'DLD_DRIFT');
+  assert.ok(byField.purchase_price_aed);
+  assert.equal(byField.purchase_price_aed.old_value, '1485000');
+  assert.equal(byField.purchase_price_aed.proposed_value, '1500000');
+  assert.equal(byField.purchase_price_aed.change_type, 'DLD_DRIFT');
+
+  const auditCount = db.prepare(
+    "SELECT COUNT(*) AS c FROM audit_log WHERE action = 'auto_apply' AND source = 'compare'"
+  ).get().c;
+  assert.equal(auditCount, 2);
+});
+
+test('detectDrift dld: brand-new unit in current snapshot (not in prev) is silent', () => {
+  const db = freshDb();
+  const pid = seedProject(db, 'A');
+
+  const s1 = insertDldSnapshot(db, pid, 'apr.csv', '2026-04-01');
+  const u1 = insertDldUnit(db, s1, pid, '101', 100.5);
+  insertDldSaleTx(db, u1, s1, pid, 'Ali', '2026-04-01', 1485000);
+
+  const s2 = insertDldSnapshot(db, pid, 'may.csv', '2026-05-01');
+  const u2 = insertDldUnit(db, s2, pid, '101', 100.5);
+  insertDldSaleTx(db, u2, s2, pid, 'Ali', '2026-04-01', 1485000);
+  // Brand-new unit 202 in s2 only — no prior to diff against
+  const u2b = insertDldUnit(db, s2, pid, '202', 80.0);
+  insertDldSaleTx(db, u2b, s2, pid, 'Hassan', '2026-05-01', 900000);
+
+  detectDrift(db, pid, s2, 'dld');
+
+  const pendingCount = db.prepare("SELECT COUNT(*) AS c FROM pending_change").get().c;
+  const auditCount   = db.prepare("SELECT COUNT(*) AS c FROM audit_log").get().c;
+  assert.equal(pendingCount, 0);
+  assert.equal(auditCount, 0);
+});
+
+test('detectDrift dld: idempotent — second call does not duplicate DLD_DRIFT pending row', () => {
+  const db = freshDb();
+  const pid = seedProject(db, 'A');
+
+  const s1 = insertDldSnapshot(db, pid, 'apr.csv', '2026-04-01');
+  const u1 = insertDldUnit(db, s1, pid, '101', 100.5);
+  insertDldSaleTx(db, u1, s1, pid, 'Ali', '2026-04-01', 1485000);
+
+  const s2 = insertDldSnapshot(db, pid, 'may.csv', '2026-05-01');
+  const u2 = insertDldUnit(db, s2, pid, '101', 100.5);
+  insertDldSaleTx(db, u2, s2, pid, 'Ali', '2026-05-01', 1500000);
+
+  detectDrift(db, pid, s2, 'dld');
+  detectDrift(db, pid, s2, 'dld');
+
+  const pendingCount = db.prepare(
+    "SELECT COUNT(*) AS c FROM pending_change WHERE change_type = 'DLD_DRIFT'"
+  ).get().c;
+  assert.equal(pendingCount, 1);
+});
+
+test('detectDrift dld: first-ever snapshot for a project is no-op', () => {
+  const db = freshDb();
+  const pid = seedProject(db, 'A');
+
+  const s1 = insertDldSnapshot(db, pid, 'apr.csv', '2026-04-01');
+  const u1 = insertDldUnit(db, s1, pid, '101', 100.5);
+  insertDldSaleTx(db, u1, s1, pid, 'Ali', '2026-04-01', 1485000);
+
+  detectDrift(db, pid, s1, 'dld');
+
+  const pendingCount = db.prepare("SELECT COUNT(*) AS c FROM pending_change").get().c;
+  const auditCount   = db.prepare("SELECT COUNT(*) AS c FROM audit_log").get().c;
+  assert.equal(pendingCount, 0);
+  assert.equal(auditCount, 0);
+});
+
 test('migration 005 widens audit_log.source CHECK to allow "compare"', () => {
   const db = freshDb();
   db.prepare("INSERT INTO dld_project (project_name) VALUES ('A')").run();

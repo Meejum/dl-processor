@@ -169,3 +169,70 @@ If anything goes wrong: users can Settings → **Revert last patch** to restore 
 - The `patch-apply.cmd` helper itself — if it needs changes, requires a full installer release
 
 For any of those, ship a full `.exe` installer instead.
+
+### v2.0 patch zip workflow
+
+v2.0 is the first real-world patch (v1.2.0 → v2.0.0). The build flow:
+
+```bat
+npm run dist
+node scripts/build-patch.js --from 1.2.0 --to 2.0.0 --notes "BP grouping, de-iframe, DLD drift"
+```
+
+Expected patch zip size: **10-15 MB compressed** (the asar alone is ~17 MB; the build script compresses + deduplicates). This is well under the full installer size (~78 MB) and within the v1.2 design target.
+
+The new schema migrations (006 + 007) ship inside the asar and run automatically on first launch after the patch is applied — no separate upgrade step.
+
+---
+
+## BP classifier — how to extend
+
+`src/bp-classifier.js` exports `classifyBp(fieldSet)` — a pure function that takes a Set of changed field names and returns one of the seven BP labels (Resale / Buyer correction / Price amendment / Status update / Procedure update / Area correction / Multi-field update). The implementation is **first-match-wins**: each case checks whether the field set matches a known pattern, and the first match wins. The fallback at the bottom returns `'Multi-field update'`.
+
+```js
+// src/bp-classifier.js (shape)
+function classifyBp(fieldSet) {
+  if (matchesResale(fieldSet))          return 'Resale';
+  if (matchesBuyerCorrection(fieldSet)) return 'Buyer correction';
+  if (matchesPriceAmendment(fieldSet))  return 'Price amendment';
+  if (matchesStatusUpdate(fieldSet))    return 'Status update';
+  if (matchesProcedureUpdate(fieldSet)) return 'Procedure update';
+  if (matchesAreaCorrection(fieldSet))  return 'Area correction';
+  return 'Multi-field update';
+}
+```
+
+**To add a new BP label:**
+
+1. Append a new `if (matchesXxx(fieldSet)) return 'Xxx';` case **BEFORE** the `return 'Multi-field update'` fallback. Order matters — the first match wins, so more-specific patterns must come first.
+2. Add a test case in `test/bp-classifier.test.js` covering the new pattern.
+3. No schema change needed — labels are computed from `pending_change.field` at render time, not persisted.
+
+Update the BP-type filter dropdown in the Review Pending pane if you want the new label selectable via the filter bar.
+
+---
+
+## SF state classifier — adapting to new SF status values
+
+`src/sf-state.js` exports `classifyState(sfRow)` — returns one of `READY` / `IN_PROGRESS` / `DLD_ISSUE` / `REJECTED` / `NO_SF_ROW`. Driven by `sf_booking.status` and `sf_booking.dld_process_status`.
+
+```js
+// src/sf-state.js (shape)
+function classifyState(sfRow) {
+  if (!sfRow)                                       return 'NO_SF_ROW';
+  if (isRejected(sfRow.status))                     return 'REJECTED';
+  if (hasDldIssue(sfRow.dld_process_status))        return 'DLD_ISSUE';
+  if (isReady(sfRow.status))                        return 'READY';
+  return 'IN_PROGRESS';   // warn-by-default
+}
+```
+
+The classifier is **conservative**: any unrecognized `status` value falls through to `IN_PROGRESS` (warn-by-default — disables `Approve all` until a human confirms). This is intentional: it's safer to over-prompt than to auto-approve a state we don't understand.
+
+**To add a new known state value** (e.g., Salesforce adds a new status flow):
+
+1. Edit the relevant predicate in `src/sf-state.js` (`isReady` / `isRejected` / `hasDldIssue`).
+2. Add a test case in `test/sf-state.test.js` covering the new value.
+3. If the new state needs a new badge color or action-button gating, update the Review Pending pane renderer in `electron/renderer/review-pending.js`.
+
+`DLD_ISSUE` has higher precedence than `READY` — if both apply (e.g., `status='Approved'` but `dld_process_status='Submitted to DLD'`), the card lands in `DLD_ISSUE`.

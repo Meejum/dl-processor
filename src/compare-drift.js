@@ -1,4 +1,6 @@
 const { writeAuditLog } = require('./audit-log');
+const { extractUnitFields } = require('./snapshot-extract');
+const { AUDIT_FIELDS } = require('./audit-fields');
 
 // SF column → master_data audit field
 const SF_FIELD_MAP = {
@@ -29,11 +31,7 @@ function stringify(v) {
  */
 function detectDrift(db, projectId, currentSnapshotId, source) {
   if (source === 'dld') {
-    // TODO(v1.2): implement DLD drift once compare.js extractor helpers
-    // (pickLatestPurchase, findLatestNonBankParty, etc.) are factored into
-    // a reusable module. For now this is a silent no-op so compare.js can
-    // safely call detectDrift after every DLD import.
-    return;
+    return detectDldDrift(db, projectId, currentSnapshotId);
   }
   if (source !== 'sf') {
     throw new Error('detectDrift: source must be "dld" or "sf"');
@@ -105,6 +103,81 @@ function detectDrift(db, projectId, currentSnapshotId, source) {
           unitNumberNorm: cur.unit_norm,
           tableName: 'master_data',
           field: auditField,
+          oldValue: oldStr,
+          newValue: newStr,
+          action: 'auto_apply',
+          source: 'compare',
+          changeId: info.lastInsertRowid
+        });
+      }
+    }
+  });
+  apply();
+}
+
+/**
+ * DLD-side drift detection. Compares the operational AUDIT_FIELDS for every
+ * unit in the current dld_snapshot against the previous dld_snapshot for the
+ * same project. Any field whose value changed emits a DLD_DRIFT pending_change
+ * row + auto_apply audit_log entry (source='compare'). Mirrors the SF logic.
+ *
+ * Notes:
+ * - status + procedure_number are SF-side only — extractUnitFields returns
+ *   null for them on the DLD side, so null↔null pairs are skipped here.
+ * - Idempotency: a re-run over the same snapshot pair must NOT duplicate rows.
+ */
+function detectDldDrift(db, projectId, currentSnapshotId) {
+  const prev = db.prepare(`
+    SELECT snapshot_id FROM dld_snapshot
+    WHERE project_id = ? AND snapshot_id < ?
+    ORDER BY snapshot_date DESC, snapshot_id DESC
+    LIMIT 1
+  `).get(projectId, currentSnapshotId);
+  if (!prev || !prev.snapshot_id) return;  // first-ever snapshot — no drift to compute
+  const prevSnapshotId = prev.snapshot_id;
+
+  const units = db.prepare(`
+    SELECT DISTINCT unit_number_norm FROM dld_unit
+    WHERE snapshot_id = ? AND project_id = ?
+  `).all(currentSnapshotId, projectId);
+
+  const insertPending = db.prepare(`
+    INSERT INTO pending_change
+      (project_id, unit_number_norm, field_name, old_value, proposed_value,
+       change_type, decision, decided_at, source_snapshot_id)
+    VALUES (?, ?, ?, ?, ?, 'DLD_DRIFT', 'auto_applied', datetime('now'), ?)
+  `);
+  // Idempotency guard: a DLD_DRIFT auto_applied row with the same
+  // (project, unit, field, old, new) tuple is already-recorded.
+  const existsCheck = db.prepare(`
+    SELECT 1 FROM pending_change
+    WHERE project_id = ? AND unit_number_norm = ? AND field_name = ?
+      AND change_type = 'DLD_DRIFT' AND decision = 'auto_applied'
+      AND IFNULL(old_value, '') = IFNULL(?, '')
+      AND IFNULL(proposed_value, '') = IFNULL(?, '')
+  `);
+
+  const apply = db.transaction(() => {
+    for (const { unit_number_norm: unit } of units) {
+      if (unit == null) continue;
+      const curFields  = extractUnitFields(db, currentSnapshotId, projectId, unit);
+      const prevFields = extractUnitFields(db, prevSnapshotId,    projectId, unit);
+      if (!curFields || !prevFields) continue;  // brand-new (or vanished) unit — no diff
+      for (const field of AUDIT_FIELDS) {
+        const oldVal = prevFields[field];
+        const newVal = curFields[field];
+        // status + procedure_number are null↔null on DLD side — skip
+        if (oldVal == null && newVal == null) continue;
+        if (String(oldVal ?? '') === String(newVal ?? '')) continue;
+        const oldStr = oldVal == null ? null : String(oldVal);
+        const newStr = newVal == null ? null : String(newVal);
+        if (existsCheck.get(projectId, unit, field, oldStr, newStr)) continue;
+        const info = insertPending.run(projectId, unit, field, oldStr, newStr, currentSnapshotId);
+        writeAuditLog(db, {
+          projectId,
+          unitNumberNorm: unit,
+          tableName: 'master_data',
+          field,
           oldValue: oldStr,
           newValue: newStr,
           action: 'auto_apply',

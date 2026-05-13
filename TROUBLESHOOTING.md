@@ -13,6 +13,7 @@ Companions: [README.md](README.md) for normal usage, [BUILDING.md](BUILDING.md) 
 - [Data-flow problems](#data-flow-problems)
 - [UI problems](#ui-problems)
 - [Patch update problems (v1.2+)](#patch-update-problems-v12)
+- [v2.0 BP grouping problems](#v20-bp-grouping-problems)
 - [Build problems (developers)](#build-problems-developers)
 - [Test problems (developers)](#test-problems-developers)
 - [Diagnostic procedures](#diagnostic-procedures)
@@ -171,7 +172,17 @@ Harmless. The `xlsx` library emits this for files where Excel's stored zip lengt
 
 Drift detection requires **at least two consecutive snapshots** for the same project to compare. If you imported once, ran compare, then imported again with changes — drift should populate after the second compare run.
 
-v1.1 implements **SF drift only** (compares consecutive `sf_snapshot`s for the same `sub_project`). DLD drift is deferred to v1.2 — needs the compare.js extractor functions refactored into a reusable module.
+v1.1 implemented **SF drift only**. **v2.0 adds DLD drift detection** — compares consecutive `dld_snapshot`s for the same `(project_id, unit_number_norm)` and writes `DLD_DRIFT` rows whenever operational fields changed silently between imports. See [DLD drift detection (v2.0)](#dld-drift-detection-v20) below for what to expect.
+
+---
+
+### DLD drift detection (v2.0)
+
+**Drift log tab shows new entries after a re-import — is that expected?**
+
+Yes. v2.0 added DLD drift detection. Any unit whose operational fields (buyer, price, area, status, procedure) changed in DLD between two consecutive compare runs writes a `DLD_DRIFT` entry to `pending_change` and an `auto_apply` row to `audit_log` (`source='compare'`). These are **informational only** — they don't require approval. Use the per-unit history side panel to see the trail.
+
+The extractor (`src/snapshot-extract.js`) computes the operational field values per snapshot using the same `pickLatestPurchase` / `pickLatestMarketPrice` / `findLatestNonBankParty` logic that compare uses for MISMATCH detection — so what shows in Drift log is exactly what compare would have considered "current" for each snapshot.
 
 ---
 
@@ -308,6 +319,73 @@ If `app.asar.pending` still exists in `resources\`: you can manually swap it. Re
 The modal shows the SHA-256 of the patch's `app.asar`. Your admin can post the same SHA-256 alongside the download link (e.g., in the email or shared-drive description). Compare them character-by-character before clicking Apply & Restart.
 
 If they don't match: the patch was tampered with in transit. Don't apply it. Tell your admin.
+
+---
+
+## v2.0 BP grouping problems
+
+### BP card shows "NO_SF_ROW"
+
+No matching `sf_booking` row exists for the card's `(project, unit)`. Most likely your Salesforce import didn't include this unit, OR the `unit_number_norm` formatting differs between the DLD and SF sides (e.g., `W-101` vs `101`).
+
+**Fix:**
+1. Check `master_data` provenance for the unit — click the unit cell to open the per-unit history side panel.
+2. If the unit really should be in SF, re-export the SF report with a wider filter that includes the missing unit, then re-import.
+3. If the mismatch is normalization-side, check the project's `unitTransforms` / `buildingTransforms` in `config/project-mapping.json`.
+
+---
+
+### BP card label is "Multi-field update" when it should be "Resale"
+
+The Resale classifier requires the field set to be **buyer + price + procedure** (with `status` optional). If your DLD import also changed `area_sqm`, that bumps the label to `Multi-field update` because the classifier no longer recognizes the pattern.
+
+This is **by design** — a "true" resale doesn't typically change the unit's area. If area moved too, something else is going on (re-measurement, common-area reallocation) and the reviewer should look at it as a multi-field change.
+
+If you genuinely want a different cutoff, see [BUILDING.md → BP classifier — how to extend](BUILDING.md#bp-classifier--how-to-extend).
+
+---
+
+### SF context strip shows "—" for Current Step / Assigned / Comments
+
+Your SF `.xlsx` export doesn't include those columns. v2.0 reads three new headers that were added on `sf_booking`:
+
+- `Current Step Name`
+- `Current Step: Assigned Name`
+- `Comments`
+
+**Fix:** Open the "DLD -ALL" report definition in Salesforce, add the three columns, save, re-export, re-import. The cards will populate on the next render — no further action needed.
+
+---
+
+### State badge stays "IN_PROGRESS" even after the BP is complete in SF
+
+`sf_booking.status` is read from the **most recent** SF import. If SF marked the BP completed AFTER your last SF re-import, DL-Processor won't know yet.
+
+**Fix:** Re-export the latest SF report and re-import via `📥 Import Salesforce`. The badge updates on the next page open.
+
+---
+
+### `Approve all` is disabled even on a card that looks READY
+
+Check the SF context strip carefully. If `dld_process_status` shows something like `Submitted to DLD`, the card is actually in `DLD_ISSUE` state — not `READY` — because the classifier prioritizes `DLD_ISSUE` over `READY` when both apply. The state badge color (orange) will confirm.
+
+**Fix:** Resolve the DLD-side issue first (typically requires action in SF, not DL-Processor). Once `dld_process_status` clears, re-import SF and the card flips back to `READY`.
+
+---
+
+### Filter bar doesn't show my BP
+
+The default filters on first open are **SF state ≠ REJECTED** and **Date range = Last 30 days**. Older pending changes need the date range expanded.
+
+**Fix:** Open the date-range filter and pick `Last 90 days` / `All time`. Also check whether your unit is in a project hidden by the Project filter.
+
+---
+
+### `Open in SF →` copies the record ID instead of opening Salesforce
+
+Known v2.0 limitation. The Sobha Salesforce instance URL pattern wasn't configured in v2.0. The button copies `booking_record_id` to your clipboard — paste it into your SF instance URL bar manually for now.
+
+**Planned v2.1:** configurable SF base URL in Settings, so the button becomes a real deep link.
 
 ---
 

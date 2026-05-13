@@ -223,68 +223,28 @@
       }[c]));
     }
 
-    const PAGE_CSS = `
-      :root { --bg:#F6F1E9; --surface:#FFFFFF; --surface-2:#FBF5EA; --border:#E3D9C8; --border-2:#C8B896; --ink:#1F1A14; --ink-2:#5A4A37; --muted:#8A7E69; --accent:#85633B; --accent-dark:#5C3D1E; --accent-soft:#F0E4CE; }
-      * { box-sizing: border-box; }
-      body { margin: 0; padding: 24px 28px; font: 13px/1.5 'Segoe UI', Tahoma, Arial, sans-serif; background: var(--bg); color: var(--ink); }
-      .page-head { display: flex; align-items: center; gap: 12px; margin-bottom: 18px; }
-      .page-logo { width: 36px; height: 36px; border-radius: 8px; background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%); display: inline-flex; align-items: center; justify-content: center; color: var(--accent-soft); font-weight: 700; font-size: 18px; }
-      .page-title { font-size: 20px; font-weight: 700; color: var(--accent-dark); line-height: 1.1; }
-      .page-sub { color: var(--muted); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; }
-      .stat-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; margin-bottom: 18px; }
-      .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-      .stat-value { font-size: 22px; font-weight: 700; color: var(--accent-dark); line-height: 1.1; }
-      .stat-label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 4px; }
-      .stat-card.stat-tone-ok   { border-left: 4px solid #4F7A3A; }
-      .stat-card.stat-tone-ok   .stat-value { color: #3F6A2A; }
-      .stat-card.stat-tone-warn { border-left: 4px solid #B98410; }
-      .stat-card.stat-tone-warn .stat-value { color: #8A5A08; }
-      .stat-card.stat-tone-down { border-left: 4px solid #A12C1B; }
-      .stat-card.stat-tone-down .stat-value { color: #8A2415; }
-      .callout { background: #FBEAE5; border: 1px solid #E7B5A8; color: #7A2415; border-radius: 8px; padding: 12px 16px; margin: 10px 0 14px; font-size: 12px; }
-      .next-list { margin: 0; padding-left: 18px; }
-      .next-list li { margin: 4px 0; }
-      .next-list b { color: var(--accent-dark); }
-      .info-card { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 14px 18px; box-shadow: 0 1px 2px rgba(0,0,0,.04); margin-bottom: 12px; }
-      .info-row { display: flex; gap: 14px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
-      .info-row:last-child { border-bottom: 0; }
-      .info-label { color: var(--muted); flex: 0 0 140px; }
-      .info-value { color: var(--ink); flex: 1; font-family: 'Consolas','Cascadia Mono',monospace; font-size: 12px; word-break: break-all; }
-      .section-h { font-size: 11px; color: var(--muted); letter-spacing: 0.08em; text-transform: uppercase; margin: 14px 0 6px 4px; font-weight: 600; }
-      .chip { display: inline-block; background: var(--accent-soft); color: var(--accent-dark); border: 1px solid var(--border-2); padding: 0 8px; border-radius: 10px; font-size: 11px; font-family: Dubai, 'Segoe UI', sans-serif; font-weight: 600; margin-left: 8px; }
-      .tools { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-      .tools input { flex: 1; max-width: 320px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); font: inherit; }
-      .count-chip { background: var(--accent-soft); color: var(--accent-dark); border: 1px solid var(--border-2); padding: 2px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
-      table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; box-shadow: 0 1px 2px rgba(0,0,0,.04); }
-      th { background: var(--surface-2); color: var(--accent-dark); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em; padding: 10px 12px; text-align: left; border-bottom: 1px solid var(--border); position: sticky; top: 0; }
-      td { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; }
-      tr:nth-child(even) td { background: var(--surface-2); }
-      tr:hover td { background: var(--accent-soft); }
-      td.num { font-family: 'Consolas','Cascadia Mono',monospace; text-align: right; }
-      .footer { color: var(--muted); font-size: 11px; margin-top: 14px; }
-    `;
+    // Task 6.5 (v2.0): Status / Projects / Apply pending pages render natively
+    // into the tab pane (no iframe / srcdoc). Shared page styling lives in
+    // styles.css under the .app-render-page scope; per-page tweaks (if any)
+    // hang off .status-page / .projects-page / .apply-pending-page.
 
-    function pageShell(title, bodyHtml) {
-      const generated = new Date().toLocaleString();
-      // Self-CSP for the srcdoc so inline <style> + small inline <script>
-      // (used for the Projects filter) work — the iframe otherwise inherits
-      // the parent's strict policy which blocks inline scripts.
-      const cspMeta = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src data:;\">";
+    function renderPageHead(title) {
       return [
-        '<!doctype html><html><head>',
-        '<meta charset="utf-8">', cspMeta,
-        '<title>', escapeHtml(title), '</title>',
-        '<style>', PAGE_CSS, '</style></head><body>',
         '<div class="page-head"><span class="page-logo">S</span>',
         '<div><div class="page-title">', escapeHtml(title), '</div>',
-        '<div class="page-sub">DL-Processor · Sobha Realty · Registration</div></div></div>',
-        bodyHtml,
-        '<div class="footer">Generated ', escapeHtml(generated), '</div>',
-        '</body></html>'
+        '<div class="page-sub">DL-Processor · Sobha Realty · Registration</div></div></div>'
       ].join('');
     }
 
-    function buildStatusPage(capture) {
+    function renderPageFooter() {
+      const generated = new Date().toLocaleString();
+      return '<div class="footer">Generated ' + escapeHtml(generated) + '</div>';
+    }
+
+    function renderStatusPage(container, capture) {
+      container.classList.add('app-render-page');
+      container.classList.add('status-page');
+
       // Pull "key: value" pairs out of the captured CLI output.
       const kv = {};
       for (const e of capture) {
@@ -332,11 +292,18 @@
       const sfCard = sfRows
         ? '<h2 class="section-h">Latest Salesforce Import</h2><div class="info-card">' + sfRows + '</div>'
         : '';
-      const body = '<div class="stat-grid">' + cards + '</div>' + dbCard + sfCard;
-      return pageShell('Status', body);
+      container.innerHTML =
+        renderPageHead('Status') +
+        '<div class="stat-grid">' + cards + '</div>' +
+        dbCard +
+        sfCard +
+        renderPageFooter();
     }
 
-    function buildApplyPendingPage(capture) {
+    function renderApplyPendingPage(container, capture) {
+      container.classList.add('app-render-page');
+      container.classList.add('apply-pending-page');
+
       // Pull the summary numbers from apply-pending's CLI output.
       let approvals = 0, rejections = 0, deferred = 0;
       let errorRows = 0, canonicalRows = null;
@@ -391,17 +358,34 @@
           '</ul>' +
         '</div>';
 
-      const body =
+      container.innerHTML =
+        renderPageHead('Apply pending · Results') +
         '<div class="stat-grid">' + cards + '</div>' +
         warnNote +
         masterCard +
-        nextSteps;
-      return pageShell('Apply pending · Results', body);
+        nextSteps +
+        renderPageFooter();
     }
 
-    async function buildProjectsPage() {
+    async function renderProjectsPage(container) {
+      container.classList.add('app-render-page');
+      container.classList.add('projects-page');
+
+      container.innerHTML =
+        renderPageHead('Projects') +
+        '<p class="loading">Loading projects…</p>';
+
       let rows = [];
-      try { rows = await window.dlp.projects.list(); } catch { rows = []; }
+      try {
+        rows = await window.dlp.projects.list();
+      } catch (e) {
+        container.innerHTML =
+          renderPageHead('Projects') +
+          '<p class="error">Failed to load projects: ' + escapeHtml((e && e.message) || String(e)) + '</p>' +
+          renderPageFooter();
+        return;
+      }
+
       const cells = rows.map((p) =>
         '<tr>' +
           '<td>' + escapeHtml(p.project_name || '') + '</td>' +
@@ -411,19 +395,28 @@
           '<td>' + escapeHtml(p.last_imported || '—') + '</td>' +
         '</tr>'
       ).join('');
-      const tableHtml =
+
+      container.innerHTML =
+        renderPageHead('Projects') +
         '<div class="tools"><span class="count-chip">' + rows.length + ' project' + (rows.length === 1 ? '' : 's') + '</span>' +
-        '<input id="q" type="search" placeholder="Filter projects…"></div>' +
+        '<input class="projects-filter" type="search" placeholder="Filter projects…"></div>' +
         '<table><thead><tr>' +
           '<th>Project</th><th>SF Sub-Project</th><th>Prefix</th><th>Snapshots</th><th>Last Imported</th>' +
         '</tr></thead><tbody>' + cells + '</tbody></table>' +
-        '<script>document.getElementById("q").addEventListener("input",function(e){' +
-          'var q=e.target.value.toLowerCase();' +
-          'document.querySelectorAll("tbody tr").forEach(function(r){' +
-            'r.style.display=r.textContent.toLowerCase().indexOf(q)>=0?"":"none";' +
-          '});' +
-        '});<\/script>';
-      return pageShell('Projects', tableHtml);
+        renderPageFooter();
+
+      // Wire the live filter via addEventListener (inline <script> blocked by
+      // the renderer's strict CSP — fine in render mode, we have direct DOM).
+      const input = container.querySelector('.projects-filter');
+      const bodyRows = container.querySelectorAll('tbody tr');
+      if (input) {
+        input.addEventListener('input', (ev) => {
+          const q = ev.target.value.toLowerCase();
+          bodyRows.forEach((r) => {
+            r.style.display = r.textContent.toLowerCase().indexOf(q) >= 0 ? '' : 'none';
+          });
+        });
+      }
     }
 
     // Copy buttons (Output / Errors).
@@ -454,16 +447,21 @@
       'all':            'Dashboard'
     };
 
-    // Task 10: hijack the "Review pending" sidebar button so it opens the
-    // new inline page instead of running the legacy CLI command + opening
+    // Task 10 (v1.1): hijack the "Review pending" sidebar button so it opens
+    // the inline page instead of running the legacy CLI command + opening
     // the HTML file. Use capture phase so we run BEFORE sidebar.js's own
     // click handler. stopImmediatePropagation prevents the CLI run().
+    //
+    // Task 5 (v2.0): converted to render-mode tab — the page builds DOM
+    // directly into the tab pane (no iframe / srcdoc).
     const reviewBtn = document.querySelector('.cmd-btn[data-cmd="review-pending"]');
-    if (reviewBtn && window.__buildReviewPendingPage) {
+    if (reviewBtn && window.__renderReviewPendingPage) {
       reviewBtn.addEventListener('click', (ev) => {
         ev.stopImmediatePropagation();
-        const { html } = window.__buildReviewPendingPage();
-        window.__tabHost.open({ srcdoc: html, title: 'Review pending' });
+        window.__tabHost.open({
+          title: 'Review pending',
+          render: (container) => window.__renderReviewPendingPage(container)
+        });
       }, true);
     }
 
@@ -471,12 +469,15 @@
     // 📜 History button and by the dlp:open-history custom event the
     // per-unit side panel's "View in global History →" link dispatches.
     function openHistoryTab(initialFilters) {
-      if (!window.__buildHistoryPage) {
-        console.error('[history] __buildHistoryPage not available');
+      if (!window.__renderHistoryPage) {
+        console.error('[history] __renderHistoryPage not available');
         return;
       }
-      const { html } = window.__buildHistoryPage(initialFilters || {});
-      window.__tabHost.open({ srcdoc: html, title: 'History' });
+      const filters = initialFilters || {};
+      window.__tabHost.open({
+        title: 'History',
+        render: (container) => window.__renderHistoryPage(container, filters)
+      });
     }
 
     document.addEventListener('dlp:open-history', (ev) => {
@@ -564,18 +565,25 @@
           // Sobha-styled page tab so the data is available outside the log
           // column.
           if (result.command === 'status') {
-            window.__tabHost.open({ srcdoc: buildStatusPage(logCapture), title: 'Status' });
+            const captured = logCapture.slice();
+            window.__tabHost.open({
+              title: 'Status',
+              render: (container) => renderStatusPage(container, captured)
+            });
             return;
           }
           if (result.command === 'projects') {
-            const srcdoc = await buildProjectsPage();
-            window.__tabHost.open({ srcdoc, title: 'Projects' });
+            window.__tabHost.open({
+              title: 'Projects',
+              render: (container) => renderProjectsPage(container)
+            });
             return;
           }
           if (result.command === 'apply-pending') {
+            const captured = logCapture.slice();
             window.__tabHost.open({
-              srcdoc: buildApplyPendingPage(logCapture),
-              title: 'Apply pending'
+              title: 'Apply pending',
+              render: (container) => renderApplyPendingPage(container, captured)
             });
             return;
           }
