@@ -8,10 +8,9 @@
 //                function builds DOM directly into it. Scripts run in the
 //                main renderer context (no window.parent.dlp indirection).
 //
-// 'srcdoc' mode (inline HTML string into an iframe) is DEPRECATED. It still
-// works but logs a console.warn — Tasks 5/6 convert the last srcdoc callers
-// (review-pending, history) to render mode. After those land, srcdoc support
-// should be deleted entirely.
+// 'srcdoc' mode (inline HTML string into an iframe) was REMOVED in v2.0 Task 7
+// once Review Pending (Task 5) and History (Task 6) were converted to render
+// mode. open({ srcdoc }) now throws — see line ~105.
 //
 // For render-mode tabs the address bar / back / forward / reload buttons are
 // hidden — there's no iframe contentWindow to navigate. For url-mode tabs
