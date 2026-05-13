@@ -476,15 +476,15 @@
     // 📜 History button and by the dlp:open-history custom event the
     // per-unit side panel's "View in global History →" link dispatches.
     function openHistoryTab(initialFilters) {
-      if (!window.__buildHistoryPage) {
-        console.error('[history] __buildHistoryPage not available');
+      if (!window.__renderHistoryPage) {
+        console.error('[history] __renderHistoryPage not available');
         return;
       }
-      const { html } = window.__buildHistoryPage(initialFilters || {});
-      // TODO(v2.0 Task 6): convert __buildHistoryPage to render mode.
-      // Until then this still goes through the deprecated srcdoc path
-      // (tab-host logs a console.warn for each call).
-      window.__tabHost.open({ srcdoc: html, title: 'History' });
+      const filters = initialFilters || {};
+      window.__tabHost.open({
+        title: 'History',
+        render: (container) => window.__renderHistoryPage(container, filters)
+      });
     }
 
     document.addEventListener('dlp:open-history', (ev) => {

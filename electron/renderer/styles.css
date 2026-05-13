@@ -410,3 +410,129 @@ body.log-hidden .log-column { display: none; }
 .review-pending-page .rp-footer {
   color: var(--muted); font-size: 11px; margin-top: 14px; text-align: right;
 }
+
+/* ---------------------------------------------------------------------------
+   History page (v2.0 Task 6 — moved from inline <style> in srcdoc).
+   Every selector is scoped to .history-page so styles cannot leak to other
+   tabs. Tokens (--bg, --accent-dark, etc.) inherit from :root at the top.
+   --------------------------------------------------------------------------- */
+.history-page {
+  padding: 18px 24px;
+  font: 13px/1.5 'Segoe UI', Tahoma, Arial, sans-serif;
+  background: var(--bg); color: var(--ink);
+  /* Local tonal palette for this page (originally defined in iframe :root). */
+  --hp-ok:#3F6A2A; --hp-ok-soft:#E8F0DC; --hp-ok-border:#B9CFA0;
+  --hp-warn:#8A5A08; --hp-warn-soft:#FBEFD2; --hp-warn-border:#E5C885;
+  --hp-danger:#8A2415; --hp-danger-soft:#FBEAE5; --hp-danger-border:#E7B5A8;
+}
+
+.history-page .hp-filters {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 10px;
+}
+.history-page .hp-filters label {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.history-page .hp-filters select,
+.history-page .hp-filters input {
+  padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px;
+  background: var(--surface); font: inherit; color: var(--ink);
+}
+.history-page .hp-filters select { min-width: 130px; }
+.history-page .hp-filters input { min-width: 110px; }
+.history-page .hp-btn {
+  border: 1px solid var(--border-2); border-radius: 6px;
+  padding: 5px 12px; cursor: pointer; font: inherit; font-size: 12px;
+  font-weight: 600; background: var(--accent-soft); color: var(--accent-dark);
+}
+.history-page .hp-btn:hover:not(:disabled) { background: #E6D6B5; }
+.history-page .hp-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.history-page .hp-btn-primary {
+  background: var(--accent); color: #FFF; border-color: var(--accent-dark);
+}
+.history-page .hp-btn-primary:hover:not(:disabled) { background: var(--accent-dark); }
+
+.history-page .hp-status {
+  color: var(--muted); font-size: 11px; min-height: 14px; margin-bottom: 6px;
+}
+.history-page .hp-status.is-ok    { color: var(--hp-ok); }
+.history-page .hp-status.is-error { color: var(--hp-danger); }
+
+.history-page table.hp-table {
+  width: 100%; border-collapse: collapse; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+}
+.history-page .hp-table th {
+  background: var(--surface-2); color: var(--accent-dark);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 8px 10px; text-align: left; border-bottom: 1px solid var(--border);
+  position: sticky; top: 0;
+}
+.history-page .hp-table td {
+  padding: 8px 10px; border-bottom: 1px solid var(--border);
+  font-size: 12px; vertical-align: middle;
+}
+.history-page .hp-table tr:nth-child(even) td { background: var(--surface-2); }
+.history-page .hp-table td.hp-when {
+  font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px;
+  color: var(--ink-2); white-space: nowrap;
+}
+.history-page .hp-table td.hp-project { color: var(--ink-2); }
+.history-page .hp-table td.hp-unit    { font-weight: 600; }
+.history-page .hp-table td.hp-diff {
+  font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px; word-break: break-all;
+}
+.history-page .hp-old   { color: var(--hp-danger); text-decoration: line-through; }
+.history-page .hp-new   { color: var(--hp-ok); }
+.history-page .hp-arrow { color: var(--muted); margin: 0 4px; }
+.history-page .hp-unit-link { color: inherit; text-decoration: none; cursor: pointer; }
+.history-page .hp-unit-link:hover { color: var(--accent-dark); text-decoration: underline; }
+
+.history-page .hp-action-chip {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  padding: 1px 6px; border-radius: 8px; text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--accent-soft); color: var(--accent-dark); border: 1px solid var(--border-2);
+}
+.history-page .hp-action-approve {
+  background: var(--hp-ok-soft); color: var(--hp-ok); border-color: var(--hp-ok-border);
+}
+.history-page .hp-action-override {
+  background: var(--hp-warn-soft); color: var(--hp-warn); border-color: var(--hp-warn-border);
+}
+.history-page .hp-action-reject {
+  background: var(--hp-danger-soft); color: var(--hp-danger); border-color: var(--hp-danger-border);
+}
+.history-page .hp-action-auto_apply {
+  background: var(--accent-soft); color: var(--accent-dark); border-color: var(--border-2);
+}
+.history-page .hp-action-learn_alias {
+  background: #E5E1F3; color: #3C2E80; border-color: #BDB3DD;
+}
+.history-page .hp-src-sub {
+  display: block; font-size: 10px; color: var(--muted); margin-top: 2px;
+  font-weight: 400; letter-spacing: 0; text-transform: none;
+}
+
+.history-page .hp-empty {
+  padding: 36px 24px; text-align: center; color: var(--muted);
+  border: 1px dashed var(--border-2); border-radius: 8px; background: var(--surface-2);
+}
+.history-page .hp-empty strong {
+  color: var(--accent-dark); display: block; margin-bottom: 4px; font-size: 14px;
+}
+
+.history-page .hp-pager {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 10px; color: var(--muted); font-size: 11px;
+}
+.history-page .hp-pager .hp-pager-info {
+  font-family: 'Consolas','Cascadia Mono',monospace;
+}
+.history-page .hp-pager .hp-pager-btns { display: flex; gap: 6px; }
+
+.history-page .hp-footer {
+  color: var(--muted); font-size: 11px; margin-top: 14px; text-align: right;
+}
