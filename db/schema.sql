@@ -321,11 +321,15 @@ CREATE TABLE IF NOT EXISTS audit_log (
   new_value         TEXT,
   action            TEXT NOT NULL CHECK (action IN
                       ('approve','override','reject','auto_apply','learn_alias',
-                       'approve_bp','reject_bp','acknowledge_bp')),
+                       'approve_bp','reject_bp','acknowledge_bp','revert')),
   source            TEXT NOT NULL CHECK (source IN
                       ('review_pending','import_dld','import_sf','apply_pending','compare')),
   change_id         INTEGER,
-  user_note         TEXT
+  user_note         TEXT,
+  user              TEXT,
+  tier2             INTEGER NOT NULL DEFAULT 0,
+  prev_hash         TEXT,
+  row_hash          TEXT
 );
 CREATE INDEX IF NOT EXISTS audit_log_unit_ts    ON audit_log (project_id, unit_number_norm, ts DESC);
 CREATE INDEX IF NOT EXISTS audit_log_project_ts ON audit_log (project_id, ts DESC);
