@@ -660,3 +660,182 @@ body.log-hidden .log-column { display: none; }
   color: var(--muted); font-size: 13px; margin: 12px 0;
 }
 .app-render-page .error { color: #8A2415; }
+
+/* ---------------------------------------------------------------------------
+   BP Card (v2.0 Task 14 — native renderer-DOM Business Process card).
+   Used by the Review Pending page (Task 15 wires the list). Scoped under
+   .bp-card so styles don't leak. State tokens are page-level CSS vars so
+   any container can pick them up.
+   --------------------------------------------------------------------------- */
+:root {
+  --state-ready: #2e8540;
+  --state-in-progress: #d4a017;
+  --state-dld-issue: #c84e1c;
+  --state-rejected: #b3261e;
+  --state-no-sf-row: #6b6e75;
+}
+
+.review-pending-page .bp-card,
+.bp-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 4px solid var(--state-no-sf-row);
+  border-radius: 8px;
+  margin: 0 0 12px 0;
+  padding: 12px 16px 14px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+  font: 13px/1.5 'Segoe UI', Tahoma, Arial, sans-serif;
+  color: var(--ink);
+  position: relative;
+}
+.bp-card.state-ready        { border-left-color: var(--state-ready); }
+.bp-card.state-in-progress  { border-left-color: var(--state-in-progress); }
+.bp-card.state-dld-issue    { border-left-color: var(--state-dld-issue); }
+.bp-card.state-rejected     { border-left-color: var(--state-rejected); }
+.bp-card.state-no-sf-row    { border-left-color: var(--state-no-sf-row); }
+
+.bp-card .bp-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; padding-bottom: 8px; margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.bp-card .bp-header-title {
+  flex: 1; min-width: 0;
+  color: var(--accent-dark); font-weight: 600; font-size: 13px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.bp-card .bp-title-unit { font-weight: 700; font-size: 14px; }
+.bp-card .bp-header-badges { flex: 0 0 auto; }
+.bp-card .bp-state-badge {
+  display: inline-block; font-size: 10px; font-weight: 700;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 3px 9px; border-radius: 10px; color: #fff;
+  background: var(--state-no-sf-row);
+}
+.bp-card .bp-state-READY        { background: var(--state-ready); }
+.bp-card .bp-state-IN_PROGRESS  { background: var(--state-in-progress); color: #2A1A02; }
+.bp-card .bp-state-DLD_ISSUE    { background: var(--state-dld-issue); }
+.bp-card .bp-state-REJECTED     { background: var(--state-rejected); }
+.bp-card .bp-state-NO_SF_ROW    { background: var(--state-no-sf-row); }
+
+.bp-card .bp-banner {
+  margin: 0 0 10px 0; padding: 8px 12px; border-radius: 6px;
+  font-size: 12px; font-weight: 500;
+  border: 1px solid var(--border);
+}
+.bp-card .bp-banner-warn   { background: #FBEFD2; border-color: #E5C885; color: #6A4A0A; }
+.bp-card .bp-banner-dld    { background: #FDE4D2; border-color: #E5A485; color: #6B2A0A; }
+.bp-card .bp-banner-reject { background: #FBEAE5; border-color: #E7B5A8; color: #6A1A0F; }
+.bp-card .bp-banner-nosf   { background: #ECEEF1; border-color: #C8CCD3; color: #3F434B; }
+
+.bp-card .bp-preview {
+  display: flex; flex-direction: column; gap: 4px;
+  padding: 6px 0 10px; border-bottom: 1px dashed var(--border);
+  margin-bottom: 8px;
+}
+.bp-card .bp-preview-row {
+  display: flex; align-items: baseline; gap: 8px;
+  font-family: 'Consolas','Cascadia Mono',monospace; font-size: 12px;
+  min-width: 0; overflow: hidden;
+}
+.bp-card .bp-preview-label {
+  flex: 0 0 90px; color: var(--muted); font-family: 'Segoe UI', Tahoma, Arial, sans-serif;
+  font-weight: 600; text-transform: uppercase; font-size: 10px; letter-spacing: 0.06em;
+}
+.bp-card .bp-preview-old { flex: 1; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp-card .bp-preview-arrow { flex: 0 0 auto; color: var(--accent); font-weight: 700; }
+.bp-card .bp-preview-new { flex: 1; color: var(--accent-dark); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bp-card .bp-preview-more { color: var(--muted); font-size: 11px; font-style: italic; padding-top: 4px; }
+.bp-card .bp-preview-empty { color: var(--muted); font-style: italic; padding: 6px 0; }
+
+.bp-card .bp-sfctx {
+  background: var(--surface-2); border: 1px solid var(--border);
+  border-radius: 6px; padding: 8px 10px; margin-bottom: 10px;
+  font-size: 12px;
+}
+.bp-card .bp-sfctx-empty { color: var(--muted); font-style: italic; }
+.bp-card .bp-sfctx-line { padding: 2px 0; color: var(--ink-2); }
+.bp-card .bp-sfctx-k { color: var(--muted); font-size: 11px; }
+.bp-card .bp-sfctx-v { color: var(--ink); font-weight: 500; }
+.bp-card .bp-sfctx-comments .bp-sfctx-v { font-style: italic; color: var(--ink-2); }
+
+.bp-card .bp-actions {
+  display: flex; align-items: center; justify-content: flex-end;
+  gap: 8px; flex-wrap: wrap; padding-top: 4px;
+}
+.bp-card .bp-btn {
+  background: var(--surface); color: var(--ink);
+  border: 1px solid var(--border-2); border-radius: 6px;
+  padding: 6px 14px; font: inherit; font-size: 12px; font-weight: 600;
+  cursor: pointer;
+}
+.bp-card .bp-btn:hover:not(:disabled) {
+  background: var(--accent-soft); border-color: var(--accent);
+}
+.bp-card .bp-btn:disabled {
+  opacity: 0.5; cursor: not-allowed;
+}
+.bp-card .bp-btn-approve {
+  background: var(--state-ready); color: #fff; border-color: #25682E;
+}
+.bp-card .bp-btn-approve:hover:not(:disabled) {
+  background: #25682E; border-color: #1D5226;
+}
+.bp-card .bp-btn-reject {
+  background: var(--surface); color: var(--state-rejected); border-color: #C99086;
+}
+.bp-card .bp-btn-reject:hover:not(:disabled) {
+  background: #FBEAE5;
+}
+.bp-card .bp-btn-acknowledge {
+  background: var(--state-rejected); color: #fff; border-color: #8A1A14;
+}
+.bp-card .bp-btn-acknowledge:hover:not(:disabled) {
+  background: #8A1A14;
+}
+.bp-card .bp-btn-sf {
+  background: var(--surface); color: var(--accent-dark); border-color: var(--border-2);
+}
+.bp-card .bp-btn-expand .bp-expand-label-expanded { display: none; }
+.bp-card.expanded .bp-btn-expand .bp-expand-label-collapsed { display: none; }
+.bp-card.expanded .bp-btn-expand .bp-expand-label-expanded { display: inline; }
+
+.bp-card .bp-rows { display: none; margin-top: 12px; }
+.bp-card.expanded .bp-rows { display: block; }
+.bp-card .bp-rows-empty { color: var(--muted); font-style: italic; padding: 10px 0; }
+.bp-card table.bp-rows-table {
+  width: 100%; border-collapse: collapse; background: var(--surface);
+  border: 1px solid var(--border); border-radius: 6px; overflow: hidden;
+}
+.bp-card .bp-rows-table th {
+  background: var(--surface-2); color: var(--accent-dark);
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  padding: 7px 10px; text-align: left; border-bottom: 1px solid var(--border);
+}
+.bp-card .bp-rows-table td {
+  padding: 6px 10px; border-bottom: 1px solid var(--border);
+  font-size: 12px; vertical-align: middle;
+}
+.bp-card .bp-rows-table tr:last-child td { border-bottom: 0; }
+.bp-card .bp-rows-table tr.is-resolved { opacity: 0.5; }
+.bp-card .bp-row-field { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.bp-card .bp-row-old { font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px; color: var(--ink-2); word-break: break-all; }
+.bp-card .bp-row-new {
+  width: 100%; max-width: 320px; padding: 4px 6px;
+  border: 1px solid var(--border-2); border-radius: 4px;
+  font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px;
+  background: var(--surface);
+}
+.bp-card .bp-row-new-readonly {
+  font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px; color: var(--ink-2);
+}
+.bp-card .bp-row-actions { white-space: nowrap; text-align: right; }
+.bp-card .bp-row-btn {
+  background: var(--surface); border: 1px solid var(--border-2); border-radius: 4px;
+  padding: 2px 8px; margin-left: 4px; cursor: pointer; font: inherit; font-size: 12px;
+  color: var(--ink);
+}
+.bp-card .bp-row-btn:hover { background: var(--accent-soft); }
+.bp-card .bp-row-approve:hover { background: #E8F0DC; border-color: var(--state-ready); color: var(--state-ready); }
+.bp-card .bp-row-reject:hover  { background: #FBEAE5; border-color: var(--state-rejected); color: var(--state-rejected); }
+.bp-card .bp-row-decided { color: var(--muted); font-style: italic; text-align: right; }
