@@ -25,6 +25,7 @@ Lives inside the P-Charter repo as a git subtree: `Desktop\p-charter\dl-processo
 6. [Reviewing changes (v2.0)](#reviewing-changes-v20)
 7. [Viewing change history](#viewing-change-history)
 7. [Restoring from backup](#restoring-from-backup)
+8. [Audit hardening (v2.1)](#audit-hardening-v21)
 8. [Receiving patches (v1.2+)](#receiving-patches-v12)
 9. [CLI subcommands](#cli-subcommands)
 9. [Data model & file layout](#data-model--file-layout)
@@ -385,6 +386,77 @@ Click **`Import DB`** in the desktop app and pick a `.zip` backup. The app extra
 
 ---
 
+## Audit hardening (v2.1)
+
+> v2.1 ships five audit-hardening features as a patch on top of v2.0. Schema migration 008 runs automatically at first launch — adds four columns to `audit_log` (`user`, `tier2`, `prev_hash`, `row_hash`), widens the `action` CHECK to include `'revert'`, and backfills hashes for existing rows in `(ts, audit_id)` order.
+
+### Reverting a change
+
+Open the `📜 History` page → find the row whose change you want to undo → click `[↶ Revert]` at the end of the row → confirm in the dialog.
+
+The revert restores `master_data` to that row's `old_value` and appends a fresh `audit_log` entry with `action='revert'`. This is a **Cmd-Z model — one step at a time.** Clicking Revert on consecutive entries walks back through the history step-by-step; there is no "revert to date X" bulk operation.
+
+The button only appears on rows whose `action` is `approve` / `override` / `approve_bp` / `revert` AND whose `table_name` is `master_data`. Rows for `auto_apply`, `reject`, `learn_alias`, and `acknowledge_bp` get no button — they didn't change `master_data` in the first place, so there's nothing to revert.
+
+### Your audit identity
+
+Open `⚙ Settings` → **"Your name (audit attribution)"** → type your name or email → Save. Every change you approve / override / reject / revert from then on stamps that name into `audit_log.user`.
+
+If you leave the field blank, the app falls back to your Windows login name (`os.userInfo().username`). Either way, the audit trail records *who* approved each change, not just *what* changed.
+
+Existing rows from v1.1 / v2.0 stay `NULL` — attribution is forward-only.
+
+### Tier-2 approval safeguards
+
+Big changes trigger an extra confirmation. Defaults (configurable in Settings):
+
+- **Price** — delta > **10%** OR > **50,000 AED absolute**
+- **Area** — delta > **5%**
+
+When you click Approve on a row that crosses one of these thresholds, a **Tier-2 justification modal** pops up. Type a justification (minimum 10 characters) and confirm — only then does the change commit. The justification is stored in `audit_log.user_note` and the row is flagged `tier2=1`.
+
+On a BP card's **Approve all** button, if any single field crosses Tier-2 the app shows **one combined modal** listing every Tier-2 row in the card with a single shared justification — you type the reasoning once and it stamps every affected audit entry.
+
+Thresholds live in Settings:
+- **Tier-2 price threshold (%)** — default `10`
+- **Tier-2 price threshold (AED)** — default `50000`
+- **Tier-2 area threshold (%)** — default `5`
+
+The backend re-validates thresholds when the commit lands (defense in depth — a tampered renderer can't skip the gate).
+
+### Cryptographic audit chain
+
+Every `audit_log` row now carries a SHA-256 hash that includes the previous row's hash — a tamper-evident chain. The hash is computed over `(prev_hash || canonicalize(row_content))` so any in-place edit to a past row breaks the chain at that row and every row after.
+
+Migration 008 backfills hashes for all existing rows in `(ts, audit_id)` order on first launch. From v2.1 onward, every `writeAuditLog` call appends a new row that chains forward.
+
+No "Verify audit log" button yet — the chain is just present. A future version will surface a one-click verification that walks the chain and highlights any break. For now, anyone with SQLite access (auditors, compliance) can re-compute the hashes themselves and confirm integrity.
+
+### Excel audit export
+
+Open the `📜 History` page → adjust filters as needed → click `[Export Excel]` (next to `[Export CSV]`) → choose where to save the `.xlsx`.
+
+The export honours the **currently filtered** set — not just the visible page — and writes 12 columns:
+
+`Timestamp` · `User` · `Project` · `Unit` · `Field` · `Old value` · `New value` · `Action` · `Source` · `Tier-2` · `Justification` · `Row hash`
+
+Open in Excel, share with compliance, archive monthly. Uses the existing `xlsx` dependency — no new install required.
+
+### Settings reference (v2.1 fields)
+
+The `⚙ Settings` page gains four fields for v2.1:
+
+| Field | Type | Default | Stored as |
+|---|---|---|---|
+| Your name (audit attribution) | Text | empty → OS username | `audit_user` |
+| Tier-2 price threshold (%) | Number | `10` | `tier2_price_pct` |
+| Tier-2 price threshold (AED) | Number | `50000` | `tier2_price_abs` |
+| Tier-2 area threshold (%) | Number | `5` | `tier2_area_pct` |
+
+**Bonus polish (v2.1):** the **log column** on the right side of the app now starts **hidden by default**. The `📋` toggle in the top bar still shows / hides it on demand — it just no longer steals horizontal space on first launch.
+
+---
+
 ## Receiving patches (v1.2+)
 
 > From v1.2 onward, updates are distributed as small zip patches (~5-15 MB) instead of full 78 MB installers. Your admin builds the patch and shares it (OneDrive / email / network drive). The **v1.2.0 → v2.0.0** upgrade will be the first real-world patch distributed via this mechanism.
@@ -702,6 +774,50 @@ Quick reference — the most common ones:
 ---
 
 ## Changelog
+
+### v2.1.0 (13 May 2026)
+
+Audit & compliance hardening — five features distributed as a patch on top of v2.0.0.
+
+#### One-click Revert on History rows
+
+Global History page rows whose `action` is `approve` / `override` / `approve_bp` / `revert` (and whose `table_name` is `master_data`) gain a `[↶ Revert]` button. Click → confirm → `master_data` is restored to `old_value` and a fresh `audit_log` row is appended with `action='revert'`. Cmd-Z model — one step at a time. Non-revertable actions (`auto_apply`, `reject`, `learn_alias`, `acknowledge_bp`) get no button.
+
+#### User attribution
+
+New `audit_log.user` column. Populated from the new Settings field **"Your name (audit attribution)"** if set, else falls back to `os.userInfo().username`. Forward-only — pre-v2.1 rows stay NULL.
+
+#### Cryptographic chain on `audit_log`
+
+New `prev_hash` + `row_hash` columns. SHA-256 over `(prev_hash || canonicalize(row_content))`. Migration 008 backfills existing rows in `(ts, audit_id)` order; from v2.1 onward `writeAuditLog` chains forward at every append. Tamper-evident — any in-place edit to a past row breaks the chain at that row and every row after.
+
+#### Tier-2 approval gates
+
+Settings thresholds (defaults: price > 10% delta OR > 50K AED absolute; area > 5% delta). When an approval crosses a threshold a justification modal (min 10 chars) fires before the commit. Justification stored in `audit_log.user_note`; row flagged `tier2=1`. BP-card **Approve all** shows ONE combined modal listing every Tier-2 row in the card with a shared justification. Backend re-validates thresholds at commit (defense in depth).
+
+#### Excel audit export
+
+New `[Export Excel]` button on the History page next to `[Export CSV]`. Honours current filters. 12 columns: Timestamp / User / Project / Unit / Field / Old value / New value / Action / Source / Tier-2 / Justification / Row hash. Uses the existing `xlsx` dependency.
+
+#### Schema migration 008
+
+One idempotent pass:
+- Adds 4 nullable columns to `audit_log`: `user`, `tier2`, `prev_hash`, `row_hash`
+- Widens `audit_log.action` CHECK to include `'revert'`
+- Backfills hashes for existing rows
+
+#### Settings additions
+
+- "Your name (audit attribution)" — text
+- "Tier-2 price threshold (%)" — number, default 10
+- "Tier-2 price threshold (AED)" — number, default 50000
+- "Tier-2 area threshold (%)" — number, default 5
+
+#### Bonus polish
+
+The right-side log column now starts hidden by default. The 📋 toggle in the top bar still works to show it on demand.
+
+Test count: 390 → **422**.
 
 ### v2.0.0 (12 May 2026)
 

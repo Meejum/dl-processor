@@ -1,12 +1,12 @@
 # DL-Processor — Improvement Roadmap
 
-**Approved by Ali 2026-05-12.** Strategic improvements organized into three horizons. Each version ships independently; no version blocks the one after.
+**Approved by Ali 2026-05-12. Last updated 2026-05-13 (v2.1 ship).** Strategic improvements organized into three horizons. Each version ships independently; no version blocks the one after.
 
 ## Cadence
 
-1. **Done** — v1.2 (patch-based updates) and v2.0 (de-iframe + BP grouping + DLD drift) shipped on 2026-05-12. v1.3 and v1.4 were folded into v2.0.
-2. **Now (v2.0 production phase)** — Use v2.0 with the registration team for 2-4 weeks. Capture friction. The notes below shape v2.1 priorities.
-3. **Next milestone** — v2.1 (audit + compliance hardening).
+1. **Done** — v1.2 (patch-based updates), v2.0 (de-iframe + BP grouping + DLD drift) on 2026-05-12, and v2.1 (audit hardening) on 2026-05-13. v1.3 and v1.4 were folded into v2.0.
+2. **Now (v2.1 production phase)** — Use v2.1 with the registration team for 2-4 weeks. Capture friction (especially Tier-2 threshold tuning + Revert usage). The notes below shape v2.2 priorities.
+3. **Next milestone** — v2.2 (native project dashboard).
 4. **Mid-2026** — Evaluate v2.x vs v3.0 against actual team adoption signals.
 
 ---
@@ -54,30 +54,47 @@
 
 ---
 
-### v2.1 — Audit & compliance hardening *(formerly v1.4 / v1.5)*
+### v2.1 — Audit & compliance hardening ✅ SHIPPED 2026-05-13 *(formerly v1.4 / v1.5)*
 
-**Status:** spec'd 2026-05-13. Ready to execute.
+**Status:** shipped as a patch on top of v2.0.0.
 
-**What ships (all 5 items per brainstorming session):**
-- **One-click Revert** on global History page rows — Cmd-Z model: restores `master_data` to the audit row's `old_value`, writes new audit_log entry `action='revert'`. Only `approve` / `override` / `approve_bp` / prior `revert` entries are revertable.
-- **"Approved by" user attribution** — new `audit_log.user` column. Source: Settings field if set, else OS user (`os.userInfo().username`). Forward-only.
-- **Cryptographic chain on audit_log** — new `prev_hash` + `row_hash` columns. Migration 008 backfills hashes for existing rows in `(ts, audit_id)` order; v2.1 onward chains forward at every `writeAuditLog`. SHA-256. Tamper-evident.
-- **Tier-2 approval gates** — Settings thresholds (default: price >10% delta OR >50K AED absolute; area >5% delta). When approval crosses threshold, required-justification modal fires before commit; text stored in `audit_log.user_note`, `tier2=1` flag set. No password block (single-user reality).
-- **Excel audit export** — "Export Excel" button on the History page next to the existing CSV export. Honors current filters. xlsx output with v2.1 columns added (user, tier2, justification, row_hash).
+#### What v2.1 delivered
 
-**Why:** Compliance teams will eventually audit the auditor. Cryptographic chain + per-row user attribution makes the audit_log defensible. Revert is needed because approvals will sometimes be wrong and there's no escape hatch in v1.1/v2.0.
+- **One-click Revert** on global History page rows — Cmd-Z model. Restores `master_data` to the audit row's `old_value` and appends a new `audit_log` entry with `action='revert'`. Button gated on `REVERTABLE_ACTIONS` (`approve` / `override` / `approve_bp` / `revert`) AND `table_name='master_data'`. Non-revertable actions (`auto_apply`, `reject`, `learn_alias`, `acknowledge_bp`) get no button.
+- **User attribution** — new `audit_log.user` column. Populated from the Settings field "Your name (audit attribution)" if set, else `os.userInfo().username`. Forward-only — pre-v2.1 rows stay NULL.
+- **Cryptographic chain on `audit_log`** — new `prev_hash` + `row_hash` columns. SHA-256 of `(prev_hash || canonicalize(row_content))`. Migration 008 backfills existing rows in `(ts, audit_id)` order; from v2.1 onward every `writeAuditLog` chains forward. Tamper-evident.
+- **Tier-2 approval gates** — Settings thresholds (defaults: price > 10% delta OR > 50K AED absolute; area > 5% delta). Required-justification modal (min 10 chars) fires before commit; text stored in `audit_log.user_note`, row flagged `tier2=1`. BP-card `Approve all` shows ONE combined modal with all tier-2 rows + shared justification. Backend re-validates thresholds (defense in depth). Strict greater-than — boundary cases (exactly 10% / 50K) do NOT trip.
+- **Excel audit export** — `[Export Excel]` button on History page next to `[Export CSV]`. Honours current filters. 12 columns (Timestamp / User / Project / Unit / Field / Old value / New value / Action / Source / Tier-2 / Justification / Row hash). Uses existing `xlsx` dep.
 
-**Estimate:** ~1 week.
+#### Schema
+
+Migration 008 (`2026-05-13-008-audit-hardening`) — one idempotent pass:
+- Adds 4 nullable columns to `audit_log`: `user`, `tier2`, `prev_hash`, `row_hash`
+- Widens `audit_log.action` CHECK to include `'revert'`
+- Backfills hashes for existing rows from genesis (`'0' x 64`)
+
+#### Settings additions
+
+- "Your name (audit attribution)" — text, falls back to OS username
+- "Tier-2 price threshold (%)" — number, default 10
+- "Tier-2 price threshold (AED)" — number, default 50000
+- "Tier-2 area threshold (%)" — number, default 5
+
+#### Bonus polish
+
+The right-side log column now starts hidden by default; the 📋 toggle in the top bar still shows it on demand.
+
+**Test count:** 390 → **422**.
 
 **Spec:** `docs/superpowers/specs/2026-05-13-v2.1-audit-hardening-design.md`
 
-**Dependencies:** None.
+> Next up: v2.2 (native project dashboard).
 
 ---
 
 ### v2.2 — Native project dashboard *(new 2026-05-13, was implicitly part of v2.0 de-iframe)*
 
-**Status:** not yet designed.
+**Status:** next milestone — not yet designed.
 
 **What ships:**
 - Replace the `output/compare/*.html` and `output/dashboard.html` files (generated by `cmdCompare`, opened via `url`-mode iframe today) with NATIVE renderer-DOM panes
@@ -90,7 +107,7 @@
 
 **Estimate:** ~1.5 weeks. Needs its own brainstorming session before execution.
 
-**Dependencies:** v2.1 (use the audit_log query patterns; not strict).
+**Dependencies:** v2.1 (use the audit_log query patterns; not strict). ✅ met.
 
 ---
 
@@ -125,7 +142,7 @@
 
 **Estimate:** ~1 week.
 
-**Dependencies:** v2.1 (compliance schema additions).
+**Dependencies:** v2.1 (compliance schema additions). ✅ met.
 
 ---
 
@@ -171,7 +188,7 @@
 
 **Estimate:** Major architecture work — ~6-8 weeks.
 
-**Dependencies:** v2.1 (audit hardening) — multi-user without strong audit is unsafe.
+**Dependencies:** v2.1 (audit hardening) — multi-user without strong audit is unsafe. ✅ met.
 
 ---
 
