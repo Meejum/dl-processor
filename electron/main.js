@@ -240,8 +240,20 @@ app.whenReady().then(async () => {
     try { return fn(db); } finally { db.close(); }
   }
 
+  // Build the tier-2 thresholds bundle from app config (with defaults).
+  // Used by both per-row approve + BP approve handlers below.
+  function getTier2Thresholds() {
+    const cfg = loadAppConfig(state.appConfigPath) || {};
+    return {
+      tier2_price_pct: cfg.tier2_price_pct != null ? cfg.tier2_price_pct : 10,
+      tier2_price_abs: cfg.tier2_price_abs != null ? cfg.tier2_price_abs : 50000,
+      tier2_area_pct:  cfg.tier2_area_pct  != null ? cfg.tier2_area_pct  : 5
+    };
+  }
+
   ipcMain.handle('dlp:review:list',        (e, opts)                           => withDb(db => reviewCmds.listPending(db, opts || {})));
-  ipcMain.handle('dlp:review:approve',     (e, { changeId, override = null }) => withDb(db => reviewCmds.approvePending(db, changeId, override)));
+  ipcMain.handle('dlp:review:approve',     (e, { changeId, override = null, userNote = null }) =>
+    withDb(db => reviewCmds.approvePending(db, changeId, override, { userNote, thresholds: getTier2Thresholds() })));
   ipcMain.handle('dlp:review:reject',      (e, { changeId })                  => withDb(db => reviewCmds.rejectPending(db, changeId)));
   ipcMain.handle('dlp:review:teach-alias', (e, { changeId, scope })           => withDb(db => reviewCmds.teachAliasAndApprove(db, changeId, { scope })));
 
@@ -250,7 +262,8 @@ app.whenReady().then(async () => {
   // source_snapshot_id + project + unit). Backed by src/commands/review-bps.js.
   const reviewBps = require('../src/commands/review-bps');
   ipcMain.handle('dlp:review:list-bps',       (e, opts)                       => withDb(db => reviewBps.listBps(db, opts || {})));
-  ipcMain.handle('dlp:review:approve-bp',     (e, { bpId, overrides })        => withDb(db => reviewBps.approveBp(db, bpId, overrides || {})));
+  ipcMain.handle('dlp:review:approve-bp',     (e, { bpId, overrides, userNote = null }) =>
+    withDb(db => reviewBps.approveBp(db, bpId, overrides || {}, { userNote, thresholds: getTier2Thresholds() })));
   ipcMain.handle('dlp:review:reject-bp',      (e, { bpId })                   => withDb(db => reviewBps.rejectBp(db, bpId)));
   ipcMain.handle('dlp:review:acknowledge-bp', (e, { bpId })                   => withDb(db => reviewBps.acknowledgeBp(db, bpId)));
 
@@ -259,8 +272,10 @@ app.whenReady().then(async () => {
   // panel open. withDb() guarantees the better-sqlite3 handle is closed
   // even if the renderer disconnects mid-call.
   const auditQuery = require('../src/commands/audit-query');
+  const auditRevert = require('../src/commands/audit-revert');
   ipcMain.handle('dlp:audit:unit-history', (e, args) => withDb(db => auditQuery.unitHistory(db, args || {})));
   ipcMain.handle('dlp:audit:global', (e, opts) => withDb(db => auditQuery.globalHistory(db, opts || {})));
+  ipcMain.handle('dlp:audit:revert', (e, { auditId }) => withDb(db => auditRevert.revertAuditEntry(db, auditId)));
   ipcMain.handle('dlp:audit:export-csv', async (e, opts) => {
     const rows = withDb(db => auditQuery.globalHistory(db, Object.assign({}, opts || {}, { limit: 1000000, offset: 0 })));
     const cols = ['ts','project_name','unit_number_norm','table_name','field','old_value','new_value','action','source','change_id','user_note'];
@@ -275,6 +290,46 @@ app.whenReady().then(async () => {
     });
     if (result.canceled || !result.filePath) return null;
     fs.writeFileSync(result.filePath, lines.join('\n'), 'utf8');
+    return result.filePath;
+  });
+
+  ipcMain.handle('dlp:audit:export-xlsx', async (e, opts = {}) => {
+    // Reuse the same query as export-csv — bound at 1,000,000 rows so we get all
+    // filtered rows (the History page paginates at 100/page in the UI, but the
+    // export takes the FULL filtered set).
+    const rows = withDb(db => auditQuery.globalHistory(db, Object.assign({}, opts, { limit: 1000000, offset: 0 })));
+
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Export audit log to Excel',
+      defaultPath: 'audit-log-' + new Date().toISOString().slice(0, 16).replace(/[:T]/g, '') + '.xlsx',
+      filters: [{ name: 'Excel workbook', extensions: ['xlsx'] }]
+    });
+    if (result.canceled || !result.filePath) return null;
+
+    const XLSX = require('xlsx');
+    const headers = [
+      'Timestamp', 'User', 'Project', 'Unit', 'Field',
+      'Old value', 'New value', 'Action', 'Source',
+      'Tier-2', 'Justification', 'Row hash'
+    ];
+    const data = [headers, ...rows.map(r => [
+      r.ts,
+      r.user || '',
+      r.project_name || '',
+      r.unit_number_norm || '',
+      r.field || '',
+      r.old_value != null ? String(r.old_value) : '',
+      r.new_value != null ? String(r.new_value) : '',
+      r.action || '',
+      r.source || '',
+      r.tier2 ? 'TIER-2' : '',
+      r.user_note || '',
+      r.row_hash || ''
+    ])];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Audit Log');
+    XLSX.writeFile(wb, result.filePath);
     return result.filePath;
   });
 
@@ -346,6 +401,30 @@ app.whenReady().then(async () => {
     if (!result.canRevert) return { ok: false, ...result };
     setTimeout(() => app.quit(), 300);
     return { ok: true, scheduled: true };
+  });
+
+  // v2.1 Settings IPC — reads/writes %APPDATA%\dl-processor\config.json
+  ipcMain.handle('dlp:settings:get', () => {
+    const cfg = loadAppConfig(state.appConfigPath) || {};
+    // Return the v2.1-relevant keys with defaults applied
+    return {
+      audit_user:       cfg.audit_user       || '',
+      tier2_price_pct:  cfg.tier2_price_pct  != null ? cfg.tier2_price_pct  : 10,
+      tier2_price_abs:  cfg.tier2_price_abs  != null ? cfg.tier2_price_abs  : 50000,
+      tier2_area_pct:   cfg.tier2_area_pct   != null ? cfg.tier2_area_pct   : 5
+    };
+  });
+
+  ipcMain.handle('dlp:settings:set', (e, partial) => {
+    const cfg = loadAppConfig(state.appConfigPath) || {};
+    const incoming = partial || {};
+    // Merge in only the recognized keys
+    for (const k of ['audit_user', 'tier2_price_pct', 'tier2_price_abs', 'tier2_area_pct']) {
+      if (Object.prototype.hasOwnProperty.call(incoming, k)) cfg[k] = incoming[k];
+    }
+    // Persist along with whatever was already in cfg (dataFolder, etc.)
+    saveAppConfig(state.appConfigPath, cfg);
+    return { ok: true };
   });
 
   createWindow();

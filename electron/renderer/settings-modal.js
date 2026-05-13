@@ -24,6 +24,27 @@ function initSettingsModal({ getDataFolder, onCheckForUpdates }) {
         <button id="settings-revert-patch">Revert last patch</button>
         <span id="settings-revert-status" class="muted">Restores the previous app.asar from .bak — used if a patch causes problems.</span>
       </div>
+      <h3 id="settings-audit-title">Audit &amp; approval thresholds (v2.1)</h3>
+      <div class="settings-row">
+        <label for="settings-audit-user">Your name (audit attribution)</label>
+        <input id="settings-audit-user" type="text" placeholder="empty = OS user" />
+      </div>
+      <div class="settings-row">
+        <label for="settings-tier2-price-pct">Tier-2 price threshold (%)</label>
+        <input id="settings-tier2-price-pct" type="number" min="0" />
+      </div>
+      <div class="settings-row">
+        <label for="settings-tier2-price-abs">Tier-2 price threshold (AED)</label>
+        <input id="settings-tier2-price-abs" type="number" min="0" />
+      </div>
+      <div class="settings-row">
+        <label for="settings-tier2-area-pct">Tier-2 area threshold (%)</label>
+        <input id="settings-tier2-area-pct" type="number" min="0" />
+      </div>
+      <div class="settings-row">
+        <button id="settings-save" class="primary">Save settings</button>
+        <span id="settings-save-status" class="muted"></span>
+      </div>
       <div class="modal-actions">
         <button id="settings-close">Close</button>
       </div>
@@ -45,9 +66,19 @@ function initSettingsModal({ getDataFolder, onCheckForUpdates }) {
     modal.hidden = false;
     document.getElementById('settings-data-folder').textContent = getDataFolder() || '';
     document.getElementById('settings-update-status').textContent = '';
+    document.getElementById('settings-save-status').textContent = '';
     window.dlp.version().then(v => {
       document.getElementById('settings-version').textContent = v;
     });
+    // v2.1 — pre-fill audit/threshold fields from app config.
+    if (window.dlp && window.dlp.settings && window.dlp.settings.get) {
+      window.dlp.settings.get().then(s => {
+        document.getElementById('settings-audit-user').value      = s.audit_user || '';
+        document.getElementById('settings-tier2-price-pct').value = s.tier2_price_pct;
+        document.getElementById('settings-tier2-price-abs').value = s.tier2_price_abs;
+        document.getElementById('settings-tier2-area-pct').value  = s.tier2_area_pct;
+      }).catch(() => { /* leave fields empty on error */ });
+    }
     // Move focus into the modal so the Esc/Tab handlers below have a target.
     setTimeout(() => closeBtn.focus(), 0);
   }
@@ -60,6 +91,23 @@ function initSettingsModal({ getDataFolder, onCheckForUpdates }) {
       const result = await onCheckForUpdates();
       statusEl.textContent = (result && result.message) || 'no update info';
     } catch (e) { statusEl.textContent = 'error: ' + (e && e.message ? e.message : String(e)); }
+  });
+
+  modal.querySelector('#settings-save').addEventListener('click', async () => {
+    const statusEl = document.getElementById('settings-save-status');
+    const partial = {
+      audit_user:       document.getElementById('settings-audit-user').value,
+      tier2_price_pct:  Number(document.getElementById('settings-tier2-price-pct').value),
+      tier2_price_abs:  Number(document.getElementById('settings-tier2-price-abs').value),
+      tier2_area_pct:   Number(document.getElementById('settings-tier2-area-pct').value)
+    };
+    statusEl.textContent = 'saving…';
+    try {
+      const result = await window.dlp.settings.set(partial);
+      statusEl.textContent = (result && result.ok) ? 'Settings saved' : 'save failed';
+    } catch (e) {
+      statusEl.textContent = 'error: ' + (e && e.message ? e.message : String(e));
+    }
   });
 
   modal.querySelector('#settings-revert-patch').addEventListener('click', async () => {

@@ -94,6 +94,32 @@ test('rejectPending leaves master_data unchanged + writes reject audit row', () 
   assert.equal(a.new_value, null);
 });
 
+test('approvePending: tier-2 flag set when threshold crossed + userNote provided', () => {
+  const db = freshDb();
+  // Price change 1485000 → 1800000 = 21% > 10% default → tier-2
+  const cid = seedPending(db, { old_value: '1485000', proposed_value: '1800000' });
+  const thresholds = { tier2_price_pct: 10, tier2_price_abs: 50000, tier2_area_pct: 5 };
+  approvePending(db, cid, null, { userNote: 'verified with manager', thresholds });
+  const auditRow = db.prepare(
+    "SELECT tier2, user_note FROM audit_log WHERE change_id = ? ORDER BY audit_id DESC LIMIT 1"
+  ).get(cid);
+  assert.equal(auditRow.tier2, 1);
+  assert.equal(auditRow.user_note, 'verified with manager');
+});
+
+test('approvePending: tier-2 flag NOT set when below threshold', () => {
+  const db = freshDb();
+  // Price change 1485000 → 1500000 = ~1% < 10% AND $15K abs < $50K → NOT tier-2
+  const cid = seedPending(db);
+  const thresholds = { tier2_price_pct: 10, tier2_price_abs: 50000, tier2_area_pct: 5 };
+  approvePending(db, cid, null, { thresholds });
+  const auditRow = db.prepare(
+    "SELECT tier2, user_note FROM audit_log WHERE change_id = ? ORDER BY audit_id DESC LIMIT 1"
+  ).get(cid);
+  assert.equal(auditRow.tier2, 0);
+  assert.equal(auditRow.user_note, null);
+});
+
 test('teachAliasAndApprove inserts buyer_alias + auto-approves sibling buyer rows', () => {
   const db = freshDb();
   // Seed two BUYER_MISMATCH rows with the same name pair, plus an unrelated row

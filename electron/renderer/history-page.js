@@ -20,6 +20,15 @@
 
 (function () {
 
+  // Mirror of src/audit-fields.js REVERTABLE_ACTIONS — duplicated here because
+  // renderer can't require() from src/. The backend re-validates this set in
+  // revertAuditEntry, so this is purely an advisory affordance: rows whose
+  // action is NOT in this set get no Revert button. Likewise, only audit rows
+  // for table_name === 'master_data' are revertable (e.g. learn_alias rows
+  // target buyer_alias and are skipped). If REVERTABLE_ACTIONS changes in
+  // src/audit-fields.js, update here too.
+  const REVERTABLE = new Set(['approve', 'override', 'approve_bp', 'revert']);
+
   function renderHistoryPage(container, initialFilters) {
     container.classList.add('history-page');
 
@@ -55,6 +64,10 @@
             '<option value="reject">reject</option>',
             '<option value="auto_apply">auto_apply</option>',
             '<option value="learn_alias">learn_alias</option>',
+            '<option value="approve_bp">approve_bp</option>',
+            '<option value="reject_bp">reject_bp</option>',
+            '<option value="acknowledge_bp">acknowledge_bp</option>',
+            '<option value="revert">revert</option>',
           '</select>',
         '</label>',
         '<label>Source ',
@@ -70,12 +83,13 @@
         '</label>',
         '<button class="hp-btn hp-btn-primary hp-apply">Apply</button>',
         '<button class="hp-btn hp-export">Export CSV</button>',
+        '<button class="hp-btn hp-export-xlsx">Export Excel</button>',
       '</div>',
       '<div class="hp-status"></div>',
       '<table class="hp-table">',
         '<thead><tr>',
           '<th>When</th><th>Project</th><th>Unit</th><th>Field</th>',
-          '<th>Old → New</th><th>Action · Source</th>',
+          '<th>Old → New</th><th>Action · Source</th><th></th>',
         '</tr></thead>',
         '<tbody class="hp-tbody"></tbody>',
       '</table>',
@@ -95,6 +109,7 @@
     const unitInput = container.querySelector('.hp-unit');
     const applyBtn  = container.querySelector('.hp-apply');
     const exportBtn = container.querySelector('.hp-export');
+    const exportXlsxBtn = container.querySelector('.hp-export-xlsx');
 
     if (!api) {
       statusEl.textContent = 'window.dlp.audit is not available — preload may not have loaded.';
@@ -203,6 +218,12 @@
           '<span class="hp-new">' + esc(nv) + '</span>'
         : '';
       const actionCls = 'hp-action-' + (r.action || '').replace(/[^a-z_]/gi, '');
+      const isRevertable = REVERTABLE.has(r.action) && r.table_name === 'master_data' && r.audit_id;
+      const revertCell = isRevertable
+        ? '<button type="button" class="hp-revert-btn" data-role="revert"' +
+          ' data-audit-id="' + esc(r.audit_id) + '"' +
+          ' title="Revert this change">↶ Revert</button>'
+        : '';
       return [
         '<tr data-project-id="' + (r.project_id || '') + '" data-unit="' + esc(r.unit_number_norm) + '">',
           '<td class="hp-when">', esc(fmtWhen(r.ts)), '</td>',
@@ -218,8 +239,45 @@
             '<span class="hp-action-chip ', actionCls, '">', esc(r.action || ''), '</span>',
             r.source ? '<span class="hp-src-sub">' + esc(r.source) + '</span>' : '',
           '</td>',
+          '<td class="hp-revert-cell">', revertCell, '</td>',
         '</tr>'
       ].join('');
+    }
+
+    // Indexed by audit_id, populated each render() so the click handler can
+    // build the confirm dialog text without re-fetching.
+    const rowById = new Map();
+
+    async function handleRevert(auditId) {
+      const r = rowById.get(String(auditId));
+      if (!r) {
+        window.alert('Revert failed: row data not found for audit_id ' + auditId);
+        return;
+      }
+      const oldVal = r.old_value == null || r.old_value === '' ? '(empty)' : String(r.old_value);
+      const newVal = r.new_value == null || r.new_value === '' ? '(empty)' : String(r.new_value);
+      const msg = [
+        'Revert this change?',
+        '',
+        'Unit:    ' + (r.unit_number_norm || '') + ' · ' + (r.project_name || ''),
+        'Field:   ' + (r.field || ''),
+        'Restore: ' + newVal + '  →  ' + oldVal,
+        '',
+        'This will be recorded in the audit log as action=revert.'
+      ].join('\n');
+      if (!window.confirm(msg)) return;
+
+      setStatus('Reverting…');
+      try {
+        await api.revert({ auditId: Number(auditId) });
+        setStatus('Reverted.', 'ok');
+        // Reload the page to reflect the new audit_log entry + updated master_data.
+        load(lastFilters);
+      } catch (e) {
+        const errMsg = (e && e.message) ? e.message : String(e);
+        setStatus('Revert failed: ' + errMsg, 'error');
+        window.alert('Revert failed: ' + errMsg);
+      }
     }
 
     function render() {
@@ -248,6 +306,11 @@
       if (hasMore) {
         rows = rows.slice(0, PAGE_SIZE);
         tbodyEl.innerHTML = rows.map(rowHtml).join('');
+      }
+      // Index rows by audit_id so the Revert click handler can find them.
+      rowById.clear();
+      for (const r of rows) {
+        if (r && r.audit_id != null) rowById.set(String(r.audit_id), r);
       }
       const actualTo = offset + rows.length;
       pagerEl.innerHTML =
@@ -288,6 +351,13 @@
 
     function wireRowClicks() {
       tbodyEl.addEventListener('click', (ev) => {
+        const revertBtn = ev.target.closest('button[data-role="revert"]');
+        if (revertBtn) {
+          ev.preventDefault();
+          const auditId = revertBtn.getAttribute('data-audit-id');
+          if (auditId) handleRevert(auditId);
+          return;
+        }
         const link = ev.target.closest('a[data-role="open-unit"]');
         if (!link) return;
         ev.preventDefault();
@@ -320,6 +390,20 @@
         setStatus('Export failed: ' + (e && e.message ? e.message : String(e)), 'error');
       } finally {
         exportBtn.disabled = false;
+      }
+    });
+
+    exportXlsxBtn.addEventListener('click', async () => {
+      exportXlsxBtn.disabled = true;
+      setStatus('Exporting…');
+      try {
+        const filePath = await api.exportXlsx(currentFilters());
+        if (filePath) setStatus('Exported to ' + filePath, 'ok');
+        else          setStatus('Export cancelled.');
+      } catch (e) {
+        setStatus('Export failed: ' + (e && e.message ? e.message : String(e)), 'error');
+      } finally {
+        exportXlsxBtn.disabled = false;
       }
     });
 

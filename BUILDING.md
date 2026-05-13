@@ -236,3 +236,106 @@ The classifier is **conservative**: any unrecognized `status` value falls throug
 3. If the new state needs a new badge color or action-button gating, update the Review Pending pane renderer in `electron/renderer/review-pending.js`.
 
 `DLD_ISSUE` has higher precedence than `READY` — if both apply (e.g., `status='Approved'` but `dld_process_status='Submitted to DLD'`), the card lands in `DLD_ISSUE`.
+
+---
+
+## Extending tier-2 detection
+
+`src/tier2.js` exports `isTier2(field, oldValue, newValue, thresholds)` — a pure function used by both the renderer (to know when to show the justification modal) AND the backend (defense-in-depth re-check inside `approvePending`). Only two dimensions are tier-2-eligible today:
+
+```js
+// src/tier2.js (shape)
+const DEFAULT_THRESHOLDS = Object.freeze({
+  tier2_price_pct: 10,      // 10% price change
+  tier2_price_abs: 50000,   // 50,000 AED absolute
+  tier2_area_pct:  5        // 5% area change
+});
+
+function isTier2(field, oldValue, newValue, thresholds) {
+  const t = thresholds || DEFAULT_THRESHOLDS;
+  if (field === 'purchase_price_aed') {
+    // strict greater-than on either pctDelta or absDelta
+  }
+  if (field === 'area_sqm') {
+    // strict greater-than on pctDelta
+  }
+  // Other AUDIT_FIELDS (buyer_name, status, procedure_number) are NEVER tier-2
+  return false;
+}
+```
+
+The comparison is **strict greater-than** (`pctDelta > t.tier2_price_pct`) — boundary cases (exactly 10%, exactly 50K AED) do NOT trip the gate. This is deliberate: round-number changes are common in price amendments and shouldn't always be tier-2.
+
+**To add a new tier-2 dimension** (e.g., gate `procedure_number` changes when they cross a procedure-number range):
+
+1. Edit `src/tier2.js` — add an `if (field === '<new_field>')` branch with the magnitude check.
+2. Add a threshold key to `DEFAULT_THRESHOLDS` (and the threshold object the caller passes in).
+3. Add the matching Settings field — `electron/renderer/settings.js` defines the form layout and the IPC store; mirror the existing `tier2_*` fields.
+4. Add a test case in `test/tier2.test.js` covering the new dimension at, below, and above the threshold.
+
+Magnitude-based fields are the natural fit. Non-magnitude fields (`buyer_name`, `status`) deliberately return `false` — there's no meaningful "delta > X" for a string.
+
+---
+
+## Hash format for the audit chain
+
+`src/audit-hash.js` exports `canonicalize(row)` — a **stable** JSON serialization of an `audit_log` row used as input to the SHA-256 chain (`computeRowHash` and `chainAppend`).
+
+```js
+// src/audit-hash.js (shape)
+function canonicalize(row) {
+  return JSON.stringify({
+    audit_id:         row.audit_id,
+    ts:               row.ts,
+    project_id:       row.project_id,
+    unit_number_norm: row.unit_number_norm,
+    table_name:       row.table_name,
+    field:            row.field,
+    old_value:        row.old_value,
+    new_value:        row.new_value,
+    action:           row.action,
+    source:           row.source,
+    change_id:        row.change_id,
+    user_note:        row.user_note,
+    user:             row.user,
+    tier2:            row.tier2
+  });
+}
+```
+
+The field order is **explicit** — not `Object.keys(row).sort()` — so that future column additions are deliberate. `prev_hash` and `row_hash` themselves are intentionally excluded (a row can't hash itself recursively).
+
+**Migration pattern when adding a new chain-relevant column:**
+
+If a future migration adds an `audit_log` column that should participate in the chain (e.g., `reviewer_id`, `severity`):
+
+1. Migration appends the column as nullable.
+2. **In the same migration**, re-canonicalize every existing row using a frozen snapshot of the new `canonicalize` (with the new field included), backfill `row_hash` chain in `(ts, audit_id)` order, and overwrite both `prev_hash` and `row_hash` end-to-end. Otherwise old rows' hashes won't match the new computation and the chain looks broken from day one.
+3. **Add the field to `canonicalize` in the same commit** as the migration. Skipping this step means new rows after the migration will hash without the new field, but old rows (backfilled with it) will hash with the new field — the chain breaks at the migration boundary.
+4. Add a test in `test/audit-hash.test.js` covering the new field's presence in the canonicalization output.
+
+Migration 008 (`2026-05-13-008-audit-hardening`) is the reference implementation — it adds `user`, `tier2`, `prev_hash`, `row_hash` and backfills the chain forward from genesis (`'0' x 64`) in one idempotent pass.
+
+---
+
+## Adding revertable actions
+
+`src/audit-fields.js` exports `REVERTABLE_ACTIONS` — the Set of `audit_log.action` values for which the History row `[↶ Revert]` button is rendered:
+
+```js
+// src/audit-fields.js
+const REVERTABLE_ACTIONS = Object.freeze(new Set([
+  'approve', 'override', 'approve_bp', 'revert'
+]));
+```
+
+Actions absent from this set (`auto_apply`, `reject`, `learn_alias`, `acknowledge_bp`, `reject_bp`) don't get a button — they didn't modify `master_data`, so reverting them is a no-op the UI shouldn't offer.
+
+**To add a new revertable action** (e.g., a future `bulk_approve` action that mutates many `master_data` rows in one go):
+
+1. **Migration** — widen the `audit_log.action` CHECK constraint to include the new value (see migration 007 / 008 for the pattern). The CHECK is a table-level constraint, so the migration has to `CREATE TABLE audit_log_new` with the new CHECK, copy rows over, and rename.
+2. **Add to `REVERTABLE_ACTIONS`** in `src/audit-fields.js` **only if** the action actually wrote to `master_data` and there's an `old_value` / `new_value` pair to restore. If it didn't (e.g., it's a pure log marker), leave it out.
+3. **Renderer button gating** — the History page (`electron/renderer/history.js`) reads `REVERTABLE_ACTIONS` to decide whether to render the button. The check should remain `REVERTABLE_ACTIONS.has(row.action) && row.table_name === 'master_data'` — both conditions matter.
+4. **Test case** — add to `test/revert.test.js` covering the new action's revert path end-to-end (revert restores `master_data` and appends a new `audit_log` row with `action='revert'`).
+
+The `revert` action is itself in the set — so a revert is revertable (you can revert your revert), and the chain walks back another step.

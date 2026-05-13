@@ -19,4 +19,12 @@ const MASTER_DATA_PROVENANCE = Object.freeze({
   area_sqm:           { source: 'area_source',      decidedAt: 'area_decided_at' }
 });
 
-module.exports = { AUDIT_FIELDS, MASTER_DATA_PROVENANCE };
+// Actions that actually mutated master_data and therefore can be reverted
+// via the one-click Revert button on a History row. The remaining actions
+// (auto_apply, reject, learn_alias, acknowledge_bp, reject_bp) didn't change
+// master_data and so reverting them is a no-op the UI shouldn't offer.
+const REVERTABLE_ACTIONS = Object.freeze(new Set([
+  'approve', 'override', 'approve_bp', 'revert'
+]));
+
+module.exports = { AUDIT_FIELDS, MASTER_DATA_PROVENANCE, REVERTABLE_ACTIONS };

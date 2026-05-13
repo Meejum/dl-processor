@@ -582,6 +582,27 @@ body.log-hidden .log-column { display: none; }
 }
 .history-page .hp-pager .hp-pager-btns { display: flex; gap: 6px; }
 
+/* v2.1 Task 7 — Revert button column on global History rows. Rendered only
+   for rows whose action is in REVERTABLE_ACTIONS AND whose table_name is
+   'master_data'; other rows get an empty .hp-revert-cell. */
+.history-page .hp-revert-btn {
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--accent-dark);
+  cursor: pointer;
+}
+.history-page .hp-revert-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.history-page td.hp-revert-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .history-page .hp-footer {
   color: var(--muted); font-size: 11px; margin-top: 14px; text-align: right;
 }
@@ -888,3 +909,95 @@ body.log-hidden .log-column { display: none; }
 .bp-card .bp-row-approve:hover { background: #E8F0DC; border-color: var(--state-ready); color: var(--state-ready); }
 .bp-card .bp-row-reject:hover  { background: #FBEAE5; border-color: var(--state-rejected); color: var(--state-rejected); }
 .bp-card .bp-row-decided { color: var(--muted); font-style: italic; text-align: right; }
+
+/* ── Tier-2 justification modal (v2.1 Task 9) ─────────────────────────── */
+.tier2-modal-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex; align-items: center; justify-content: center;
+  z-index: 9999;
+}
+.tier2-modal {
+  background: var(--surface);
+  padding: 24px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  max-width: 520px;
+  width: 90%;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  font-family: inherit;
+  color: var(--ink);
+}
+.tier2-modal h2 {
+  color: var(--accent-dark);
+  margin: 0 0 12px 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.tier2-modal .tier2-summary {
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  padding: 10px 12px;
+  border-radius: 4px;
+  margin: 0 0 12px 0;
+  font-size: 13px;
+}
+.tier2-modal .tier2-list {
+  margin: 8px 0 0 0;
+  padding-left: 20px;
+}
+.tier2-modal .tier2-list li { margin: 2px 0; }
+.tier2-modal label {
+  display: block;
+  margin: 12px 0 4px 0;
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--accent-dark);
+}
+.tier2-modal .tier2-input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+  background: var(--surface-2);
+  color: var(--ink);
+  box-sizing: border-box;
+  resize: vertical;
+}
+.tier2-modal .tier2-input:focus {
+  outline: 2px solid var(--accent);
+  outline-offset: -1px;
+}
+.tier2-modal .tier2-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 16px;
+}
+.tier2-modal .tier2-actions button {
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+}
+.tier2-modal .tier2-cancel {
+  background: var(--surface);
+  border: 1px solid var(--border-2);
+  color: var(--ink);
+}
+.tier2-modal .tier2-cancel:hover { background: var(--accent-soft); }
+.tier2-modal .tier2-confirm {
+  background: var(--accent);
+  color: #fff;
+  border: 1px solid var(--accent-dark);
+}
+.tier2-modal .tier2-confirm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.tier2-modal .tier2-confirm:not(:disabled):hover {
+  background: var(--accent-dark);
+}

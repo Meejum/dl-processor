@@ -82,3 +82,64 @@ test('AUDIT_FIELDS lists the 5 tracked master_data fields', () => {
   assert.deepEqual([...AUDIT_FIELDS].sort(),
     ['area_sqm', 'buyer_name', 'procedure_number', 'purchase_price_aed', 'status']);
 });
+
+test('writeAuditLog: user auto-fills via currentUser() when not provided', () => {
+  const db = freshDb();
+  db.prepare("INSERT INTO dld_project (project_name) VALUES ('A')").run();
+  const pid = db.prepare("SELECT project_id FROM dld_project").get().project_id;
+  writeAuditLog(db, {
+    projectId: pid, unitNumberNorm: '101',
+    tableName: 'master_data', field: 'price',
+    oldValue: '100', newValue: '200',
+    action: 'approve', source: 'review_pending'
+  });
+  const row = db.prepare("SELECT user FROM audit_log ORDER BY audit_id DESC LIMIT 1").get();
+  assert.ok(row.user, 'expected user to be set');
+  assert.notEqual(row.user, '');
+});
+
+test('writeAuditLog: explicit user overrides currentUser()', () => {
+  const db = freshDb();
+  db.prepare("INSERT INTO dld_project (project_name) VALUES ('A')").run();
+  const pid = db.prepare("SELECT project_id FROM dld_project").get().project_id;
+  writeAuditLog(db, {
+    projectId: pid, tableName: 'master_data', field: 'x',
+    action: 'approve', source: 'review_pending',
+    user: 'manager@sobha.ae'
+  });
+  const row = db.prepare("SELECT user FROM audit_log ORDER BY audit_id DESC LIMIT 1").get();
+  assert.equal(row.user, 'manager@sobha.ae');
+});
+
+test('writeAuditLog: chains to prior row via chainAppend', () => {
+  const db = freshDb();
+  db.prepare("INSERT INTO dld_project (project_name) VALUES ('A')").run();
+  const pid = db.prepare("SELECT project_id FROM dld_project").get().project_id;
+
+  writeAuditLog(db, { projectId: pid, tableName: 'master_data', field: 'price',
+                       action: 'approve', source: 'review_pending' });
+  const r1 = db.prepare("SELECT row_hash FROM audit_log ORDER BY audit_id DESC LIMIT 1").get();
+  assert.match(r1.row_hash, /^[0-9a-f]{64}$/);
+
+  writeAuditLog(db, { projectId: pid, tableName: 'master_data', field: 'buyer_name',
+                       action: 'override', source: 'review_pending' });
+  const r2 = db.prepare("SELECT prev_hash, row_hash FROM audit_log ORDER BY audit_id DESC LIMIT 1").get();
+  assert.equal(r2.prev_hash, r1.row_hash);
+  assert.notEqual(r2.row_hash, r1.row_hash);
+});
+
+test('writeAuditLog: tier2 flag is honored (0 or 1)', () => {
+  const db = freshDb();
+  db.prepare("INSERT INTO dld_project (project_name) VALUES ('A')").run();
+  const pid = db.prepare("SELECT project_id FROM dld_project").get().project_id;
+
+  writeAuditLog(db, { projectId: pid, tableName: 'master_data', field: 'price',
+                       action: 'approve', source: 'review_pending' });
+  const noFlag = db.prepare("SELECT tier2 FROM audit_log ORDER BY audit_id DESC LIMIT 1").get();
+  assert.equal(noFlag.tier2, 0);
+
+  writeAuditLog(db, { projectId: pid, tableName: 'master_data', field: 'price',
+                       action: 'approve', source: 'review_pending', tier2: true });
+  const withFlag = db.prepare("SELECT tier2 FROM audit_log ORDER BY audit_id DESC LIMIT 1").get();
+  assert.equal(withFlag.tier2, 1);
+});

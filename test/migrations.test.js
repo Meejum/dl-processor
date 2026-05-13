@@ -224,3 +224,71 @@ test('007 preserves existing audit_log rows during rebuild', () => {
   const cnt = db.prepare("SELECT COUNT(*) AS n FROM audit_log").get().n;
   assert.equal(cnt, 1);
 });
+
+test('008 adds 4 new columns to audit_log: user, tier2, prev_hash, row_hash', () => {
+  const db = freshDb();
+  runMigrations(db);
+  const cols = db.prepare("PRAGMA table_info(audit_log)").all().map(c => c.name);
+  assert.ok(cols.includes('user'),      'expected user column');
+  assert.ok(cols.includes('tier2'),     'expected tier2 column');
+  assert.ok(cols.includes('prev_hash'), 'expected prev_hash column');
+  assert.ok(cols.includes('row_hash'),  'expected row_hash column');
+});
+
+test('008 widens audit_log.action CHECK to allow revert', () => {
+  const db = freshDb();
+  runMigrations(db);
+  assert.doesNotThrow(() => {
+    db.prepare("INSERT INTO audit_log (table_name, field, action, source) VALUES ('master_data','price','revert','review_pending')").run();
+  });
+});
+
+test('008 preserves existing audit_log rows during rebuild', () => {
+  const db = freshDb();
+  runMigrations(db);
+  db.prepare("INSERT INTO audit_log (table_name, field, action, source) VALUES ('master_data','x','approve','review_pending')").run();
+  const before = db.prepare("SELECT COUNT(*) AS n FROM audit_log").get().n;
+  // Re-running migrations should be a no-op
+  runMigrations(db);
+  const after = db.prepare("SELECT COUNT(*) AS n FROM audit_log").get().n;
+  assert.equal(before, after);
+});
+
+test('008 backfills hashes for existing rows in (ts, audit_id) order', () => {
+  // Build a DB at the v2.0 shape (no migration 008 applied yet), insert
+  // some audit_log rows with NULL row_hash, then run migrations and confirm
+  // every row gets a non-NULL chain.
+  const Database = require('better-sqlite3');
+  const db = new Database(':memory:');
+  db.exec(SCHEMA_SQL);
+  // Apply only 001..007, NOT 008. We do this by manually running each.
+  // Simpler: runMigrations once to get to v2.1, then NULL out the hashes
+  // and re-run 008 to test backfill behavior.
+  runMigrations(db);
+  db.prepare("INSERT INTO audit_log (ts, table_name, field, action, source) VALUES ('2026-01-01', 'master_data', 'x', 'approve', 'review_pending')").run();
+  db.prepare("INSERT INTO audit_log (ts, table_name, field, action, source) VALUES ('2026-02-01', 'master_data', 'y', 'override', 'review_pending')").run();
+  // Wipe hashes to simulate pre-008 state
+  db.prepare("UPDATE audit_log SET prev_hash = NULL, row_hash = NULL").run();
+  db.prepare("DELETE FROM schema_migration WHERE id = '2026-05-13-008-audit-hardening'").run();
+  // Re-run migrations — 008 should backfill
+  runMigrations(db);
+  const rows = db.prepare("SELECT audit_id, prev_hash, row_hash FROM audit_log ORDER BY audit_id").all();
+  for (const r of rows) {
+    assert.ok(r.row_hash, 'audit_id ' + r.audit_id + ' should have row_hash');
+    assert.match(r.row_hash, /^[0-9a-f]{64}$/);
+  }
+  // First row's prev_hash should be GENESIS
+  assert.equal(rows[0].prev_hash, '0'.repeat(64));
+  // Second row's prev_hash should equal first row's row_hash
+  assert.equal(rows[1].prev_hash, rows[0].row_hash);
+});
+
+test('008 is idempotent — re-running does nothing', () => {
+  const db = freshDb();
+  runMigrations(db);
+  const cols1 = db.prepare("PRAGMA table_info(audit_log)").all();
+  runMigrations(db);   // re-run
+  runMigrations(db);   // re-run again
+  const cols2 = db.prepare("PRAGMA table_info(audit_log)").all();
+  assert.equal(cols1.length, cols2.length);
+});

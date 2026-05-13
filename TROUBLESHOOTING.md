@@ -14,6 +14,7 @@ Companions: [README.md](README.md) for normal usage, [BUILDING.md](BUILDING.md) 
 - [UI problems](#ui-problems)
 - [Patch update problems (v1.2+)](#patch-update-problems-v12)
 - [v2.0 BP grouping problems](#v20-bp-grouping-problems)
+- [v2.1 audit hardening problems](#v21-audit-hardening-problems)
 - [Build problems (developers)](#build-problems-developers)
 - [Test problems (developers)](#test-problems-developers)
 - [Diagnostic procedures](#diagnostic-procedures)
@@ -386,6 +387,122 @@ The default filters on first open are **SF state ≠ REJECTED** and **Date range
 Known v2.0 limitation. The Sobha Salesforce instance URL pattern wasn't configured in v2.0. The button copies `booking_record_id` to your clipboard — paste it into your SF instance URL bar manually for now.
 
 **Planned v2.1:** configurable SF base URL in Settings, so the button becomes a real deep link.
+
+---
+
+## v2.1 audit hardening problems
+
+### Revert button doesn't appear on a row I just approved
+
+The row's `action` must be in `approve` / `override` / `approve_bp` / `revert` AND its `table_name` must be `master_data`. The button is intentionally hidden for:
+
+- **`auto_apply`** — drift logging. `master_data` wasn't actually changed by this row (the new value replaced an older value at compare time, but no user action queued it), so there's nothing to "revert".
+- **`reject`** — no `master_data` change; reject just closed a `pending_change` row.
+- **`learn_alias`** — different table (`buyer_alias`), not `master_data`.
+- **`acknowledge_bp`** — no `master_data` change; only marks a REJECTED BP card as seen.
+
+If you genuinely need to roll back an `auto_apply`, find the equivalent prior `approve` / `override` in History for the same `(project, unit, field)` and revert that one — or edit `master_data` manually plus add a corresponding `audit_log` row with `action='override'`.
+
+---
+
+### Revert button shows but click does nothing / says "Revert failed"
+
+Most likely the unit no longer exists in `master_data`. Possible causes:
+
+- A fresh DLD import path purged the row (rare — `master_data` rows generally survive imports).
+- The `project_id` was wiped and re-seeded with a different ID.
+
+Open DevTools (`Ctrl+Shift+I`) → Console for the exact error. Common ones:
+- `SqliteError: no such (project_id, unit_number_norm)` — the row's target unit is gone. Re-import the project, then retry.
+- `Action 'revert' is not allowed` — see [the migration 008 entry below](#action-revert-is-not-allowed-error-during-revert).
+
+---
+
+### My name doesn't show in the audit log
+
+Open `⚙ Settings` → **"Your name (audit attribution)"** → type your name or email → Save. New audit entries from that point onward are stamped in `audit_log.user`.
+
+**Existing entries from before you set the name stay NULL** — attribution is forward-only. There's no backfill (and shouldn't be — you can't retroactively claim an approval you didn't make).
+
+If the field is set but the column is still NULL on new entries:
+- Open DevTools → check the renderer console for `[settings] save failed`.
+- Verify `%APPDATA%\dl-processor\config.json` contains `audit_user` after Save.
+- Restart the app — settings are read on launch.
+
+---
+
+### Tier-2 modal doesn't fire for a big change
+
+Check Settings thresholds. Defaults: price > 10% OR > 50K AED; area > 5%. The comparison is **strict greater-than** — if the change is exactly 10% or exactly 50K AED, the modal does NOT fire.
+
+This is deliberate (round-number price amendments are common and shouldn't always be tier-2), but if you want to catch boundary cases lower the threshold slightly (e.g., `9.99` instead of `10`).
+
+Other reasons the modal might not fire:
+- The field isn't tier-2-eligible. Only `purchase_price_aed` and `area_sqm` are magnitude-gated. `buyer_name`, `status`, `procedure_number` never trip tier-2.
+- `oldValue` or `newValue` isn't a finite number — the helper returns `false` on non-numeric inputs.
+
+---
+
+### Tier-2 modal fires for changes I expect to be normal
+
+Either lower the threshold (no — that fires more) OR **raise** it. Open `⚙ Settings` and bump:
+
+- **Tier-2 price threshold (%)** — try `25` if `10` is too sensitive for your market.
+- **Tier-2 price threshold (AED)** — try `100000` if `50000` is too low.
+- **Tier-2 area threshold (%)** — try `10` if `5` flags routine re-measurement noise.
+
+The thresholds apply per-dimension with OR semantics on price (pct OR abs), so loosening one without the other still leaves the gate active on the other.
+
+---
+
+### Excel export downloads but is empty
+
+Filters are excluding everything. Open `📜 History` → click **Reset** (or manually clear every filter) → try **Export Excel** again.
+
+Common over-filter combinations:
+- `Action = revert` on a DB that has no revert entries yet.
+- `Date range = Today` when you want this month.
+- `Project = <X>` plus `Unit = <Y>` where the combo doesn't exist.
+
+The export honours the **currently filtered set**, not "everything" — by design, so you can scope a compliance request precisely.
+
+---
+
+### "Action 'revert' is not allowed" error during revert
+
+Migration 008 didn't run. The `audit_log.action` CHECK constraint still has the v2.0 set (`approve`, `override`, `reject`, `auto_apply`, `learn_alias`, `approve_bp`, `reject_bp`, `acknowledge_bp`) — `revert` isn't accepted yet.
+
+**Force the migration:**
+
+1. Close the app.
+2. Reinstall the current `DL-Processor Setup` `.exe` (or re-apply the v2.0 → v2.1 patch). On launch, the migration framework retries any un-applied migrations.
+
+If reinstall doesn't help, inspect the CHECK directly:
+
+```sql
+SELECT sql FROM sqlite_master WHERE name = 'audit_log';
+```
+
+The `action` CHECK should include `'revert'`. If it doesn't, migration 008 is missing from `schema_migration`. See the next entry to force a rerun.
+
+---
+
+### Old audit rows have no `row_hash`
+
+Backfill failed (rare — the migration is one transaction, so a partial state is unusual). Force a rerun:
+
+```sql
+DELETE FROM schema_migration WHERE id = '2026-05-13-008-audit-hardening';
+```
+
+Close + reopen the app. Migration 008 is idempotent — it'll re-add any missing columns (no-op if they already exist) and backfill any rows still missing `row_hash` in `(ts, audit_id)` order from genesis (`'0' x 64`).
+
+To verify the chain is now complete:
+
+```sql
+SELECT COUNT(*) FROM audit_log WHERE row_hash IS NULL;
+-- Expected: 0
+```
 
 ---
 

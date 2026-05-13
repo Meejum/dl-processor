@@ -48,7 +48,7 @@ if not exist "%ASAR_PENDING%" (
 
 REM ---- Backup current asar ----
 if exist "%ASAR_BAK%" del /q "%ASAR_BAK%"
-move /y "%ASAR" "%ASAR_BAK%" >nul
+move /y "%ASAR%" "%ASAR_BAK%" >nul
 if errorlevel 1 (
   echo [patch-apply] failed to back up app.asar
   goto :end
