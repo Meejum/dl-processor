@@ -7,7 +7,9 @@ const MIGRATIONS = [
   require('./2026-05-12-002-buyer-alias'),
   require('./2026-05-12-003-pending-change-v2'),
   require('./2026-05-12-004-buyer-alias-seed'),
-  require('./2026-05-12-005-audit-log-source-widen')
+  require('./2026-05-12-005-audit-log-source-widen'),
+  require('./2026-05-13-006-sf-booking-step-cols'),
+  require('./2026-05-13-007-audit-log-action-widen')
 ];
 
 function runMigrations(db) {

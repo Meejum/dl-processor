@@ -180,3 +180,47 @@ test('REGRESSION: openDb on a v1.0-shaped DB upgrades cleanly (no "no such colum
   db.close();
   try { fs.unlinkSync(tmp); } catch {}
 });
+
+test('006 adds 3 new columns to sf_booking', () => {
+  // sf_booking is created by schema.sql, not by a migration; initialize the
+  // DB from schema.sql so sf_booking exists for 006 to extend.
+  const db = freshDb();
+  db.exec(SCHEMA_SQL);
+  runMigrations(db);
+  const cols = db.prepare('PRAGMA table_info(sf_booking)').all().map(c => c.name);
+  assert.ok(cols.includes('current_step_name'),          'expected current_step_name');
+  assert.ok(cols.includes('current_step_assigned_name'), 'expected current_step_assigned_name');
+  assert.ok(cols.includes('comments'),                   'expected comments');
+});
+
+test('006 is idempotent — re-running does not error', () => {
+  const db = freshDb();
+  db.exec(SCHEMA_SQL);
+  runMigrations(db);
+  // Drop the schema_migration entry and re-run; should be a no-op (columns already exist).
+  db.prepare("DELETE FROM schema_migration WHERE id = '2026-05-13-006-sf-booking-step-cols'").run();
+  assert.doesNotThrow(() => runMigrations(db));
+});
+
+test('007 widens audit_log.action CHECK to allow approve_bp / reject_bp / acknowledge_bp', () => {
+  const db = freshDb();
+  db.exec(SCHEMA_SQL);
+  runMigrations(db);
+  // All 3 new actions should be insertable now.
+  assert.doesNotThrow(() => {
+    db.prepare("INSERT INTO audit_log (table_name, field, action, source) VALUES ('x','y','approve_bp','review_pending')").run();
+    db.prepare("INSERT INTO audit_log (table_name, field, action, source) VALUES ('x','y','reject_bp','review_pending')").run();
+    db.prepare("INSERT INTO audit_log (table_name, field, action, source) VALUES ('x','y','acknowledge_bp','review_pending')").run();
+  });
+});
+
+test('007 preserves existing audit_log rows during rebuild', () => {
+  // Fresh DB initialized from updated schema.sql, then seed an audit_log
+  // row and re-run migrations. Existing row must be intact.
+  const db = freshDb();
+  db.exec(SCHEMA_SQL);
+  db.prepare("INSERT INTO audit_log (table_name, field, action, source) VALUES ('x','y','approve','review_pending')").run();
+  runMigrations(db);
+  const cnt = db.prepare("SELECT COUNT(*) AS n FROM audit_log").get().n;
+  assert.equal(cnt, 1);
+});
