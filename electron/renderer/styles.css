@@ -582,6 +582,27 @@ body.log-hidden .log-column { display: none; }
 }
 .history-page .hp-pager .hp-pager-btns { display: flex; gap: 6px; }
 
+/* v2.1 Task 7 — Revert button column on global History rows. Rendered only
+   for rows whose action is in REVERTABLE_ACTIONS AND whose table_name is
+   'master_data'; other rows get an empty .hp-revert-cell. */
+.history-page .hp-revert-btn {
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--accent-dark);
+  cursor: pointer;
+}
+.history-page .hp-revert-btn:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+.history-page td.hp-revert-cell {
+  text-align: right;
+  white-space: nowrap;
+}
+
 .history-page .hp-footer {
   color: var(--muted); font-size: 11px; margin-top: 14px; text-align: right;
 }
