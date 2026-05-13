@@ -157,9 +157,10 @@ function pluralFields(n) {
 // ─────────────────────────────────────────────────────────────────────
 // approveBp — atomic: approvePending(each row) + umbrella audit
 // ─────────────────────────────────────────────────────────────────────
-function approveBp(db, bpId, overrides = {}) {
+function approveBp(db, bpId, overrides = {}, opts = {}) {
   const parts = parseBpId(bpId);
   if (!parts) throw new Error('approveBp: malformed bpId: ' + bpId);
+  const { userNote = null, thresholds = null } = opts || {};
   const tx = db.transaction(() => {
     const rows = pendingRowsForBp(db, parts);
     if (rows.length === 0) throw new Error('approveBp: no pending rows for ' + bpId);
@@ -167,7 +168,9 @@ function approveBp(db, bpId, overrides = {}) {
       const override = Object.prototype.hasOwnProperty.call(overrides, r.change_id)
         ? overrides[r.change_id]
         : null;
-      approvePending(db, r.change_id, override);
+      // Pass userNote + thresholds through so each per-row audit_log entry
+      // gets tier2/user_note set per the backend re-check.
+      approvePending(db, r.change_id, override, { userNote, thresholds });
     }
     writeAuditLog(db, {
       projectId: parts.project_id,
@@ -179,7 +182,9 @@ function approveBp(db, bpId, overrides = {}) {
       action: 'approve_bp',
       source: 'review_pending',
       changeId: null,
-      userNote: `Approve all (${pluralFields(rows.length)})`
+      userNote: userNote
+        ? `Approve all (${pluralFields(rows.length)}) — ${userNote}`
+        : `Approve all (${pluralFields(rows.length)})`
     });
   });
   tx();

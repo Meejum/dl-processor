@@ -240,8 +240,20 @@ app.whenReady().then(async () => {
     try { return fn(db); } finally { db.close(); }
   }
 
+  // Build the tier-2 thresholds bundle from app config (with defaults).
+  // Used by both per-row approve + BP approve handlers below.
+  function getTier2Thresholds() {
+    const cfg = loadAppConfig(state.appConfigPath) || {};
+    return {
+      tier2_price_pct: cfg.tier2_price_pct != null ? cfg.tier2_price_pct : 10,
+      tier2_price_abs: cfg.tier2_price_abs != null ? cfg.tier2_price_abs : 50000,
+      tier2_area_pct:  cfg.tier2_area_pct  != null ? cfg.tier2_area_pct  : 5
+    };
+  }
+
   ipcMain.handle('dlp:review:list',        (e, opts)                           => withDb(db => reviewCmds.listPending(db, opts || {})));
-  ipcMain.handle('dlp:review:approve',     (e, { changeId, override = null }) => withDb(db => reviewCmds.approvePending(db, changeId, override)));
+  ipcMain.handle('dlp:review:approve',     (e, { changeId, override = null, userNote = null }) =>
+    withDb(db => reviewCmds.approvePending(db, changeId, override, { userNote, thresholds: getTier2Thresholds() })));
   ipcMain.handle('dlp:review:reject',      (e, { changeId })                  => withDb(db => reviewCmds.rejectPending(db, changeId)));
   ipcMain.handle('dlp:review:teach-alias', (e, { changeId, scope })           => withDb(db => reviewCmds.teachAliasAndApprove(db, changeId, { scope })));
 
@@ -250,7 +262,8 @@ app.whenReady().then(async () => {
   // source_snapshot_id + project + unit). Backed by src/commands/review-bps.js.
   const reviewBps = require('../src/commands/review-bps');
   ipcMain.handle('dlp:review:list-bps',       (e, opts)                       => withDb(db => reviewBps.listBps(db, opts || {})));
-  ipcMain.handle('dlp:review:approve-bp',     (e, { bpId, overrides })        => withDb(db => reviewBps.approveBp(db, bpId, overrides || {})));
+  ipcMain.handle('dlp:review:approve-bp',     (e, { bpId, overrides, userNote = null }) =>
+    withDb(db => reviewBps.approveBp(db, bpId, overrides || {}, { userNote, thresholds: getTier2Thresholds() })));
   ipcMain.handle('dlp:review:reject-bp',      (e, { bpId })                   => withDb(db => reviewBps.rejectBp(db, bpId)));
   ipcMain.handle('dlp:review:acknowledge-bp', (e, { bpId })                   => withDb(db => reviewBps.acknowledgeBp(db, bpId)));
 

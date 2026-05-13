@@ -2,6 +2,7 @@ const { openDb } = require('./shared');
 const { writeAuditLog } = require('../audit-log');
 const { MASTER_DATA_PROVENANCE } = require('../audit-fields');
 const { normalizeName } = require('../normalize-name');
+const { isTier2 } = require('../tier2');
 
 function listPending(db, { tab = 'needs_review', projectId = null, typeFilter = null } = {}) {
   const where = [];
@@ -34,11 +35,16 @@ function applyToMasterData(db, projectId, unitNumberNorm, fieldName, value) {
   db.prepare(sql).run(value, projectId, unitNumberNorm);
 }
 
-function approvePending(db, changeId, override = null) {
+function approvePending(db, changeId, override = null, options = {}) {
+  const { userNote = null, thresholds = null } = options || {};
   const tx = db.transaction(() => {
     const row = db.prepare("SELECT * FROM pending_change WHERE change_id = ?").get(changeId);
     if (!row) throw new Error('pending_change not found: ' + changeId);
     const finalValue = override == null ? row.proposed_value : String(override);
+    // Backend re-checks tier-2 (defense in depth — renderer flag is advisory).
+    const isTier2Change = thresholds
+      ? isTier2(row.field_name, row.old_value, finalValue, thresholds)
+      : false;
     applyToMasterData(db, row.project_id, row.unit_number_norm, row.field_name, finalValue);
     db.prepare(`
       UPDATE pending_change
@@ -50,7 +56,9 @@ function approvePending(db, changeId, override = null) {
       tableName: 'master_data', field: row.field_name,
       oldValue: row.old_value, newValue: finalValue,
       action: override == null ? 'approve' : 'override',
-      source: 'review_pending', changeId
+      source: 'review_pending', changeId,
+      userNote: userNote || null,
+      tier2: isTier2Change
     });
   });
   tx();

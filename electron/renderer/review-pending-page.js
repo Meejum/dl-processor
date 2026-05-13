@@ -46,6 +46,167 @@
     'NO_SF_ROW'
   ];
 
+  // ─────────────────────────────────────────────────────────────────────
+  // Tier-2 detection — renderer-side copy of src/tier2.js's isTier2.
+  // Kept in sync manually with the backend version. Used to decide whether
+  // to gate an approve action behind the justification modal. Backend
+  // re-checks independently (defense in depth) using the same logic.
+  // ─────────────────────────────────────────────────────────────────────
+  function isTier2(field, oldValue, newValue, thresholds) {
+    const t = thresholds || {};
+    if (field === 'purchase_price_aed') {
+      const oldN = Number(oldValue);
+      const newN = Number(newValue);
+      if (!Number.isFinite(oldN) || !Number.isFinite(newN)) return false;
+      const absDelta = Math.abs(newN - oldN);
+      const pctDelta = oldN === 0 ? Infinity : Math.abs((newN - oldN) / oldN) * 100;
+      if (t.tier2_price_pct && pctDelta > t.tier2_price_pct) return true;
+      if (t.tier2_price_abs && absDelta > t.tier2_price_abs) return true;
+      return false;
+    }
+    if (field === 'area_sqm') {
+      const oldN = Number(oldValue);
+      const newN = Number(newValue);
+      if (!Number.isFinite(oldN) || !Number.isFinite(newN)) return false;
+      const pctDelta = oldN === 0 ? Infinity : Math.abs((newN - oldN) / oldN) * 100;
+      if (t.tier2_area_pct && pctDelta > t.tier2_area_pct) return true;
+      return false;
+    }
+    return false;
+  }
+
+  // Module-scoped threshold cache. Loaded once per Review Pending page open
+  // via window.dlp.settings.get(). Fallback to spec defaults if settings
+  // IPC fails (e.g. preload not ready).
+  const DEFAULT_THRESHOLDS = {
+    tier2_price_pct: 10,
+    tier2_price_abs: 50000,
+    tier2_area_pct:  5
+  };
+  let cachedThresholds = null;
+
+  async function loadThresholds() {
+    if (cachedThresholds) return cachedThresholds;
+    try {
+      const s = (window.dlp && window.dlp.settings)
+        ? await window.dlp.settings.get()
+        : null;
+      cachedThresholds = {
+        tier2_price_pct: s && s.tier2_price_pct != null ? s.tier2_price_pct : DEFAULT_THRESHOLDS.tier2_price_pct,
+        tier2_price_abs: s && s.tier2_price_abs != null ? s.tier2_price_abs : DEFAULT_THRESHOLDS.tier2_price_abs,
+        tier2_area_pct:  s && s.tier2_area_pct  != null ? s.tier2_area_pct  : DEFAULT_THRESHOLDS.tier2_area_pct
+      };
+    } catch (_) {
+      cachedThresholds = Object.assign({}, DEFAULT_THRESHOLDS);
+    }
+    return cachedThresholds;
+  }
+
+  function escapeHtmlModal(s) {
+    if (s === null || s === undefined) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  // Show the single-row Tier-2 justification modal. Resolves to the
+  // justification text (string) on confirm, or null on cancel.
+  function showTier2JustificationModal(field, oldValue, newValue) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'tier2-modal-overlay';
+      overlay.innerHTML =
+        '<div class="tier2-modal" role="dialog" aria-modal="true">' +
+          '<h2>⚠ Tier-2 change requires justification</h2>' +
+          '<p class="tier2-summary">' +
+            '<strong>Field:</strong> ' + escapeHtmlModal(field) + '<br>' +
+            '<strong>Change:</strong> ' + escapeHtmlModal(String(oldValue == null ? '—' : oldValue)) +
+              ' → ' + escapeHtmlModal(String(newValue == null ? '—' : newValue)) +
+          '</p>' +
+          '<label>Reason this large change is correct:</label>' +
+          '<textarea class="tier2-input" rows="4" placeholder="Required, min 10 characters"></textarea>' +
+          '<div class="tier2-actions">' +
+            '<button type="button" class="tier2-cancel">Cancel</button>' +
+            '<button type="button" class="tier2-confirm" disabled>Approve with justification</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      const input      = overlay.querySelector('.tier2-input');
+      const confirmBtn = overlay.querySelector('.tier2-confirm');
+      const cancelBtn  = overlay.querySelector('.tier2-cancel');
+      function cleanup() {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      }
+      input.addEventListener('input', () => {
+        confirmBtn.disabled = input.value.trim().length < 10;
+      });
+      cancelBtn.addEventListener('click', () => { cleanup(); resolve(null); });
+      confirmBtn.addEventListener('click', () => {
+        const text = input.value.trim();
+        if (text.length < 10) return;
+        cleanup(); resolve(text);
+      });
+      overlay.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { cleanup(); resolve(null); }
+      });
+      setTimeout(() => input.focus(), 0);
+    });
+  }
+
+  // Combined-modal variant for card-level Approve all. tier2Rows is an array
+  // of { field, oldValue, newValue }. Returns shared justification or null.
+  function showTier2BatchModal(tier2Rows) {
+    return new Promise((resolve) => {
+      const overlay = document.createElement('div');
+      overlay.className = 'tier2-modal-overlay';
+      const rowsHtml = tier2Rows.map(r =>
+        '<li>' +
+          '<strong>' + escapeHtmlModal(r.field) + ':</strong> ' +
+          escapeHtmlModal(String(r.oldValue == null ? '—' : r.oldValue)) +
+          ' → ' + escapeHtmlModal(String(r.newValue == null ? '—' : r.newValue)) +
+        '</li>'
+      ).join('');
+      const plural = tier2Rows.length === 1 ? 'field' : 'fields';
+      overlay.innerHTML =
+        '<div class="tier2-modal" role="dialog" aria-modal="true">' +
+          '<h2>⚠ Tier-2 changes require justification</h2>' +
+          '<p class="tier2-summary">' +
+            'This BP contains <strong>' + tier2Rows.length + '</strong> tier-2 ' + plural + ':' +
+            '<ul class="tier2-list">' + rowsHtml + '</ul>' +
+          '</p>' +
+          '<label>Shared reason these large changes are correct:</label>' +
+          '<textarea class="tier2-input" rows="4" placeholder="Required, min 10 characters"></textarea>' +
+          '<div class="tier2-actions">' +
+            '<button type="button" class="tier2-cancel">Cancel</button>' +
+            '<button type="button" class="tier2-confirm" disabled>Approve all with justification</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(overlay);
+      const input      = overlay.querySelector('.tier2-input');
+      const confirmBtn = overlay.querySelector('.tier2-confirm');
+      const cancelBtn  = overlay.querySelector('.tier2-cancel');
+      function cleanup() {
+        if (overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      }
+      input.addEventListener('input', () => {
+        confirmBtn.disabled = input.value.trim().length < 10;
+      });
+      cancelBtn.addEventListener('click', () => { cleanup(); resolve(null); });
+      confirmBtn.addEventListener('click', () => {
+        const text = input.value.trim();
+        if (text.length < 10) return;
+        cleanup(); resolve(text);
+      });
+      overlay.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') { cleanup(); resolve(null); }
+      });
+      setTimeout(() => input.focus(), 0);
+    });
+  }
+
   // Date-range presets: maps preset key → ISO fromTs (relative to now).
   function computeFromTs(preset) {
     const now = Date.now();
@@ -363,8 +524,35 @@
       try {
         switch (t) {
           case 'approve-bp': {
+            const overrides = payload.overrides || {};
+            // Resolve which BP from cache so we can re-check each row's
+            // tier-2 status against the user-typed override (or the
+            // proposed_value if no override).
+            const bp = needsBpsCache.find(b => b.bp_id === bpId);
+            const tier2Rows = [];
+            if (bp && Array.isArray(bp.rows)) {
+              const thresholds = await loadThresholds();
+              for (const r of bp.rows) {
+                if (r.decision && r.decision !== 'pending') continue;
+                const finalVal = Object.prototype.hasOwnProperty.call(overrides, String(r.change_id))
+                  ? overrides[String(r.change_id)]
+                  : r.proposed_value;
+                if (isTier2(r.field_name, r.old_value, finalVal, thresholds)) {
+                  tier2Rows.push({
+                    field: r.field_name,
+                    oldValue: r.old_value,
+                    newValue: finalVal
+                  });
+                }
+              }
+            }
+            let userNote = null;
+            if (tier2Rows.length > 0) {
+              userNote = await showTier2BatchModal(tier2Rows);
+              if (userNote == null) { setStatus('Approval cancelled — no justification.', 'error'); return; }
+            }
             setStatus('Approving BP ' + bpId + '…');
-            await api.approveBp({ bpId, overrides: payload.overrides || {} });
+            await api.approveBp({ bpId, overrides, userNote });
             setStatus('BP approved.', 'ok');
             await loadAndRenderBpCards();
             return;
@@ -398,8 +586,23 @@
           }
           case 'approve-row': {
             const changeId = Number(payload.changeId);
+            const override = payload.override == null ? null : payload.override;
+            // Find the row in cache so we can check tier-2.
+            let userNote = null;
+            const bp = needsBpsCache.find(b => b.bp_id === bpId);
+            const row = bp && Array.isArray(bp.rows)
+              ? bp.rows.find(r => Number(r.change_id) === changeId)
+              : null;
+            if (row) {
+              const thresholds = await loadThresholds();
+              const finalVal = override == null ? row.proposed_value : override;
+              if (isTier2(row.field_name, row.old_value, finalVal, thresholds)) {
+                userNote = await showTier2JustificationModal(row.field_name, row.old_value, finalVal);
+                if (userNote == null) { setStatus('Approval cancelled — no justification.', 'error'); return; }
+              }
+            }
             setStatus('Approving change #' + changeId + '…');
-            await api.approve({ changeId, override: payload.override == null ? null : payload.override });
+            await api.approve({ changeId, override, userNote });
             setStatus('Row approved.', 'ok');
             await loadAndRenderBpCards();
             return;
@@ -635,6 +838,10 @@
     (async function init() {
       populateStaticFilters();
       await populateProjects();
+      // Warm the tier-2 thresholds cache so the first Approve click doesn't
+      // race the settings IPC. Failure is non-fatal — loadThresholds()
+      // falls back to defaults.
+      try { await loadThresholds(); } catch (_) { /* non-fatal */ }
       writeFiltersToInputs();
       renderTabs(0, 0);
       await reloadActiveTab();
