@@ -101,12 +101,14 @@ function initTabHost() {
 
   function open(opts) {
     const { url, srcdoc, render, title } = opts || {};
+    if (srcdoc != null) {
+      throw new Error('tabHost.open: srcdoc mode was removed in v2.0 — use render mode (callback receives a <div> container)');
+    }
     const modeCount =
-      (url    !== undefined && url    !== null ? 1 : 0) +
-      (srcdoc !== undefined && srcdoc !== null ? 1 : 0) +
+      (url !== undefined && url !== null ? 1 : 0) +
       (typeof render === 'function' ? 1 : 0);
     if (modeCount !== 1) {
-      throw new Error('tabHost.open: exactly one of { url, srcdoc, render } must be provided');
+      throw new Error('tabHost.open: exactly one of { url, render } must be provided');
     }
 
     const id = String(nextTabId++);
@@ -142,18 +144,7 @@ function initTabHost() {
       const iframeEl = document.createElement('iframe');
       iframeEl.className = 'tab-iframe';
       iframeEl.dataset.tabId = id;
-      if (srcdoc != null) {
-        // DEPRECATED in v2.0 — Tasks 5/6 are converting the remaining
-        // srcdoc callers (review-pending, history) to render mode. Until
-        // that's done we keep the old behavior so the app still launches.
-        console.warn(
-          'tabHost: srcdoc mode is deprecated; use render mode instead. ' +
-          'Title=' + JSON.stringify(title) + '\n' + new Error().stack
-        );
-        iframeEl.srcdoc = srcdoc;
-      } else {
-        iframeEl.src = url;
-      }
+      iframeEl.src = url;
       content.appendChild(iframeEl);
       paneEl = iframeEl;
 
