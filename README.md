@@ -22,7 +22,8 @@ Lives inside the P-Charter repo as a git subtree: `Desktop\p-charter\dl-processo
 3. [Quick start — the monthly flow](#quick-start--the-monthly-flow)
 4. [The menu in detail](#the-menu-in-detail)
 5. [Reviewing changes (v1.1)](#reviewing-changes-v11)
-6. [Viewing change history](#viewing-change-history)
+6. [Reviewing changes (v2.0)](#reviewing-changes-v20)
+7. [Viewing change history](#viewing-change-history)
 7. [Restoring from backup](#restoring-from-backup)
 8. [Receiving patches (v1.2+)](#receiving-patches-v12)
 9. [CLI subcommands](#cli-subcommands)
@@ -81,6 +82,16 @@ The SF export is called `DLD -ALL-<timestamp>.xlsx` because the **Salesforce rep
 | `DLD -ALL-2026-04-22-15-11-56.xlsx`                  | Salesforce | `sf-input/` |
 | `ProjectInquiryReport.xps` / `.csv`                  | DLD GOV    | `input/`   |
 | `Sobha Central II.csv`, `Sobha Solis.csv`, `SKYSCAPE.csv` | DLD GOV    | `input/`   |
+
+### Salesforce export — required columns (v2.0)
+
+The SF importer extracts headers by name (case-insensitive, colon-tolerant). v2.0 adds **three new headers** to the SF context strip on Review Pending BP cards:
+
+- `Current Step Name`
+- `Current Step: Assigned Name`
+- `Comments`
+
+If your existing "DLD -ALL" SF report lacks these columns, BP cards will still render but show `null` / `—` placeholders in the SF context strip. Re-export with these columns added to the report definition for full v2.0 functionality.
 
 Each compare row is categorized as one of:
 
@@ -261,6 +272,53 @@ No CSV roundtrip is involved. The legacy `apply-pending` CLI still works for one
 
 ---
 
+## Reviewing changes (v2.0)
+
+> Replaces the v1.1 per-field row layout. The Needs review tab now groups pending changes into **Business Process (BP) cards** — one card per business event, with full Salesforce context inline.
+
+Click **`5. Review pending`** in the sidebar. The page opens as a native renderer-DOM pane (no iframe — see [v2.0 changelog](#v200-12-may-2026)) with a **filter bar** on top and two tabs (`Needs review`, `Drift log`).
+
+### Filter bar (8 dimensions)
+
+Above the tabs, narrow the queue along any combination of:
+
+- **Project** — pulled from the same projects-list query used by the top bar
+- **Tower** — the per-project tower / sub-village if applicable
+- **BP type** — Resale / Buyer correction / Price amendment / Status update / Procedure update / Area correction / Multi-field update
+- **SF state** — READY / IN_PROGRESS / DLD_ISSUE / REJECTED / NO_SF_ROW
+- **Assigned to** — `sf_booking.current_step_assigned_name`
+- **Procedure #** — exact-match on `sf_booking.procedure_number`
+- **Date range** — when the pending changes were queued
+- **Search** — free-text across unit number, buyer name, BP name
+
+**Default filters on first open:** SF state ≠ `REJECTED`, Date range = `Last 30 days`. Expand the range if your BP doesn't show up.
+
+### BP cards
+
+Each card represents one business event — `pending_change` rows sharing the same `(source_snapshot_id, project_id, unit_number_norm)`. The card header carries:
+
+| Element | Source | What it tells you |
+|---|---|---|
+| **BP label** | `classifyBp(fieldSet)` in `src/bp-classifier.js` | What kind of change happened. First-match-wins: Resale → Buyer correction → Price amendment → Status update → Procedure update → Area correction → Multi-field update fallback. |
+| **SF state badge** | `classifyState(sfRow)` in `src/sf-state.js` | Whether SF is ready for you to approve. READY (green), IN_PROGRESS (yellow), DLD_ISSUE (orange), REJECTED (red), NO_SF_ROW (gray). |
+| **SF context strip** | `sf_booking` columns | BP name, status, current_step_name, current_step_assigned_name, pre_reg_status, dld_process_status, dates, comments, procedure_number. |
+| **`Open in SF →`** | `booking_record_id` | Copies the booking record ID to clipboard. Paste into your Salesforce instance manually (v2.0 limitation — Sobha SF URL pattern not yet configured; v2.1 will deep-link). |
+
+### Action buttons (gated by SF state)
+
+- **READY** — `Approve all` and `Reject all` both enabled. Approve all writes every field's final value to `master_data` atomically, marks all `pending_change` rows `approved`, and appends an umbrella `approve_bp` row to `audit_log`.
+- **IN_PROGRESS / DLD_ISSUE** — banner explains why (BP still mid-process, or DLD has flagged an issue). `Approve all` is disabled; per-row Approve still works from the expanded card.
+- **REJECTED** — only `Acknowledge` is shown. Writes an `acknowledge_bp` audit_log entry; doesn't touch `master_data`.
+- **NO_SF_ROW** — no matching `sf_booking` exists for this `(project, unit)`. SF context strip shows placeholders. Approve flow still works but you're approving without SF confirmation. See [TROUBLESHOOTING.md → v2.0 BP grouping problems](TROUBLESHOOTING.md#v20-bp-grouping-problems).
+
+**Expand button** reveals per-row Approve / Reject / Override / `🔗 Teach alias` (for BUYER_MISMATCH rows) — the same per-row controls available in v1.1.
+
+### Drift log tab
+
+Same as v1.1, but now also populates from **DLD drift detection** (new in v2.0 — see [Data model](#key-db-tables)). Any `dld_unit` whose operational fields change between two consecutive `dld_snapshot`s writes a `DLD_DRIFT` row at compare time and an `auto_apply` row with `source='compare'` in `audit_log`. Use the per-unit history side panel to see the trail.
+
+---
+
 ## Viewing change history
 
 ### Global `📜 History` page
@@ -329,7 +387,7 @@ Click **`Import DB`** in the desktop app and pick a `.zip` backup. The app extra
 
 ## Receiving patches (v1.2+)
 
-> From v1.2 onward, updates are distributed as small zip patches (~5-15 MB) instead of full 78 MB installers. Your admin builds the patch and shares it (OneDrive / email / network drive).
+> From v1.2 onward, updates are distributed as small zip patches (~5-15 MB) instead of full 78 MB installers. Your admin builds the patch and shares it (OneDrive / email / network drive). The **v1.2.0 → v2.0.0** upgrade will be the first real-world patch distributed via this mechanism.
 
 To apply a patch:
 
@@ -436,7 +494,7 @@ dl-processor/
 - **`dld_unit`** — properties within a snapshot (unit number, type, `net_area`).
 - **`dld_transaction`** — per-unit transactions (Sale, Sell-Pre, Mortgage, etc. with party + date + amount).
 - **`sf_snapshot`** — one row per SF xlsx imported.
-- **`sf_booking`** — one row per SF booking; includes primary applicant + co-applicants 2–4 + `applicant_details`.
+- **`sf_booking`** — one row per SF booking; includes primary applicant + co-applicants 2–4 + `applicant_details`. v2.0 adds `current_step_name`, `current_step_assigned_name`, and `comments` (read by the BP card SF context strip).
 - **`project_mapping`** — overrides for DLD ↔ SF translation, including per-project `area_threshold_pct`.
 - **`master_data`** — wide table, one row per `(project_id, unit_number_norm)`. Single source of truth for staff-curated values (`buyer_name`, `purchase_price_aed`, `area_sqm`, etc.). Each field has a `_source` provenance column (`staff` / `dld_approved`) and a `_decided_at` timestamp. Seeded from `manual_override` + `manual_area` on first run.
 - **`pending_change`** — tall audit trail. One row per `(unit, field)` proposed change. `decision` starts as `pending` and is set to `approved` / `rejected` (review_pending UI) or `auto_applied` (compare-time drift). v1.1 adds `change_type` (`MISMATCH` / `DLD_DRIFT` / `SF_DRIFT`) and `override_value` (the user-typed final value, when an inline override happened). Approved rows are applied to `master_data` from the inline Review Pending page.
@@ -644,6 +702,30 @@ Quick reference — the most common ones:
 ---
 
 ## Changelog
+
+### v2.0.0 (12 May 2026)
+
+Three feature areas shipped as one milestone — first patch-distributed release (v1.2.0 → v2.0.0 zip patch).
+
+#### Feature A — De-iframe refactor
+
+All in-app pages (Review Pending, History, Status, Projects, Apply pending) now render as native renderer-DOM panes instead of iframes-with-srcdoc. Scripts run in the main renderer context. The tab-host supports a `render` mode for native panes alongside the existing `url` mode (still used for the output Dashboard). Same pattern as v1.1's unit-history-panel / patch-modal.
+
+#### Feature B — Business Process grouping
+
+Review Pending's Needs review tab now shows **BP cards** (grouped by `(source_snapshot_id, project_id, unit_number_norm)`) instead of per-field rows. Each card carries a BP-type label (`src/bp-classifier.js`), an SF state badge (`src/sf-state.js`), the full SF context strip, and gated action buttons. An 8-dimension filter bar narrows the queue (Project / Tower / BP type / SF state / Assigned to / Procedure # / Date range / Search). See [Reviewing changes (v2.0)](#reviewing-changes-v20).
+
+Two schema migrations:
+- **006** — adds `current_step_assigned_name` and `comments` to `sf_booking` (`current_step_name` was already in v1.0 schema).
+- **007** — widens `audit_log.action` CHECK to allow `approve_bp` / `reject_bp` / `acknowledge_bp`.
+
+SF importer extension: extracts `Current Step Name`, `Current Step: Assigned Name`, `Comments` headers from `.xlsx` (case-insensitive, colon-tolerant).
+
+#### Feature C — DLD drift detection
+
+The v1.1-deferred `'dld'` branch of `compare-drift.js` is now real. `pickLatestPurchase` / `pickLatestMarketPrice` / `findLatestNonBankParty` extracted into `src/snapshot-extract.js` plus a new `extractUnitFields(db, snapshotId, projectId, unitNumberNorm)`. Compare-time drift detection writes `DLD_DRIFT` rows to `pending_change` and `auto_apply` rows to `audit_log` (`source='compare'`) for any unit whose operational fields changed between two consecutive `dld_snapshot`s.
+
+Test count: 338 → **390**.
 
 ### v0.9.17 (6 May 2026)
 

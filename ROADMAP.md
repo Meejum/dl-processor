@@ -4,15 +4,14 @@
 
 ## Cadence
 
-1. **Now (v1.1 production phase)** — Use v1.1 with the registration team for 2-4 weeks. Capture friction. The notes below shape v1.2 priorities.
-2. **After production validation** — v1.2 (designed; spec at `docs/superpowers/specs/2026-05-12-v1.2-bp-grouping-design.md`).
-3. **Then** — v1.3 (DLD drift detection — completes the v1.1 deferral).
-4. **Then** — v1.4 (audit + compliance hardening).
-5. **Mid-2026** — Evaluate v2.x vs v3.0 against actual team adoption signals.
+1. **Done** — v1.2 (patch-based updates) and v2.0 (de-iframe + BP grouping + DLD drift) shipped on 2026-05-12. v1.3 and v1.4 were folded into v2.0.
+2. **Now (v2.0 production phase)** — Use v2.0 with the registration team for 2-4 weeks. Capture friction. The notes below shape v2.1 priorities.
+3. **Next milestone** — v2.1 (audit + compliance hardening).
+4. **Mid-2026** — Evaluate v2.x vs v3.0 against actual team adoption signals.
 
 ---
 
-## Near horizon (v1.2 → v2.0, next ~4 weeks)
+## Near horizon (v1.2 → v2.1, recent + next ~4 weeks)
 
 ### v1.2 — Patch-based updates ✅ SHIPPED 2026-05-12
 
@@ -34,67 +33,28 @@
 
 ---
 
-### v2.0 — Milestone: de-iframe + BP grouping + DLD drift *(bundled 2026-05-12, was v1.2.5 + v1.3 + v1.4)*
+### v2.0 — Milestone: de-iframe + BP grouping + DLD drift ✅ SHIPPED 2026-05-12 *(bundled, was v1.2.5 + v1.3 + v1.4)*
 
-**Status:** spec'd + planned. Ready to dispatch tomorrow.
+**Status:** shipped. First patch-distributed release (v1.2.0 → v2.0.0 zip patch).
 
-**Why bundled:** Three feature areas with shared architecture. De-iframe is the foundation; BP grouping needs native renderer DOM to work cleanly; DLD drift is an isolated backend refactor that completes v1.1's deferral. Shipping together as one milestone cuts release overhead and proves the v1.2 patch system end-to-end (v1.2.0 → v2.0.0 will be the first patch-distributed release).
+**Why bundled:** Three feature areas with shared architecture. De-iframe is the foundation; BP grouping needs native renderer DOM to work cleanly; DLD drift is an isolated backend refactor that completes v1.1's deferral. Shipping together as one milestone cut release overhead and proved the v1.2 patch system end-to-end.
 
-**Three feature areas bundled:**
-- **Feature A — De-iframe refactor.** Replace iframe-with-srcdoc pages (Review Pending, History) with native renderer-DOM panes. Tab-host becomes a `<div>`-pane controller. CSS moves to scoped selectors in `styles.css`. Same pattern as unit-history-panel / patch-modal which are already native.
-- **Feature B — Business Process grouping.** All the v1.3 design captured earlier in 2026-05-12 spec, built natively from day 1 on top of Feature A. BP cards grouped by source_snapshot_id, classified by SF state, filterable by 8 dimensions. Migrations 006 (sf_booking columns) + 007 (audit_log.action CHECK widen).
-- **Feature C — DLD drift detection.** Extract compare.js's picker functions into src/snapshot-extract.js. Make the 'dld' branch of compare-drift.js real (no longer a no-op stub).
+#### What v2.0 delivered
 
-**Plan:** `docs/superpowers/plans/2026-05-13-v2.0-milestone-plan.md` — 20 tasks across 5 phases. Test target 338 → ~390.
+- **Feature A — De-iframe refactor.** Every in-app page (Review Pending, History, Status, Projects, Apply pending) now renders as a native renderer-DOM pane. The tab-host gained a `render` mode alongside the existing `url` mode (still used for the output Dashboard). Same pattern as v1.1's unit-history-panel / patch-modal.
+- **Feature B — Business Process grouping.** Review Pending's Needs review tab shows BP cards grouped by `(source_snapshot_id, project_id, unit_number_norm)`, with BP-type labels (`src/bp-classifier.js`), SF state badges (`src/sf-state.js`), full SF context strip, 8-dimension filter bar, and umbrella `approve_bp` / `reject_bp` / `acknowledge_bp` audit_log entries. Migrations 006 (adds `current_step_assigned_name` + `comments` to `sf_booking`) + 007 (widens `audit_log.action` CHECK).
+- **Feature C — DLD drift detection.** Picker functions extracted into `src/snapshot-extract.js`. The `'dld'` branch of `compare-drift.js` is now real — writes `DLD_DRIFT` rows to `pending_change` and `auto_apply` rows to `audit_log` for any unit whose operational fields changed between two consecutive `dld_snapshot`s.
 
+**Test count:** 338 → **390**.
+
+**Plan:** `docs/superpowers/plans/2026-05-13-v2.0-milestone-plan.md` — 20 tasks across 5 phases.
 **Spec:** `docs/superpowers/specs/2026-05-13-v2.0-milestone-design.md`
 
-**Estimate:** ~3 weeks subagent-driven execution.
+> Previously planned v1.3 (BP grouping standalone) and v1.4 (DLD drift standalone) have been folded into v2.0 above. The next milestone is v2.1.
 
 ---
 
-### v1.3 — Business Process grouping ✅ FOLDED INTO v2.0 (above)
-
-**What ships:**
-- Replace per-field rows on Review Pending with collapsible Business Process cards
-- Group `pending_change` rows by `source_snapshot_id` + unit (one card per BP event from the same compare run)
-- Label by field-set pattern: Resale, Buyer correction, Price amendment, Status update, Procedure update, Area correction, Multi-field update
-- SF state badge per card: READY / IN_PROGRESS / DLD_ISSUE / REJECTED / NO_SF_ROW (driven by `Status` + `dld_process_status`)
-- Card-level Approve all / Reject all (gated by state) plus per-row Override/Approve/Reject in expanded view
-- Full SF context inline: BP name, current step, assigned to, pre-reg status, DLD process status, dates, comments, procedure number
-- Filter bar above cards: Project, Tower, BP type, SF state, Assigned to, Procedure #, Date range, free-text search
-- `[Open in SF →]` deep link per card using `booking_record_id`
-- Umbrella audit_log entries (`approve_bp` / `reject_bp` / `acknowledge_bp`) for queryable BP-level history
-- **First version distributed AS A PATCH** to v1.2 users — proves the patch system works
-
-**Why:** Real-world smoke-test of v1.1 revealed that one business event (resale) produces 3 separate pending rows at the same timestamp. Reviewing them as a fragmented list loses context and forces mental re-grouping. Also v1.1 doesn't surface SF workflow state — reviewers risk approving while a BP is still mid-process or has a DLD issue.
-
-**Estimate:** ~2 weeks subagent-driven execution. 14 tasks across 4 phases. Test target ~340 → ~378.
-
-**Spec:** `docs/superpowers/specs/2026-05-12-v1.3-bp-grouping-design.md`
-**Plan:** `docs/superpowers/plans/2026-05-12-v1.3-bp-grouping.md`
-
----
-
-### v1.4 — DLD drift detection
-
-**Status:** deferred from v1.1 (scope reduction).
-
-**What ships:**
-- `detectDrift(db, projectId, currentSnapshotId, 'dld')` actually does work (today it's a documented no-op stub)
-- Extract `compare.js`'s picker functions (`pickLatestPurchase`, `findLatestNonBankParty`, etc.) into a reusable module `src/snapshot-extract.js`
-- Both compare's MISMATCH path AND drift detection consume the new extractor
-- Adds DLD-side drift logging at parity with SF (Drift log tab populates from both sides)
-
-**Why:** v1.1 ships SF drift only because DLD's snapshot schema stores operational values across `dld_transaction` + `dld_unit` rather than as flat columns, requiring extractor refactor that was too large for the v1.1 scope. v1.3 closes the loop.
-
-**Estimate:** ~3-4 days. Test target +~10.
-
-**Dependencies:** None — independent of v1.2.
-
----
-
-### v1.5 — Audit & compliance hardening *(formerly v1.4)*
+### v2.1 — Audit & compliance hardening *(formerly v1.4 / v1.5)*
 
 **Status:** not yet designed.
 
@@ -113,28 +73,28 @@
 
 ---
 
-## Mid horizon (v2.0, 2-3 months out)
+## Mid horizon (v2.2 → v2.4, 2-3 months out)
 
-### v2.0 — Workflow automation
+### v2.2 — Workflow automation *(formerly v2.0)*
 
 **Status:** not yet designed.
 
 **What ships:**
 - **Bulk operations** — filter the queue, then "approve all 23 buyer corrections in project ONE" in one click
 - **Custom rules engine** — declarative: `if change_type='BUYER_MISMATCH' AND alias_exists THEN auto_approve`. Rules stored in a new `automation_rule` table, applied during compare.
-- **Smart anomaly flags** — anything with price delta >X% or area delta >Y% gets a 🚨 badge that requires manager sign-off (different from Tier-2 gate in v1.4 — anomaly flag is a visible badge, gate is a workflow block)
+- **Smart anomaly flags** — anything with price delta >X% or area delta >Y% gets a 🚨 badge that requires manager sign-off (different from Tier-2 gate in v2.1 — anomaly flag is a visible badge, gate is a workflow block)
 - **Cross-month trending** — dashboard tile: "Project X has 23 pending changes this month vs avg 8 over last 6 months" — alerts when a project shows unusual activity
 - **Pre-compare report** — preview what compare would produce BEFORE writing it, so users can review the queue size before committing to a multi-hour review
 
-**Why:** v1.1 cuts review time by ~30% over the legacy CSV workflow (estimated). v2.0 cuts another ~40% on top of that by removing the most common per-row actions and surfacing what's actually anomalous.
+**Why:** v1.1 cut review time by ~30% over the legacy CSV workflow. v2.0 cut another ~40% on top of that by removing per-row friction (BP cards). v2.2 takes the next bite by removing the most common bulk actions and surfacing what's actually anomalous.
 
 **Estimate:** ~3 weeks.
 
-**Dependencies:** v1.2 (BP grouping makes bulk-action UI tractable).
+**Dependencies:** v2.0 (BP grouping makes bulk-action UI tractable). ✅ met.
 
 ---
 
-### v2.1 — Reporting & exports
+### v2.3 — Reporting & exports *(formerly v2.1)*
 
 **What ships:**
 - Excel-format monthly audit reports (one click, all the columns compliance wants)
@@ -144,11 +104,11 @@
 
 **Estimate:** ~1 week.
 
-**Dependencies:** v1.4 (compliance schema additions).
+**Dependencies:** v2.1 (compliance schema additions).
 
 ---
 
-### v2.2 — Code signing + cross-platform
+### v2.4 — Code signing + cross-platform *(formerly v2.2)*
 
 **What ships:**
 - Buy code-signing certificate (~AED 1,000/year)
@@ -176,7 +136,7 @@
 
 **Estimate:** ~3-4 weeks. Most of that is OAuth + permission grants from Sobha IT + DLD.
 
-**Dependencies:** v2.0 (workflow automation engine is the consumer of webhook events).
+**Dependencies:** v2.2 (workflow automation engine is the consumer of webhook events).
 
 ---
 
@@ -190,7 +150,7 @@
 
 **Estimate:** Major architecture work — ~6-8 weeks.
 
-**Dependencies:** v1.4 (audit hardening) — multi-user without strong audit is unsafe.
+**Dependencies:** v2.1 (audit hardening) — multi-user without strong audit is unsafe.
 
 ---
 
@@ -222,4 +182,4 @@ These sound useful but the maintenance burden vs. real workflow gain doesn't jus
 
 ## Resumption phrase
 
-To pick up any item: open a new session, say **"resume dl area"**, and reference the version (e.g., "start v1.2" or "design v1.4"). The memory note + this roadmap + the spec/plan files in `docs/superpowers/` carry full context.
+To pick up any item: open a new session, say **"resume dl area"**, and reference the version (e.g., "start v2.1" or "design v2.2"). The memory note + this roadmap + the spec/plan files in `docs/superpowers/` carry full context.
