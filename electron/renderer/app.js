@@ -96,10 +96,15 @@
       getProjectFilter: () => currentProjectFilter,
       setProjectFilter: (f) => {
         currentProjectFilter = f;
-        // Auto-open the per-project compare report when a project is picked.
-        // Falls through silently if the file doesn't exist yet (user hasn't
-        // run [3] Compare for this project).
-        if (f && currentDataFolder && window.__tabHost) {
+        if (!f || !window.__tabHost) return;
+        const pid = topBar.getProjectIdFor(f);
+        if (pid != null && typeof window.__renderProjectComparePage === 'function') {
+          window.__tabHost.open({
+            title: f,
+            render: (container) => window.__renderProjectComparePage(container, pid)
+          });
+        } else if (currentDataFolder) {
+          // SF-only project or renderer not loaded — fall back to the static HTML file.
           const slug = f.replace(/[^A-Za-z0-9_-]+/g, '_');
           const url = 'file:///' + currentDataFolder.replace(/\\/g, '/') + '/output/compare/' + slug + '.compare.html';
           window.__tabHost.open({ url, title: f });
@@ -488,6 +493,18 @@
       openHistoryTab((ev && ev.detail) || {});
     });
 
+    document.addEventListener('dlp:open-review-pending', (ev) => {
+      const filters = (ev && ev.detail) || {};
+      if (!window.__renderReviewPendingPage) {
+        console.error('[review-pending] renderer not loaded');
+        return;
+      }
+      window.__tabHost.open({
+        title: 'Review pending',
+        render: (container) => window.__renderReviewPendingPage(container, filters)
+      });
+    });
+
     // Non-CLI sidebar actions — buttons that just open a tab, show a
     // file picker before running a CLI command, or call shell.showInFolder.
     for (const btn of document.querySelectorAll('.cmd-btn[data-action]')) {
@@ -505,9 +522,15 @@
           }
           return;
         }
-        if (action === 'open-dashboard' && currentDataFolder) {
-          const url = 'file:///' + currentDataFolder.replace(/\\/g, '/') + '/output/dashboard.html';
-          window.__tabHost.open({ url, title: 'Dashboard' });
+        if (action === 'open-dashboard') {
+          if (typeof window.__renderDashboardPage !== 'function') {
+            logPanel.appendError('dashboard renderer not loaded — please restart');
+            return;
+          }
+          window.__tabHost.open({
+            title: 'Dashboard',
+            render: (container) => window.__renderDashboardPage(container)
+          });
           return;
         }
         if (action === 'reveal-output' && currentDataFolder) {
