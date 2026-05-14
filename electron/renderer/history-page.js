@@ -40,6 +40,7 @@
       if (initialFilters.action)         safe.action         = initialFilters.action;
       if (initialFilters.source)         safe.source         = initialFilters.source;
       if (initialFilters.range)          safe.range          = initialFilters.range;
+      if (initialFilters.procedureNumber) safe.procedureNumber = initialFilters.procedureNumber;
     }
     const initial = safe;
 
@@ -207,6 +208,12 @@
       if (initial && initial.range)    rangeSel.value  = initial.range;
       // Deep-link from per-unit panel always wants full history.
       if (initial && initial.unitNumberNorm) rangeSel.value = 'all';
+      // v2.2: route a procedureNumber deep-link into the unit/search field as a
+      // free-text fallback. History page does not yet have a dedicated procedure
+      // filter — accepted limitation per plan § Task 8 Step 2.
+      if (initial.procedureNumber && unitInput && !unitInput.value) {
+        unitInput.value = initial.procedureNumber;
+      }
     }
 
     function rowHtml(r) {

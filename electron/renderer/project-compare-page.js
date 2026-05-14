@@ -313,6 +313,42 @@
     // Refresh button (already wired) continues to invoke the wrapped version.
     const origLoad = load;
     load = async function () { await origLoad(); applyFilter(); };
+
+    // Row click → unit-history-panel. Anchored on the <tr>. Buyer-chip's own
+    // click handler already calls ev.stopPropagation(); we also stop on the
+    // proc-chip and PENDING chip so their clicks don't also fire row-click.
+    tbodyEl.addEventListener('click', (ev) => {
+      const procChip = ev.target.closest('.proc-chip');
+      if (procChip) {
+        ev.stopPropagation();
+        document.dispatchEvent(new CustomEvent('dlp:open-history', {
+          detail: { procedureNumber: procChip.dataset.procNumber, range: 'all' }
+        }));
+        return;
+      }
+      const pendingChip = ev.target.closest('.flag-chip.is-pending');
+      if (pendingChip) {
+        ev.stopPropagation();
+        document.dispatchEvent(new CustomEvent('dlp:open-review-pending', {
+          detail: { unitNumber: pendingChip.dataset.unitNumber || '' }
+        }));
+        return;
+      }
+      // Otherwise treat as a row click → side panel.
+      const tr = ev.target.closest('tr');
+      if (!tr || !tr.parentNode || tr.parentNode.tagName !== 'TBODY') return;
+      // expected_sf_unit lives in column index 1. It is the normalized unit
+      // identifier (output of expectedSfUnit() in src/project-mapping.js) and
+      // matches what master_data.unit_number_norm stores — exactly what
+      // unit-history-panel needs as its second argument.
+      const expectedUnit = tr.children[1]
+        ? (tr.children[1].dataset.sortVal || tr.children[1].textContent || '')
+        : '';
+      if (!expectedUnit.trim()) return;
+      if (typeof window.__openUnitHistoryPanel === 'function') {
+        window.__openUnitHistoryPanel(projectId, expectedUnit.trim());
+      }
+    });
   }
 
   window.__renderProjectComparePage = renderProjectComparePage;
