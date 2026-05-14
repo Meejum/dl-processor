@@ -1001,3 +1001,35 @@ body.log-hidden .log-column { display: none; }
 .tier2-modal .tier2-confirm:not(:disabled):hover {
   background: var(--accent-dark);
 }
+
+/* v2.2: Project Compare buyer / applicant popup. Floats over the rest
+   of the table. z-index sits above tab strip (which is ~10) but below
+   the per-unit history side panel (~100). */
+.buyer-cell { text-align: center; }
+.buyer-chip {
+  background: var(--accent-soft, #F0E4CE);
+  border: 1px solid var(--border-2, #C8B896);
+  color: var(--accent-dark, #5C3D1E);
+  padding: 2px 8px;
+  border-radius: 10px;
+  font: 600 11px/1.2 'Inter', sans-serif;
+  cursor: pointer;
+}
+.buyer-chip:hover { filter: brightness(.96); }
+.buyer-popup {
+  position: fixed;
+  z-index: 50;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-2, #C8B896);
+  border-radius: 4px;
+  box-shadow: 0 4px 14px rgba(28,20,10,.18);
+  padding: 8px 12px;
+  max-width: 420px;
+  min-width: 220px;
+  font: 12px/1.5 'Dubai','Inter',sans-serif;
+}
+.buyer-popup ul.buyer-list,
+.buyer-popup ul.applicant-list { margin: 0; padding-left: 18px; }
+.buyer-popup li { list-style: none; margin: 2px 0; }
+.buyer-popup li.bank,
+.buyer-popup li.seller { color: #666; font-style: italic; }
