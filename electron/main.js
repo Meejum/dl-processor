@@ -276,6 +276,15 @@ app.whenReady().then(async () => {
   ipcMain.handle('dlp:audit:unit-history', (e, args) => withDb(db => auditQuery.unitHistory(db, args || {})));
   ipcMain.handle('dlp:audit:global', (e, opts) => withDb(db => auditQuery.globalHistory(db, opts || {})));
   ipcMain.handle('dlp:audit:revert', (e, { auditId }) => withDb(db => auditRevert.revertAuditEntry(db, auditId)));
+
+  // ── Compare query IPC (v2.2 native dashboard, spec § 1) ───────────────
+  // Both handlers are pure SELECTs via getProjectsSummary / getProjectCompare.
+  // withDb() closes the better-sqlite3 handle on every call — same pattern
+  // as the audit handlers above. Heavy on Dashboard mount (one compareProject
+  // per project); profile after Phase 1 if the round-trip is noticeable.
+  const { getProjectsSummary, getProjectCompare } = require('../src/commands/compare-query');
+  ipcMain.handle('dlp:compare:summary',  ()               => withDb(db => getProjectsSummary(db)));
+  ipcMain.handle('dlp:compare:project',  (e, projectId)   => withDb(db => getProjectCompare(db, projectId)));
   ipcMain.handle('dlp:audit:export-csv', async (e, opts) => {
     const rows = withDb(db => auditQuery.globalHistory(db, Object.assign({}, opts || {}, { limit: 1000000, offset: 0 })));
     const cols = ['ts','project_name','unit_number_norm','table_name','field','old_value','new_value','action','source','change_id','user_note'];
