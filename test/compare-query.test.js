@@ -119,3 +119,33 @@ test('getProjectsSummary: pending_count comes from pending_change WHERE decision
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 });
+
+test('getProjectCompare: returns rows + counts that sum to total', () => {
+  const { db, tmp } = freshDb();
+  try {
+    const pid = seedProject(db, { projectName: 'CmpProj' });
+    seedSnapshots(db, pid);
+    const result = getProjectCompare(db, pid);
+    assert.ok(Array.isArray(result.rows));
+    assert.equal(typeof result.counts, 'object');
+    const summed = Object.values(result.counts).reduce((a, b) => a + b, 0);
+    assert.equal(summed, result.rows.length);
+  } finally {
+    db.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});
+
+test('getProjectCompare: carries dldSnapshotId + sfSnapshotId through', () => {
+  const { db, tmp } = freshDb();
+  try {
+    const pid = seedProject(db, { projectName: 'WithSnap' });
+    const { dldSnap, sfSnap } = seedSnapshots(db, pid);
+    const result = getProjectCompare(db, pid);
+    assert.equal(result.dldSnapshotId, dldSnap);
+    assert.equal(result.sfSnapshotId,  sfSnap);
+  } finally {
+    db.close();
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+});

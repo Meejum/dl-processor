@@ -50,8 +50,20 @@ function getProjectsSummary(db) {
   return rows;
 }
 
-function getProjectCompare(_db, _projectId) {
-  throw new Error('getProjectCompare: not implemented yet — Task 3');
+// Full compare result for one project. Returns JSON-safe data ready for
+// the renderer. Same shape compareProject() already returns plus a
+// pre-computed counts object so the renderer doesn't need to re-import
+// summarize().
+function getProjectCompare(db, projectId) {
+  const result = compareProject(db, projectId);
+  return {
+    project:        result.project,
+    status:         result.status,
+    rows:           result.rows || [],
+    counts:         summarize(result.rows || []),
+    dldSnapshotId:  result.dldSnapshotId || null,
+    sfSnapshotId:   result.sfSnapshotId  || null
+  };
 }
 
 module.exports = { getProjectsSummary, getProjectCompare };
