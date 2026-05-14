@@ -198,7 +198,18 @@
       '  <button class="pcp-refresh">Refresh</button>',
       '</div>',
       '<div class="pcp-status"></div>',
-      '<div class="pcp-controls"></div>',
+      '<div class="pcp-controls">',
+      '  <input class="pcp-search" placeholder="Filter: unit, buyer, status, any text…" autocomplete="off">',
+      '  <span class="chip ok off" data-status="MATCH">MATCH</span>',
+      '  <span class="chip up"     data-status="PRICE_UP">PRICE ↑</span>',
+      '  <span class="chip down"   data-status="PRICE_DOWN">PRICE ↓</span>',
+      '  <span class="chip warn"   data-status="BUYER_MISMATCH">BUYER</span>',
+      '  <span class="chip area"   data-status="AREA_MISMATCH">AREA</span>',
+      '  <span class="chip dld"    data-status="DLD_ONLY">DLD-only</span>',
+      '  <span class="chip sf"     data-status="SF_ONLY">SF-only</span>',
+      '  <button class="pcp-reset">Reset</button>',
+      '  <span class="pcp-count"></span>',
+      '</div>',
       '<div class="pcp-table-wrap"><table class="pcp-table">',
       '  <thead><tr></tr></thead>',
       '  <tbody></tbody>',
@@ -238,6 +249,70 @@
 
     refreshBtn.addEventListener('click', () => load());
     load();
+
+    const controlsEl = container.querySelector('.pcp-controls');
+    const searchEl   = controlsEl.querySelector('.pcp-search');
+    const chips      = Array.from(controlsEl.querySelectorAll('.chip'));
+    const resetBtn   = controlsEl.querySelector('.pcp-reset');
+    const countEl    = controlsEl.querySelector('.pcp-count');
+    const headers    = Array.from(theadRow.querySelectorAll('th'));
+
+    const active = new Set(chips.filter(c => !c.classList.contains('off')).map(c => c.dataset.status));
+    let sortCol = null, sortDir = 1;
+
+    function applyFilter() {
+      const needle = searchEl.value.trim().toLowerCase();
+      let visible = 0;
+      const rows = Array.from(tbodyEl.querySelectorAll('tr'));
+      for (const tr of rows) {
+        const statusOn = active.has(tr.dataset.status);
+        const searchOn = !needle || (tr.dataset.search || '').indexOf(needle) !== -1;
+        const show = statusOn && searchOn;
+        tr.classList.toggle('hidden', !show);
+        if (show) visible++;
+      }
+      countEl.textContent = visible.toLocaleString() + ' / ' + rows.length.toLocaleString() + ' rows';
+    }
+
+    for (const chip of chips) {
+      chip.addEventListener('click', () => {
+        const s = chip.dataset.status;
+        if (active.has(s)) { active.delete(s); chip.classList.add('off'); }
+        else               { active.add(s);    chip.classList.remove('off'); }
+        applyFilter();
+      });
+    }
+    searchEl.addEventListener('input', applyFilter);
+    resetBtn.addEventListener('click', () => {
+      searchEl.value = '';
+      for (const c of chips) { active.add(c.dataset.status); c.classList.remove('off'); }
+      sortCol = null; sortDir = 1;
+      headers.forEach(h => h.classList.remove('sort-asc','sort-desc'));
+      load();
+    });
+    headers.forEach((th, i) => {
+      th.addEventListener('click', () => {
+        if (sortCol === i) sortDir = -sortDir;
+        else { sortCol = i; sortDir = 1; }
+        headers.forEach(h => h.classList.remove('sort-asc','sort-desc'));
+        th.classList.add(sortDir === 1 ? 'sort-asc' : 'sort-desc');
+        const rows = Array.from(tbodyEl.querySelectorAll('tr'));
+        rows.sort((a, b) => {
+          const av = a.children[i].dataset.sortVal || a.children[i].textContent;
+          const bv = b.children[i].dataset.sortVal || b.children[i].textContent;
+          const an = parseFloat(av), bn = parseFloat(bv);
+          if (!isNaN(an) && !isNaN(bn) && isFinite(an) && isFinite(bn)) return (an - bn) * sortDir;
+          return String(av).localeCompare(String(bv), undefined, { numeric: true }) * sortDir;
+        });
+        for (const r of rows) tbodyEl.appendChild(r);
+      });
+    });
+
+    // Re-apply filter after every load. `load` was declared with `let` in Task 6
+    // specifically so we can wrap it here. Keep the same identifier so the
+    // Refresh button (already wired) continues to invoke the wrapped version.
+    const origLoad = load;
+    load = async function () { await origLoad(); applyFilter(); };
   }
 
   window.__renderProjectComparePage = renderProjectComparePage;

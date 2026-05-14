@@ -1085,3 +1085,32 @@ body.log-hidden .log-column { display: none; }
   cursor: pointer;
 }
 .flag-chip.is-pending:hover { filter: brightness(.96); }
+
+.project-compare-page .pcp-controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 10px 0 14px; padding: 10px; background: var(--surface, #fff); border: 1px solid var(--border, #E3D9C8); border-radius: 6px; }
+.project-compare-page .pcp-search { flex: 1 1 320px; min-width: 260px; padding: 8px 12px; border: 1px solid var(--border, #E3D9C8); border-radius: 4px; font: inherit; }
+.project-compare-page .pcp-reset { padding: 6px 12px; cursor: pointer; }
+.project-compare-page .pcp-count { color: var(--muted, #8A7E69); font-variant-numeric: tabular-nums; }
+.project-compare-page .pcp-table thead th.sort-asc::after  { content: ' ▲'; font-size: 9px; }
+.project-compare-page .pcp-table thead th.sort-desc::after { content: ' ▼'; font-size: 9px; }
+
+/* Chip + badge palette for the Project Compare page. Task 11 hoists these
+   to top-level selectors and removes per-page duplicates; leave the scoped
+   rules in place for now to keep the page self-contained until then. */
+.project-compare-page .chip { padding: 6px 12px; border-radius: 3px; font: 700 11px/1.2 'Inter', sans-serif; letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border: 1px solid transparent; user-select: none; }
+.project-compare-page .chip.off { opacity: .42; filter: grayscale(.5); }
+.project-compare-page .chip.ok   { background: #DCEDC8; color: #2E6B3A; border-color: #B8DC9D; }
+.project-compare-page .chip.up   { background: #C5E1A5; color: #1E6B34; border-color: #A9CF82; }
+.project-compare-page .chip.down { background: #F3C8BD; color: #A12C1B; border-color: #E8AC9C; }
+.project-compare-page .chip.warn { background: #F5D78E; color: #8A5A08; border-color: #E9C26F; }
+.project-compare-page .chip.area { background: #f59e0b; color: #fff; border-color: #d97706; }
+.project-compare-page .chip.dld  { background: #BFD4E8; color: #1E4E7A; border-color: #9ABDD7; }
+.project-compare-page .chip.sf   { background: #D6BFE4; color: #5A2B82; border-color: #BB9DD0; }
+
+.project-compare-page .badge { padding: 2px 8px; border-radius: 3px; font: 600 10px/1.4 'Inter', sans-serif; letter-spacing: .4px; text-transform: uppercase; }
+.project-compare-page .badge.ok   { background: #DCEDC8; color: #2E6B3A; }
+.project-compare-page .badge.up   { background: #C5E1A5; color: #1E6B34; }
+.project-compare-page .badge.down { background: #F3C8BD; color: #A12C1B; }
+.project-compare-page .badge.warn { background: #F5D78E; color: #8A5A08; }
+.project-compare-page .badge.area { background: #f59e0b; color: #fff; }
+.project-compare-page .badge.dld  { background: #BFD4E8; color: #1E4E7A; }
+.project-compare-page .badge.sf   { background: #D6BFE4; color: #5A2B82; }
