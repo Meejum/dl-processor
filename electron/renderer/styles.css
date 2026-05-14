@@ -1093,28 +1093,6 @@ body.log-hidden .log-column { display: none; }
 .project-compare-page .pcp-table thead th.sort-asc::after  { content: ' ▲'; font-size: 9px; }
 .project-compare-page .pcp-table thead th.sort-desc::after { content: ' ▼'; font-size: 9px; }
 
-/* Chip + badge palette for the Project Compare page. Task 11 hoists these
-   to top-level selectors and removes per-page duplicates; leave the scoped
-   rules in place for now to keep the page self-contained until then. */
-.project-compare-page .chip { padding: 6px 12px; border-radius: 3px; font: 700 11px/1.2 'Inter', sans-serif; letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border: 1px solid transparent; user-select: none; }
-.project-compare-page .chip.off { opacity: .42; filter: grayscale(.5); }
-.project-compare-page .chip.ok   { background: #DCEDC8; color: #2E6B3A; border-color: #B8DC9D; }
-.project-compare-page .chip.up   { background: #C5E1A5; color: #1E6B34; border-color: #A9CF82; }
-.project-compare-page .chip.down { background: #F3C8BD; color: #A12C1B; border-color: #E8AC9C; }
-.project-compare-page .chip.warn { background: #F5D78E; color: #8A5A08; border-color: #E9C26F; }
-.project-compare-page .chip.area { background: #f59e0b; color: #fff; border-color: #d97706; }
-.project-compare-page .chip.dld  { background: #BFD4E8; color: #1E4E7A; border-color: #9ABDD7; }
-.project-compare-page .chip.sf   { background: #D6BFE4; color: #5A2B82; border-color: #BB9DD0; }
-
-.project-compare-page .badge { padding: 2px 8px; border-radius: 3px; font: 600 10px/1.4 'Inter', sans-serif; letter-spacing: .4px; text-transform: uppercase; }
-.project-compare-page .badge.ok   { background: #DCEDC8; color: #2E6B3A; }
-.project-compare-page .badge.up   { background: #C5E1A5; color: #1E6B34; }
-.project-compare-page .badge.down { background: #F3C8BD; color: #A12C1B; }
-.project-compare-page .badge.warn { background: #F5D78E; color: #8A5A08; }
-.project-compare-page .badge.area { background: #f59e0b; color: #fff; }
-.project-compare-page .badge.dld  { background: #BFD4E8; color: #1E4E7A; }
-.project-compare-page .badge.sf   { background: #D6BFE4; color: #5A2B82; }
-
 /* v2.2: Dashboard page (replaces iframe HTML). */
 .dashboard-page { padding: 16px 22px 24px; }
 .dashboard-page .dp-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
@@ -1141,13 +1119,27 @@ body.log-hidden .log-column { display: none; }
 .dashboard-page .dc-timestamps { display: flex; gap: 10px; font-size: 11px; color: var(--muted, #8A7E69); margin-top: 4px; }
 .dashboard-page .dc-match { font-size: 10px; color: var(--muted, #8A7E69); margin-top: 6px; letter-spacing: .4px; }
 
-/* Dashboard reuses the same chip palette as Project Compare. Task 11 hoists
-   these to top-level selectors and removes duplicates. */
-.dashboard-page .chip { padding: 4px 10px; border-radius: 3px; font: 700 10px/1.2 'Inter', sans-serif; letter-spacing: .4px; text-transform: uppercase; border: 1px solid transparent; user-select: none; }
-.dashboard-page .chip.ok   { background: #DCEDC8; color: #2E6B3A; border-color: #B8DC9D; }
-.dashboard-page .chip.up   { background: #C5E1A5; color: #1E6B34; border-color: #A9CF82; }
-.dashboard-page .chip.down { background: #F3C8BD; color: #A12C1B; border-color: #E8AC9C; }
-.dashboard-page .chip.warn { background: #F5D78E; color: #8A5A08; border-color: #E9C26F; }
-.dashboard-page .chip.area { background: #f59e0b; color: #fff; border-color: #d97706; }
-.dashboard-page .chip.dld  { background: #BFD4E8; color: #1E4E7A; border-color: #9ABDD7; }
-.dashboard-page .chip.sf   { background: #D6BFE4; color: #5A2B82; border-color: #BB9DD0; }
+/* v2.2: chip + badge palette ported from src/html-styles.js. Used by
+   project-compare-page (status filter chips + Match badges) and
+   dashboard-page (issue chips + PENDING chip). Keep visual parity with
+   the CLI-generated HTML files in src/html-styles.js — when updating
+   colors here, also update the matching block in src/html-styles.js. */
+.chip { padding: 6px 12px; border-radius: 3px; font: 700 11px/1.2 'Inter', sans-serif; letter-spacing: .4px; text-transform: uppercase; cursor: pointer; border: 1px solid transparent; user-select: none; }
+.chip:hover { filter: brightness(.96); }
+.chip.off   { opacity: .42; filter: grayscale(.5); }
+.chip.ok    { background: #DCEDC8; color: #2E6B3A; border-color: #B8DC9D; }
+.chip.up    { background: #C5E1A5; color: #1E6B34; border-color: #A9CF82; }
+.chip.down  { background: #F3C8BD; color: #A12C1B; border-color: #E8AC9C; }
+.chip.warn  { background: #F5D78E; color: #8A5A08; border-color: #E9C26F; }
+.chip.area  { background: #f59e0b; color: #fff;     border-color: #d97706; }
+.chip.dld   { background: #BFD4E8; color: #1E4E7A; border-color: #9ABDD7; }
+.chip.sf    { background: #D6BFE4; color: #5A2B82; border-color: #BB9DD0; }
+
+.badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font: 600 10px/1.4 'Inter', sans-serif; letter-spacing: .4px; text-transform: uppercase; }
+.badge.ok   { background: #DCEDC8; color: #2E6B3A; }
+.badge.up   { background: #C5E1A5; color: #1E6B34; }
+.badge.down { background: #F3C8BD; color: #A12C1B; }
+.badge.warn { background: #F5D78E; color: #8A5A08; }
+.badge.area { background: #f59e0b; color: #fff; }
+.badge.dld  { background: #BFD4E8; color: #1E4E7A; }
+.badge.sf   { background: #D6BFE4; color: #5A2B82; }

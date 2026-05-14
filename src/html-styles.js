@@ -1,6 +1,13 @@
 // Sobha-branded styling shared by compare HTML and audit-delta HTML.
 // Vanilla-HTML compatible (no Tabulator). Bronze + dark-brown palette,
 // Dubai/Inter typography. Matches Sobha document branding.
+//
+// v2.2 NOTE: chip / badge rules are duplicated into
+// electron/renderer/styles.css for the in-app render-mode pages
+// (project-compare-page, dashboard-page). Both definitions are static
+// and the palette is unlikely to change. When updating colors here,
+// also update the matching block in styles.css to keep the renderer
+// and the CLI HTML visually identical.
 
 const SOBHA_STYLE_CSS = `
   @import url('https://fonts.googleapis.com/css2?family=Dubai:wght@400;500;600;700&family=Inter:wght@400;500;600;700&display=swap');
