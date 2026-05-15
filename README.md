@@ -457,6 +457,48 @@ The `⚙ Settings` page gains four fields for v2.1:
 
 ---
 
+## Native dashboard & project compare (v2.2)
+
+> v2.2 replaces the last two iframe-based surfaces — the portfolio Dashboard and per-project Compare — with native renderer-DOM tabs. Interactions that v1.1 / v2.0 added (per-unit history side panel, procedure deep-link, PENDING deep-link) now work everywhere.
+
+### Portfolio Dashboard
+
+Click **`📊 Dashboard`** in the sidebar. Each project renders as a native card with:
+
+- Source badge (`DLD+SF` / `DLD only` / `SF only`) and total unit count
+- Status mini-chips for nonzero counts (`MATCH` / `BUYER` / `AREA` / `DLD-only` / `SF-only` / `PRICE↑` / `PRICE↓`) in the same palette as the per-project compare table
+- A `PENDING N →` chip when there are unresolved pending changes for the project — click to open Review Pending pre-filtered to that project
+- `DLD imported` / `SF imported` short ISO dates
+
+A top-of-page **portfolio totals** strip sums project count, unit count, total non-MATCH "issues", and pending count. A search box filters cards by name. The `🔄 Refresh` button re-runs the underlying compare query (cheap — no CLI invocation needed).
+
+Card click → opens the project's native **Project Compare** tab.
+
+### Project Compare
+
+Open from the top-bar project picker (or by clicking a Dashboard card). Same 23 columns as the static `output/compare/<slug>.compare.html` file, but with full in-app interactivity:
+
+- **Filter chips** (MATCH off by default, plus PRICE↑/↓, BUYER, AREA, DLD-only, SF-only) toggle row visibility; counts shown in each chip
+- **Search box** matches free text across every cell
+- **Sort by column** — click header (numeric-aware via `data-sort-val`); click again for descending
+- **Row click** — opens the per-unit history side panel (same `__openUnitHistoryPanel` introduced in v1.1) for `(project_id, expected_sf_unit)`
+- **DLD # / SF # cell** — click to open a native popup listing all buyers/applicants with role/kind/amount/date (replaces the old `<details>` block; closes on click-outside or Escape)
+- **Procedure-number chip** in the SF Status cell — click to open the global `📜 History` page filtered to that procedure
+- **PENDING chip** in the Flags column — click to open Review Pending filtered to that unit
+- **Refresh button** — re-runs the project compare query without re-importing
+
+### Static HTML still produced
+
+The CLI `compare` command still writes `output/dashboard.html` and `output/compare/<slug>.compare.html` for offline distribution (email, OneDrive, etc.). They're frozen at compare-run time and don't carry the v2.1 audit hardening additions — for live data, use the native tabs above. The renderer can still open the static files via the address bar in url-mode if needed.
+
+### What did NOT change
+
+- No new tables or migrations.
+- `compare` CLI behavior is unchanged — same outputs, same exit codes.
+- Existing keyboard shortcuts, settings, and Review Pending / History pages are untouched.
+
+---
+
 ## Receiving patches (v1.2+)
 
 > From v1.2 onward, updates are distributed as small zip patches (~5-15 MB) instead of full 78 MB installers. Your admin builds the patch and shares it (OneDrive / email / network drive). The **v1.2.0 → v2.0.0** upgrade will be the first real-world patch distributed via this mechanism.
@@ -774,6 +816,44 @@ Quick reference — the most common ones:
 ---
 
 ## Changelog
+
+### v2.2.0 (15 May 2026)
+
+Native project dashboard and project compare — replaces the last two iframe surfaces with renderer-DOM tabs.
+
+#### Native Dashboard tab
+
+`📊 Dashboard` opens as a native renderer page (no more `output/dashboard.html` iframe). Projects render as cards with source badge, total units, status mini-chips, `PENDING N →` deep-link chip, and import dates. Top strip shows portfolio totals (project count, total units, total "issues", total pending). Search filters cards by name; refresh re-runs the query.
+
+#### Native Project Compare tab
+
+The top-bar project picker (and Dashboard card clicks) now open a native Project Compare tab with the same 23 columns as the static HTML. Adds:
+- Filter chips (MATCH off by default; PRICE↑/↓, BUYER, AREA, DLD-only, SF-only) with live counts
+- Free-text search across all cells
+- Click-to-sort column headers (numeric-aware)
+- Row click → per-unit history side panel (was previously dead in the iframe)
+- DLD #/SF # cell click → native buyer/applicant popup with click-outside + Escape close (replaces `<details>` which didn't work across the iframe boundary)
+- Procedure-number chip → opens `📜 History` filtered to that procedure
+- `PENDING` flag chip → opens Review Pending filtered to that unit
+- Refresh button re-runs the compare query without invoking the CLI
+
+#### Backend query API
+
+New `src/commands/compare-query.js` exposes `getProjectsSummary(db)` and `getProjectCompare(db, projectId)` — both reuse `compareProject()` + `summarize()` so behavior matches the static HTML exactly. Surfaced over IPC as `dlp:compare:summary` and `dlp:compare:project`, with preload bridges `window.dlp.compare.summary()` / `.project(id)`.
+
+#### Custom event
+
+`dlp:open-review-pending` joins `dlp:open-history` as the second cross-tab navigation event. `__renderReviewPendingPage(container, initialFilters)` now seeds its internal filter state from the event detail.
+
+#### Static HTML retained
+
+The CLI `compare` command still writes `output/dashboard.html` and `output/compare/<slug>.compare.html` unchanged — they remain the offline distribution channel. `src/html-styles.js` is unchanged; the chip/badge palette is mirrored in `electron/renderer/styles.css` for the native pages.
+
+**Test count:** 422 → **428**.
+
+**Spec:** `docs/superpowers/specs/2026-05-14-v2.2-native-project-dashboard-design.md`
+
+---
 
 ### v2.1.0 (13 May 2026)
 

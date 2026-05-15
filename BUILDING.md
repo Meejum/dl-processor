@@ -44,8 +44,8 @@ npm run dist
 
 Produces inside `dist-electron/`:
 
-- `DL-Processor Setup 1.0.0.exe` — NSIS installer (~75-100 MB)
-- `DL-Processor-1.0.0-win.zip` — portable zip (~80-110 MB)
+- `DL-Processor Setup 2.2.0.exe` — NSIS installer (~75-100 MB)
+- `DL-Processor-2.2.0-win.zip` — portable zip (~80-110 MB)
 - `latest.yml` — manifest read by the in-app update checker
 - `win-unpacked/` — the raw unpacked app (handy for debugging)
 
