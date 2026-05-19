@@ -115,6 +115,53 @@
     return card;
   }
 
+  // v2.3 Phase 7.2 — render the "Unusual activity" tile.
+  // entries: rows from window.dlp.trending.get(...) — [] hides the tile.
+  function renderTrendingTile(tileEl, entries) {
+    if (!entries || entries.length === 0) {
+      tileEl.innerHTML = '';
+      tileEl.hidden = true;
+      return;
+    }
+    tileEl.hidden = false;
+    const rowsHtml = entries.map(e => {
+      const ratioStr = (e.ratio === Infinity || e.ratio >= 999)
+        ? '∞×'
+        : (Math.round(e.ratio * 10) / 10).toFixed(1) + '×';
+      const avgStr = (Math.round((e.trailing_avg || 0) * 10) / 10).toString();
+      const pid = e.project_id != null ? ' data-project-id="' + escHtml(e.project_id) + '"' : '';
+      return '<button type="button" class="trending-row"' + pid + '>' +
+        '<span class="tr-name">' + escHtml(e.project_name) + '</span>' +
+        '<span class="tr-stats">' +
+          '<b>' + escHtml(e.this_month) + '</b> pending ' +
+          '<span class="muted">(avg ' + escHtml(avgStr) + ' / 6mo, ' + escHtml(ratioStr) + ')</span>' +
+        '</span>' +
+      '</button>';
+    }).join('');
+    tileEl.innerHTML =
+      '<div class="trending-head">' +
+        '<h3>⚠ Unusual activity (' + entries.length + ' project' + (entries.length === 1 ? '' : 's') + ')</h3>' +
+      '</div>' +
+      '<div class="trending-rows">' + rowsHtml + '</div>';
+
+    tileEl.querySelectorAll('.trending-row').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const projectId = btn.dataset.projectId != null ? Number(btn.dataset.projectId) : null;
+        if (projectId == null || Number.isNaN(projectId)) return;
+        // Reuse the same path the project cards take so deep-linking lands on
+        // the existing Compare page. Also dispatch the documented event for
+        // any listeners that want to intercept.
+        document.dispatchEvent(new CustomEvent('dlp:open-project-compare', { detail: { projectId } }));
+        if (typeof window.__renderProjectComparePage === 'function' && window.__tabHost) {
+          window.__tabHost.open({
+            title: btn.querySelector('.tr-name')?.textContent || 'Project',
+            render: (c) => window.__renderProjectComparePage(c, projectId)
+          });
+        }
+      });
+    });
+  }
+
   function renderDashboardPage(container) {
     container.classList.add('dashboard-page');
     container.innerHTML = [
@@ -125,6 +172,7 @@
       '  <button class="dp-refresh">Refresh</button>',
       '</div>',
       '<div class="dp-status"></div>',
+      '<div class="trending-tile" hidden></div>',
       '<div class="dp-grid"></div>'
     ].join('');
 
@@ -133,6 +181,7 @@
     const gridEl   = container.querySelector('.dp-grid');
     const searchEl = container.querySelector('.dp-search');
     const refreshBtn = container.querySelector('.dp-refresh');
+    const trendingEl = container.querySelector('.trending-tile');
 
     let summaries = [];
 
@@ -160,6 +209,27 @@
         '<span>· <b>' + pendingTotal.toLocaleString() + '</b> pending</span>';
     }
 
+    // v2.3 Phase 7.2 — load trending tile alongside summaries. Read the user's
+    // configured thresholds from settings so the dashboard honours the
+    // Phase 11 fields on every refresh.
+    async function loadTrending() {
+      let opts = {};
+      try {
+        if (window.dlp && window.dlp.settings && window.dlp.settings.get) {
+          const s = await window.dlp.settings.get();
+          if (s && s.trending_min_baseline != null)    opts.minBaseline    = Number(s.trending_min_baseline);
+          if (s && s.trending_ratio_threshold != null) opts.ratioThreshold = Number(s.trending_ratio_threshold);
+        }
+      } catch (_) { /* fall through with defaults */ }
+      try {
+        const entries = await window.dlp.trending.get(opts);
+        renderTrendingTile(trendingEl, Array.isArray(entries) ? entries : []);
+      } catch (_) {
+        // Trending is informational — never block the dashboard on failure.
+        renderTrendingTile(trendingEl, []);
+      }
+    }
+
     async function load() {
       statusEl.textContent = 'Loading…';
       gridEl.innerHTML = '';
@@ -173,6 +243,8 @@
         statusEl.textContent = 'Failed to load: ' + (e && e.message ? e.message : e);
         statusEl.classList.add('is-error');
       }
+      // Trending runs in parallel with grid render — failure must not affect it.
+      loadTrending();
     }
 
     searchEl.addEventListener('input', applySearch);

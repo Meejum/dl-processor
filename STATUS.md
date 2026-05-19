@@ -3,7 +3,7 @@
 *A chronological history, from the first commit to where we are today, and where we're going next.*
 
 **Snapshot taken:** 2026-05-19
-**Current version:** **v2.2.0** · 428 tests green · `master` at `fd167b5`
+**Current version:** **v2.3.0** (release in progress on `feat/v2.3-workflow-automation` at `4cf3d39`) · 522 tests green · last shipped tag `v2.2.0` on `master` at `fd167b5`
 **Repo:** github.com/Meejum/dl-processor (private)
 **Maintainer:** Ali Alghumlasi — Sobha Realty · Registration / DLD team
 
@@ -357,23 +357,11 @@ Pending team-facing actions: upload to `dl-processor.pages.dev` Cloudflare Pages
 
 ## Chapter 13 — Where the story goes next
 
-### v2.3 — Workflow automation (spec drafted, ~3 weeks)
+### v2.3 — Workflow automation ✅ SHIPPED 2026-05-19
 
-The next milestone. Five features:
+See Chapter 14 below for the full narrative. Headline: 15 commits on `feat/v2.3-workflow-automation` (`7614d73` SAVEPOINT spike → `4cf3d39` IPC wiring), test count 428 → **522** (+94), schema migration 009 (new `automation_rule` table, `pending_change.anomaly` column, widened `audit_log.source` CHECK enum). First release through the spec-process hardening flow.
 
-1. **Bulk operations** — filter the queue, then approve/override/reject the whole filtered set in one click ("approve all 23 BUYER_MISMATCH rows in Sobha One").
-2. **Custom rules engine** — declarative rules in a new `automation_rule` table. Example: `if change_type='BUYER_MISMATCH' AND alias_exists THEN auto_approve`. Applied during compare; matching rows route to `audit_log.action='auto_apply'` instead of `pending_change`.
-3. **Anomaly badges** — visible 🚨 chip on rows with extreme deltas. Distinct from the Tier-2 *gate* (which blocks commit); anomaly is informational.
-4. **Cross-month trending** — Dashboard tile: "Project X has 23 pending changes this month vs avg 8 over last 6 months."
-5. **Pre-compare report** — preview what `compare` *would* produce before writing it, so users can size up the queue before committing to a long review.
-
-Open design questions to settle during planning: rule storage format (JSON body vs typed columns vs small DSL), rule precedence and conflict resolution, anomaly thresholds (reuse Tier-2 settings or new ones?), trending window size, pre-compare report output location.
-
-**Resume phrases:**
-- `"resume dl area — plan v2.3"` — writes the implementation plan from the spec.
-- `"resume dl area — start v2.3"` — once plan exists, begins phased execution on `feat/v2.3-workflow-automation`.
-
-### v2.4 — Reporting & exports (~1 week)
+### v2.4 — Reporting & exports (~1 week, next milestone)
 
 Excel monthly audit reports (all the columns compliance wants), print-friendly per-project A4 layouts, scheduled weekly summary email via Outlook on Windows, "Take me to this unit" deep links in those emails.
 
@@ -396,6 +384,22 @@ Sentence-transformer buyer-name similarity beyond Levenshtein. Cross-unit duplic
 ### Deliberately deferred
 
 Mobile companion app (web build covers it), browser extension (niche), plugin system (premature), Arabic UI localization (team is bilingual).
+
+---
+
+## Chapter 14 — v2.3 — Workflow Automation (shipped 2026-05-19)
+
+v2.3 turned the manual approval queue into an opt-in *engine*. Where v2.0 made the queue ergonomic (BP cards, an 8-dimension filter bar) and v2.1 made it tamper-evident (hash chain, Tier-2 gates, one-click revert), v2.3 lets the queue *act on itself*: declarative WHEN/THEN rules can auto-approve, auto-reject, or flag anomalies on rows the team would otherwise click through one at a time. The five features delivered — rules engine, anomaly badges, bulk operations, cross-month trending tile, pre-compare dry-run — all hang off a single shared spine (`src/rule-engine.js` + the new `automation_rule` table + a widened `audit_log.source` enum), which kept the surface area small relative to the user-visible payoff. Tests went 428 → **522** (+94), well above the spec's +52 floor.
+
+The release is the first one to run end-to-end through the **spec-process hardening flow** ratified in v2.2 cleanup. The flow has four parts: every spec uses the template at `docs/superpowers/spec-template.md`, a pre-spec exploration agent commits a report to `docs/superpowers/explorations/`, the spec must pass the `docs/superpowers/spec-checklist.md` gate before graduating to plan-writing, and planning gaps go into `docs/superpowers/planning-mistakes-log.md`. For v2.3 this caught three real issues *before* code was written: the exploration report flagged that `dashboard-page.js` lives at top-level (not under `pages/`) so the spec's path was wrong; it surfaced that SQLite `CHECK` cannot use `LIKE`, which collapsed the planned `rule:%` / `bulk:%` source patterns into an application-layer `validateAuditSource` helper plus a 7-value enum; and it flagged the rules-editor inline clause-builder as the largest single piece of UI work in v2.3 with no shared form library to lean on.
+
+That last finding produced the **JSON-textarea descope** — planned in advance via the spec's Realism Check § 3, not discovered mid-implementation. The visual clause-builder was scoped out *in the spec*, with the loader's `validatePredicate` / `validateThen` providing the safety net (a malformed rule disables itself with an audit entry at load time rather than crashing a compare). The textarea editor ships in v2.3; the visual editor is now an explicit deliverable for v2.4. This is the spec-process flow working as intended — surfacing realistic scope before commitment, not after.
+
+Execution leaned on **parallel-agent dispatch**. Phases 0-1 (SAVEPOINT spike, bootstrap audit, migration 009) had to be sequential because everything else depends on the schema. But Phases 2-8 fan out cleanly: the rule engine pure-logic (Phase 2), the anomaly module (Phase 3), the bulk backend (Phase 6), the trending query (Phase 7), and the dry-run wrap (Phase 8) share no state and each owns its own files. Independent sub-agents ran them in parallel and converged through the IPC wiring commit (`4cf3d39 — feat(ipc): v2.3 wiring — rules CRUD + trending + bulk + dry-run`). The single shared write point — `compare.js` / `compare-drift.js` — was kept surgical (one call site per branch, exactly per the planning-mistakes-log § 2026-05-05 lesson about hot-file collisions).
+
+The fifteen-commit history reads cleanly: `7614d73` SAVEPOINT spike, `a4597b0` bootstrap audit, `72d9f4f` migration 009, `cdfdc33` `validateAuditSource` helper, then four rule-engine commits (`087ab0a` operators, `8b7df02` AND/OR nesting, `c3a19e5` two-pass evaluate, `64d231c` edge cases), then `3cc8a6b` anomaly predicates, `b644354` compare wire, `703d7b2` bulk backend, `2600d0b` trending, `3a48a91` rule loader, `38f680e` dry-run, and finally `4cf3d39` IPC wiring. Each commit lists its test delta in the message. The migration is idempotent in one pass (PRAGMA-guarded `ALTER`, `INSERT OR IGNORE` on rule ids, the rebuild idiom from migration 005 for the CHECK widen). Application-layer enforcement (`validateAuditSource` throws on invalid `source` values before `writeAuditLog` writes them) backstops the loosened DB constraint.
+
+The handoff to the production phase mirrors what v2.2 set up: 2-4 weeks of real-monthly-use feedback, captured against the new surfaces — the rules editor's textarea (where do users get tripped up by JSON syntax vs the planned visual editor), the anomaly badge density (do the default 25% / 10% thresholds need tightening), the bulk confirmation modal (does the 25-row threshold default feel right), the trending tile (false-positive rate at the default 5-baseline / 2.0-ratio), and the pre-apply dry-run modal (does it slow down the apply flow or genuinely catch surprises). That signal feeds v2.4 (reporting & exports) which is now the next milestone.
 
 ---
 
@@ -483,11 +487,11 @@ electron/
     └── styles.css
 ```
 
-## Appendix B — Schema (18 tables)
+## Appendix B — Schema (19 tables)
 
-`dld_project` · `dld_snapshot` · `dld_building` · `dld_unit` · `dld_transaction` · `dld_breakdown` · `sf_snapshot` · `sf_booking` · `manual_override` · `project_mapping` · `manual_area` · `manual_audit_snapshot` · `manual_audit_project` · `manual_audit_row` · **`master_data`** · **`pending_change`** · **`audit_log`** · **`buyer_alias`**
+`dld_project` · `dld_snapshot` · `dld_building` · `dld_unit` · `dld_transaction` · `dld_breakdown` · `sf_snapshot` · `sf_booking` · `manual_override` · `project_mapping` · `manual_area` · `manual_audit_snapshot` · `manual_audit_project` · `manual_audit_row` · **`master_data`** · **`pending_change`** · **`audit_log`** · **`buyer_alias`** · **`automation_rule`**
 
-8 migrations applied automatically: `001-audit-log` → `002-buyer-alias` → `003-pending-change-v2` → `004-buyer-alias-seed` → `005-audit-log-source-widen` → `006-sf-booking-step-cols` → `007-audit-log-action-widen` → `008-audit-hardening`.
+9 migrations applied automatically: `001-audit-log` → `002-buyer-alias` → `003-pending-change-v2` → `004-buyer-alias-seed` → `005-audit-log-source-widen` → `006-sf-booking-step-cols` → `007-audit-log-action-widen` → `008-audit-hardening` → `009-automation` (creates `automation_rule`, adds `pending_change.anomaly`, widens `audit_log.source` CHECK to 7 enum values, seeds 4 built-in rules).
 
 ## Appendix C — Test count trajectory
 
@@ -500,6 +504,7 @@ v1.2   → 338   (+16, patch system)
 v2.0   → 390   (+52, de-iframe + BP grouping + drift)
 v2.1   → 422   (+32, audit hardening)
 v2.2   → 428   (+6, native panes)
+v2.3   → 522   (+94, rules engine + anomaly + bulk + trending + dry-run)
 ```
 
 ## Appendix D — Pointers

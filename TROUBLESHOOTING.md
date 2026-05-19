@@ -15,6 +15,8 @@ Companions: [README.md](README.md) for normal usage, [BUILDING.md](BUILDING.md) 
 - [Patch update problems (v1.2+)](#patch-update-problems-v12)
 - [v2.0 BP grouping problems](#v20-bp-grouping-problems)
 - [v2.1 audit hardening problems](#v21-audit-hardening-problems)
+- [v2.2 native dashboard problems](#v22-native-dashboard-problems)
+- [v2.3 workflow automation problems](#v23-workflow-automation-problems)
 - [Build problems (developers)](#build-problems-developers)
 - [Test problems (developers)](#test-problems-developers)
 - [Diagnostic procedures](#diagnostic-procedures)
@@ -535,6 +537,55 @@ Both chips dispatch custom events (`dlp:open-history` / `dlp:open-review-pending
 ### Native Project Compare and static HTML show different counts
 
 The native page reads live data; the static HTML is frozen at `compare` time. Re-run `compare` (or click `🔄 Refresh` on the native tab) so both surfaces reflect the same `dld_snapshot` / `sf_snapshot`. v2.1 audit hardening fields (user, tier-2, hash chain) only appear in the live data, never in the frozen HTML.
+
+---
+
+## v2.3 workflow automation problems
+
+### My rule fires nothing
+
+Open `🤖 Automation`, find your rule, look at the `applied_count` column on the rule row. If it's stuck at `0` after a fresh `compare` run, the predicate isn't matching any candidate row. Two things to check:
+
+1. **Field allowlist.** Predicates may only reference the 13 fields named in the spec (`change_type`, `field`, `delta_pct`, `delta_abs`, `alias_exists`, `bp_type`, `sf_state`, `project_id`, `project_name`, `tier2`, `source`, `unit_number_norm`, `procedure_number`). A typo or an out-of-allowlist field name (`buyer_name`, say, or `delta_percent`) makes the rule loader silently disable the rule with an audit entry — check `📜 History` filtered to `source=rule_fired` for `"disabled: field 'foo' not in allowlist"`.
+2. **Operator/value mismatch.** `change_type='BUYER'` won't match — the actual value is `BUYER_MISMATCH`. `delta_pct > 25` is strict greater-than, so `delta_pct = 25` won't trip it. Use the per-rule **View history** link to confirm at least one row was *evaluated* against the rule (the engine logs disabled-rule context but does not log "evaluated, didn't match"); if you need to see candidates, run `node . compare --dry-run` and review the would-write totals.
+
+### Built-in rule disabled by mistake
+
+Built-in rules (R-1000…R-1003) can be disabled but not deleted. Every disable lands a row in `audit_log` with `source='rule_fired'` and the rule context in `user_note` — open `📜 History` and filter by source to find the disable event. Re-enable from the `🤖 Automation` page by toggling the checkbox; the engine picks up the change at the next `compare` run (or immediately if you click `🔄 Refresh` on the rules list).
+
+If you also want a defensive guard against accidental disables, turn on **Rules: warn before disabling built-in** in Settings (default on) — the rules-editor checkbox then fires a confirmation modal whenever you uncheck a built-in.
+
+### Bulk approve hit an error mid-way
+
+Bulk operations commit in chunks of **50 rows per transaction**. If chunk 3 of 5 fails (e.g., one row's `master_data` write trips a constraint), chunks 1 and 2 stay committed and chunks 4 and 5 are abandoned. The result modal at the end shows `N applied, M failed` — that's the contract, not a bug.
+
+To recover:
+- Open `📜 History` filtered to `source=bulk_op` and the batch UUID (visible in `user_note='batch=<UUID>'`) — every successfully-applied row from your bulk action is there with its individual `audit_log` entry, so each is independently revertable through the v2.1 `[↶ Revert]` button if needed.
+- Re-run the bulk action on the failed subset. The successful chunks won't be re-applied (their rows are no longer in Review Pending).
+- If you need to know *which specific row* in the failed chunk caused the abort, open the DevTools console (`Ctrl+Shift+I`) — the IPC error logs the offending row id.
+
+Partial commit is intentional: a 500-row bulk shouldn't lose the first 400 successes because of one bad row in the middle.
+
+### Dry-run output is empty
+
+`node . compare --dry-run` runs the **same body** as a real `compare`. If it prints zero would-write rows, that means a real compare would also produce zero rows. Three usual causes:
+
+1. **No DLD or SF snapshot imported yet.** Check `node . status` — both `dld_snapshot` and `sf_snapshot` need at least one row.
+2. **You ran `compare` already** and persisted everything. The second run has nothing new to write (the DLD/SF snapshots haven't changed). Re-import a fresh snapshot first.
+3. **Filter mismatch.** `--source=dld` skips the SF branch entirely (and vice versa) — drop the flag, or pass `--source=both`.
+
+If you see a non-empty would-write count in the dry-run but `compare` then writes zero rows for the same input, that's a real bug — file with the exact JSON output from `--format=json`.
+
+### Anomaly flag shows on a row I expected to auto-approve
+
+This is by design. The two-pass rule engine (spec § 3.2) accumulates `flag_anomaly` rules independently of terminal actions: pass 1 walks *every* matching `flag_anomaly` rule and builds an `anomaly = { severity, reasons[] }`; pass 2 then picks the first matching terminal action (`auto_approve` / `auto_reject` / `auto_acknowledge_bp` / `skip`) in priority order.
+
+So a row can be `auto_approve`d AND carry a 🚨 high anomaly — the approval still happens, but the anomaly badge is recorded on the `audit_log` entry. Because the row is no longer in Review Pending (it auto-applied), you'll only see the badge by:
+
+- Opening `📜 History` and filtering to the rule that fired (the per-rule history view from the `🤖 Automation` page is the fastest path), or
+- Opening the per-unit history side panel for that `(project_id, unit_number_norm)` — the **Anomaly reasons** section lists each reason with a clickable `rule_id` link.
+
+If you'd rather the anomaly *block* auto-approval, change your rule's THEN action from `auto_approve` to `flag_anomaly` (so it stops being a terminal action) or add an extra clause to the auto-approve rule that excludes the anomaly condition.
 
 ---
 

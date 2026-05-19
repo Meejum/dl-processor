@@ -41,6 +41,25 @@ function initSettingsModal({ getDataFolder, onCheckForUpdates }) {
         <label for="settings-tier2-area-pct">Tier-2 area threshold (%)</label>
         <input id="settings-tier2-area-pct" type="number" min="0" />
       </div>
+      <h3 id="settings-v23-title">Workflow automation (v2.3)</h3>
+      <div class="settings-row">
+        <label for="settings-trending-min-baseline">Trending: min baseline</label>
+        <input id="settings-trending-min-baseline" type="number" min="0" step="1" />
+      </div>
+      <div class="settings-row">
+        <label for="settings-trending-ratio-threshold">Trending: ratio threshold</label>
+        <input id="settings-trending-ratio-threshold" type="number" min="0" step="0.1" />
+      </div>
+      <div class="settings-row">
+        <label for="settings-rules-warn-builtin">
+          <input id="settings-rules-warn-builtin" type="checkbox" />
+          Rules: warn before disabling built-in
+        </label>
+      </div>
+      <div class="settings-row">
+        <label for="settings-bulk-confirmation-threshold">Bulk: confirmation threshold</label>
+        <input id="settings-bulk-confirmation-threshold" type="number" min="0" step="1" />
+      </div>
       <div class="settings-row">
         <button id="settings-save" class="primary">Save settings</button>
         <span id="settings-save-status" class="muted"></span>
@@ -77,6 +96,17 @@ function initSettingsModal({ getDataFolder, onCheckForUpdates }) {
         document.getElementById('settings-tier2-price-pct').value = s.tier2_price_pct;
         document.getElementById('settings-tier2-price-abs').value = s.tier2_price_abs;
         document.getElementById('settings-tier2-area-pct').value  = s.tier2_area_pct;
+        // v2.3 — fall back to spec defaults when keys are absent from the
+        // saved config (existing handler whitelists v2.1 keys; v2.3 keys
+        // round-trip once Phase 11 IPC wire-up lands).
+        document.getElementById('settings-trending-min-baseline').value =
+          s.trending_min_baseline != null ? s.trending_min_baseline : 5;
+        document.getElementById('settings-trending-ratio-threshold').value =
+          s.trending_ratio_threshold != null ? s.trending_ratio_threshold : 2.0;
+        document.getElementById('settings-rules-warn-builtin').checked =
+          s.rules_warn_before_disabling_builtin != null ? !!s.rules_warn_before_disabling_builtin : true;
+        document.getElementById('settings-bulk-confirmation-threshold').value =
+          s.bulk_confirmation_threshold != null ? s.bulk_confirmation_threshold : 25;
       }).catch(() => { /* leave fields empty on error */ });
     }
     // Move focus into the modal so the Esc/Tab handlers below have a target.
@@ -95,11 +125,34 @@ function initSettingsModal({ getDataFolder, onCheckForUpdates }) {
 
   modal.querySelector('#settings-save').addEventListener('click', async () => {
     const statusEl = document.getElementById('settings-save-status');
+    // Validate numeric fields: reject NaN / negative.
+    const numericIds = [
+      'settings-tier2-price-pct',
+      'settings-tier2-price-abs',
+      'settings-tier2-area-pct',
+      'settings-trending-min-baseline',
+      'settings-trending-ratio-threshold',
+      'settings-bulk-confirmation-threshold'
+    ];
+    for (const id of numericIds) {
+      const raw = document.getElementById(id).value;
+      const n = Number(raw);
+      if (raw === '' || !Number.isFinite(n) || n < 0) {
+        statusEl.textContent = 'invalid value in "' +
+          (document.querySelector('label[for="' + id + '"]').textContent || id).trim() + '"';
+        return;
+      }
+    }
     const partial = {
       audit_user:       document.getElementById('settings-audit-user').value,
       tier2_price_pct:  Number(document.getElementById('settings-tier2-price-pct').value),
       tier2_price_abs:  Number(document.getElementById('settings-tier2-price-abs').value),
-      tier2_area_pct:   Number(document.getElementById('settings-tier2-area-pct').value)
+      tier2_area_pct:   Number(document.getElementById('settings-tier2-area-pct').value),
+      // v2.3 keys — flow through dlp:settings:set IPC.
+      trending_min_baseline:               Number(document.getElementById('settings-trending-min-baseline').value),
+      trending_ratio_threshold:            Number(document.getElementById('settings-trending-ratio-threshold').value),
+      rules_warn_before_disabling_builtin: document.getElementById('settings-rules-warn-builtin').checked,
+      bulk_confirmation_threshold:         Number(document.getElementById('settings-bulk-confirmation-threshold').value)
     };
     statusEl.textContent = 'saving…';
     try {

@@ -14,7 +14,8 @@ function listPending(db, { tab = 'needs_review', projectId = null, typeFilter = 
   const sql = `
     SELECT pc.change_id, pc.project_id, dp.project_name, pc.unit_number_norm,
            pc.field_name, pc.old_value, pc.proposed_value, pc.override_value,
-           pc.change_type, pc.decision, pc.decided_at, pc.proposed_at
+           pc.change_type, pc.decision, pc.decided_at, pc.proposed_at,
+           pc.anomaly
     FROM pending_change pc
     JOIN dld_project dp ON dp.project_id = pc.project_id
     WHERE ${where.join(' AND ')}

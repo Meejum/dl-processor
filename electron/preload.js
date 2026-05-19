@@ -30,7 +30,27 @@ contextBridge.exposeInMainWorld('dlp', {
   // v2.2: native dashboard compare bridge (spec § 1)
   compare: {
     summary: ()          => ipcRenderer.invoke('dlp:compare:summary'),
-    project: (projectId) => ipcRenderer.invoke('dlp:compare:project', projectId)
+    project: (projectId) => ipcRenderer.invoke('dlp:compare:project', projectId),
+    // v2.3 dry-run (spec § 8)
+    dryRun:  (opts)      => ipcRenderer.invoke('dlp:compare:dry-run', opts || {})
+  },
+  // v2.3 Automation rules (spec § 4)
+  rules: {
+    list:   ()                     => ipcRenderer.invoke('dlp:rules:list'),
+    get:    (id)                   => ipcRenderer.invoke('dlp:rules:get', id),
+    create: (payload)              => ipcRenderer.invoke('dlp:rules:create', payload),
+    update: (id, patch)            => ipcRenderer.invoke('dlp:rules:update', { id, patch }),
+    remove: (id)                   => ipcRenderer.invoke('dlp:rules:delete', id),
+    test:   (id, snapshotId)       => ipcRenderer.invoke('dlp:rules:test', { id, snapshotId })
+  },
+  // v2.3 Trending (spec § 7)
+  trending: {
+    get: (opts) => ipcRenderer.invoke('dlp:trending:get', opts || {})
+  },
+  // v2.3 Bulk operations (spec § 6)
+  bulk: {
+    approve: (rowIds, justification) => ipcRenderer.invoke('dlp:bulk:approve', { rowIds, justification }),
+    reject:  (rowIds)                => ipcRenderer.invoke('dlp:bulk:reject',  { rowIds })
   },
   db: {
     probeZip:  (args) => ipcRenderer.invoke('dlp:db:probe-zip',  args || {}),

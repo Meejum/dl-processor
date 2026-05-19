@@ -533,6 +533,17 @@
           });
           return;
         }
+        if (action === 'open-automation') {
+          if (typeof window.__renderAutomationPage !== 'function') {
+            logPanel.appendError('automation renderer not loaded — please restart');
+            return;
+          }
+          window.__tabHost.open({
+            title: 'Automation',
+            render: (container) => window.__renderAutomationPage(container)
+          });
+          return;
+        }
         if (action === 'reveal-output' && currentDataFolder) {
           const folder = currentDataFolder + '\\output';
           if (window.dlp.shell && window.dlp.shell.showInFolder) {

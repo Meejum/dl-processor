@@ -1,13 +1,13 @@
 # DL-Processor — Improvement Roadmap
 
-**Approved by Ali 2026-05-12. Last updated 2026-05-15 (v2.2 ship).** Strategic improvements organized into three horizons. Each version ships independently; no version blocks the one after.
+**Approved by Ali 2026-05-12. Last updated 2026-05-19 (v2.3 ship).** Strategic improvements organized into three horizons. Each version ships independently; no version blocks the one after.
 
 ## Cadence
 
-1. **Done** — v1.2 (patch-based updates), v2.0 (de-iframe + BP grouping + DLD drift) on 2026-05-12, v2.1 (audit hardening) on 2026-05-13, and v2.2 (native project dashboard) on 2026-05-15. v1.3 and v1.4 were folded into v2.0.
-2. **Now (v2.2 production phase)** — Use v2.2 with the registration team for 2-4 weeks. Capture friction on the native Dashboard and Project Compare tabs (popup behavior, column sort cases, refresh ergonomics).
-3. **Next milestone** — v2.3 (workflow automation: bulk operations, rules engine, anomaly flags).
-4. **Planning process (from 2026-05-19)** — Every new spec uses the template at `docs/superpowers/spec-template.md`, runs a pre-spec exploration agent committed to `docs/superpowers/explorations/`, and passes the `docs/superpowers/spec-checklist.md` gate before graduating to plan-writing. Planning gaps are logged in `docs/superpowers/planning-mistakes-log.md`. Forward-only; existing specs (v0.4 → v2.3) are not retrofitted. v2.3 implementation plan is the first to use the new process end-to-end.
+1. **Done** — v1.2 (patch-based updates), v2.0 (de-iframe + BP grouping + DLD drift) on 2026-05-12, v2.1 (audit hardening) on 2026-05-13, v2.2 (native project dashboard) on 2026-05-15, and v2.3 (workflow automation) on 2026-05-19. v1.3 and v1.4 were folded into v2.0.
+2. **Now (v2.3 production phase)** — Use v2.3 with the registration team for 2-4 weeks. Capture friction on the rules editor, anomaly badges, bulk operations, the trending tile, and the pre-apply dry-run modal.
+3. **Next milestone** — v2.4 (reporting & exports: Excel monthly audit, print-friendly A4 layouts, scheduled weekly email).
+4. **Planning process (from 2026-05-19)** — Every new spec uses the template at `docs/superpowers/spec-template.md`, runs a pre-spec exploration agent committed to `docs/superpowers/explorations/`, and passes the `docs/superpowers/spec-checklist.md` gate before graduating to plan-writing. Planning gaps are logged in `docs/superpowers/planning-mistakes-log.md`. Forward-only; existing specs (v0.4 → v2.3) are not retrofitted. v2.3 was the first implementation plan to run end-to-end through the new process.
 5. **Mid-2026** — Evaluate v2.x vs v3.0 against actual team adoption signals.
 
 ---
@@ -116,22 +116,38 @@ The right-side log column now starts hidden by default; the 📋 toggle in the t
 
 ## Mid horizon (v2.3 → v2.5, 2-3 months out)
 
-### v2.3 — Workflow automation *(formerly v2.2)*
+### v2.3 — Workflow automation ✅ SHIPPED 2026-05-19
 
-**Status:** not yet designed.
+**Status:** shipped as a patch on top of v2.2.0. First release through the spec-process hardening flow ratified in v2.2 cleanup.
 
-**What ships:**
-- **Bulk operations** — filter the queue, then "approve all 23 buyer corrections in project ONE" in one click
-- **Custom rules engine** — declarative: `if change_type='BUYER_MISMATCH' AND alias_exists THEN auto_approve`. Rules stored in a new `automation_rule` table, applied during compare.
-- **Smart anomaly flags** — anything with price delta >X% or area delta >Y% gets a 🚨 badge that requires manager sign-off (different from Tier-2 gate in v2.1 — anomaly flag is a visible badge, gate is a workflow block)
-- **Cross-month trending** — dashboard tile: "Project X has 23 pending changes this month vs avg 8 over last 6 months" — alerts when a project shows unusual activity
-- **Pre-compare report** — preview what compare would produce BEFORE writing it, so users can review the queue size before committing to a multi-hour review
+#### What v2.3 delivered
 
-**Why:** v1.1 cut review time by ~30% over the legacy CSV workflow. v2.0 cut another ~40% on top of that by removing per-row friction (BP cards). v2.2 takes the next bite by removing the most common bulk actions and surfacing what's actually anomalous.
+- **Custom rules engine.** `src/rule-engine.js` evaluates declarative WHEN/THEN rules (AND/OR predicates depth ≤ 3, 8 operators, 13-field allowlist, two-pass evaluation per spec § 3.2). `src/rule-loader.js` reads rules from the new `automation_rule` table, validates JSON, and silently disables (with audit) any rule whose schema fails. Four built-ins (R-1000 alias auto-approve, R-1001 large-price flag, R-1002 large-area flag, R-1003 cancelled-BP auto-acknowledge) ship enabled by default with `builtin=1`. `src/auto-approve.js` collapses to a thin wrapper that delegates to the engine with R-1000.
+- **Anomaly badges.** `pending_change.anomaly` (new nullable JSON column) records `{ severity, reasons[] }` written by every matching `flag_anomaly` rule. Review Pending gains a sortable Flags column (🚨 high / ⚠️ warn), a 9th `Flagged` filter, and a side-panel anomaly section with `rule_id` deep-links. Distinct axis from v2.1 Tier-2 — a row can be auto-approved AND carry an anomaly.
+- **Bulk operations.** `src/commands/bulk.js` exposes `bulkApprove` / `bulkReject` with chunked transactions (50 rows/chunk), partial-commit on chunk failure, UUID v4 batch id in `audit_log.user_note`, and shared-justification handling for Tier-2 rows in the selection. Review Pending and BP cards both gain selection UI + bulk toolbars.
+- **Cross-month trending tile.** `src/trending.js` `getTrendingProjects` buckets `pending_change` by month, computes the trailing 6-month average excluding current, and filters by `minBaseline` (default 5) + `ratioThreshold` (default 2.0). New native Dashboard tile renders one row per project meeting the threshold; empty state hides the tile.
+- **Pre-compare dry-run.** `node . compare --dry-run [--source=dld|sf|both] [--format=text|json]` wraps the compare body in `SAVEPOINT dry … ROLLBACK TO dry` — runs the same code path, persists nothing. Desktop app fires it before the first Apply on a fresh snapshot and shows a totals modal with `[Continue]` / `[Cancel]`.
+- **Sidebar entry `🤖 Automation`** opens the rules editor page (list view, inline clause-builder editor, per-rule History deep-link).
+- **Settings** add four fields: trending min baseline, trending ratio threshold, rules warn-before-disable, bulk confirmation threshold.
 
-**Estimate:** ~3 weeks.
+#### Schema
 
-**Dependencies:** v2.0 (BP grouping makes bulk-action UI tractable). ✅ met.
+Migration 009 (`2026-05-18-009-automation`) — one idempotent pass:
+- Creates `automation_rule` (id, name, enabled, priority, when_json, then_json, builtin, created_at, created_by, applied_count, revert_count) + a priority index
+- Adds nullable `pending_change.anomaly` (TEXT, JSON)
+- Widens `audit_log.source` CHECK from 5 to 7 values (adds `rule_fired`, `bulk_op`) via the migration 005 rebuild idiom — SQLite CHECK can't use LIKE so rule-id / batch-uuid context lives in `user_note`. Application-layer `validateAuditSource` + `auditSourceFor` (in `src/audit-log.js`) backstop the widened CHECK.
+- Seeds 4 built-in rules with `INSERT OR IGNORE` on id
+
+#### Descoped (planned in advance via Realism Check)
+
+The rules-editor inline clause-builder was descoped to a JSON-textarea fallback (still passes through the loader's `validatePredicate` / `validateThen` on save) per spec § 9 Realism Check #3. The visual editor lands in v2.4.
+
+**Test count:** 428 → **522**.
+
+**Spec:** `docs/superpowers/specs/2026-05-18-v2.3-workflow-automation-design.md`
+**Plan:** `docs/superpowers/plans/2026-05-19-v2.3-workflow-automation.md`
+
+> Next up: v2.4 (reporting & exports).
 
 ---
 

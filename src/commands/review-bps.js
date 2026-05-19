@@ -36,7 +36,8 @@ function listBps(db, opts = {}) {
     SELECT
       pc.change_id, pc.project_id, dp.project_name, pc.unit_number_norm,
       pc.field_name, pc.old_value, pc.proposed_value, pc.override_value,
-      pc.change_type, pc.decision, pc.source_snapshot_id, pc.proposed_at, pc.decided_at
+      pc.change_type, pc.decision, pc.source_snapshot_id, pc.proposed_at, pc.decided_at,
+      pc.anomaly
     FROM pending_change pc
     JOIN dld_project dp ON dp.project_id = pc.project_id
     WHERE ${where.join(' AND ')}

@@ -499,6 +499,87 @@ The CLI `compare` command still writes `output/dashboard.html` and `output/compa
 
 ---
 
+## Workflow automation (v2.3)
+
+> v2.3 turns the manual approval queue into an opt-in *engine*: declarative rules can auto-approve, auto-reject, or flag anomalies on rows the team would otherwise click through one at a time. Anomaly badges surface "weird-looking" rows visually without blocking. Bulk operations clear large filtered queues in one action. A new Dashboard tile spots unusual cross-month activity. A pre-compare dry-run shows what `compare` *would* do before it persists anything. Schema migration 009 adds the `automation_rule` table and a nullable `pending_change.anomaly` column.
+
+### Custom rules engine
+
+Every automated decision flows through `src/rule-engine.js`. Rules are declarative JSON with a **WHEN** predicate (AND/OR tree, depth ≤ 3, against a 13-field allowlist — `change_type`, `field`, `delta_pct`, `delta_abs`, `alias_exists`, `bp_type`, `sf_state`, `project_id`, `project_name`, `tier2`, `source`, `unit_number_norm`, `procedure_number`) and a **THEN** action (`auto_approve`, `auto_reject`, `flag_anomaly`, `auto_acknowledge_bp`, `skip`). Eight operators are supported: `=`, `!=`, `>`, `<`, `>=`, `<=`, `in`, `regex`.
+
+```jsonc
+{
+  "when": { "op": "and", "clauses": [
+    { "field": "change_type", "operator": "=", "value": "BUYER_MISMATCH" },
+    { "field": "alias_exists", "operator": "=", "value": true },
+    { "field": "tier2",        "operator": "=", "value": false }
+  ]},
+  "then": { "action": "auto_approve", "note": "alias match, sub-threshold" }
+}
+```
+
+Four built-in rules ship with migration 009 (IDs 1000–1003, all in the "built-in priority floor" above 999):
+
+| ID | Name | What it does |
+|----|------|--------------|
+| **R-1000** | Auto-approve buyer-alias matches | Replaces the v1.1 `auto-approve.js` rule — same behaviour, now routed through the engine. |
+| **R-1001** | Flag large price increases | `purchase_price` delta > 25% → `flag_anomaly` severity `high`. |
+| **R-1002** | Flag large area changes | `area_sqm` delta > 10% → `flag_anomaly` severity `high`. |
+| **R-1003** | Auto-acknowledge cancelled BPs | Registration BPs with `sf_state='cancelled'` clear out of the queue automatically. |
+
+Built-in rules can be disabled but not deleted; every disable lands a row in History (`audit_log` `source='rule_fired'` with the rule context in `user_note`). The loader (`src/rule-loader.js`) validates each rule against the same predicate / action schema and silently disables (with audit) any rule whose JSON fails — broken user rules never crash a compare.
+
+Evaluation is two-pass per spec § 3.2: every matching `flag_anomaly` rule contributes to a cumulative anomaly badge (max severity wins, all reasons captured); then the first matching *terminal* action (`auto_approve` / `auto_reject` / `auto_acknowledge_bp` / `skip`) in priority order decides the row. A row can be both auto-approved AND carry an anomaly badge — the badge surfaces on the History entry even after the row leaves Review Pending.
+
+### Anomaly badges
+
+The Needs review grid gains a **Flags** column (sortable) and a 9th filter (`Flagged: any / high / warn / none`). Each badge is one of:
+
+- 🚨 **High** — fired by a built-in or user `flag_anomaly` rule at `anomaly_severity='high'`. Cumulative — multiple high-severity firings list all reasons.
+- ⚠️ **Warn** — same plumbing at `anomaly_severity='warn'`.
+
+Anomaly badges are *informational*, not gating — distinct from the v2.1 Tier-2 justification gate which **blocks** commit until a justification is entered. A Tier-2 row can also carry an anomaly badge and vice versa; they live on different axes. The per-unit history side panel gains an **Anomaly reasons** section that lists each contributing reason with a clickable `rule_id` link to the firing rule.
+
+### Bulk operations
+
+The Review Pending toolbar gains row checkboxes, a `[Select all matching]` button (selects across pagination respecting the current filter set), and `[Approve N]` / `[Reject N]` buttons that come alive as soon as a row is selected. BP cards get the same treatment at the card level — each card has a header checkbox and a top-of-page banner shows `[Approve N cards · Reject N cards · Clear]` once one is checked.
+
+Confirmation modals show the count, a 5-row sample, and the Tier-2 row count. If Tier-2 rows are in the selection, **one combined justification modal** fires for the whole batch (same shared-justification pattern v2.1 introduced for BP-card `Approve all`). The backend (`src/commands/bulk.js`) commits in chunks of 50 — if a chunk errors mid-way, prior chunks stay committed and the result modal shows `N applied, M failed`. Each row writes its own `audit_log` entry with `source='bulk_op'` and `user_note='batch=<UUID>'`, so individual rows remain revertable through the existing v2.1 Cmd-Z flow.
+
+### Cross-month trending tile
+
+A new tile on the native Dashboard surfaces projects whose pending-change activity this month is unusually high relative to the trailing 6 months. `src/trending.js` buckets `pending_change` rows by `dld_snapshot.imported_at` month (SF-drift rows bucket by `proposed_at` since they have no snapshot), computes the trailing 6-month average excluding the current month, and filters by:
+
+- `minBaseline` — must have at least N pending changes this month (default **5**)
+- `ratioThreshold` — current month / trailing avg must be at least X (default **2.0**)
+
+Results sort by ratio descending. Empty state hides the tile entirely. Each row deep-links to Project Compare for that project + current month. Defaults are configurable via Settings.
+
+### Pre-compare dry-run
+
+```
+node . compare --dry-run [--source=dld|sf|both] [--format=text|json]
+```
+
+Wraps the entire compare body in `SAVEPOINT dry … ROLLBACK TO dry … RELEASE dry` so it runs the **same code path** as a real compare — rules fire, anomalies accumulate, audit entries get *staged* — but nothing persists. Output is a summary of would-write rows: pending count, auto-approved count, anomaly-high count, Tier-2 count, top samples. In the desktop app, the dry-run fires automatically after a snapshot import, before the first "Apply pending" on that snapshot, and a modal lists the totals with `[Continue]` / `[Cancel]`.
+
+If a dry-run prints an empty body, it means no SF or DLD snapshot is loaded yet — the dry-run executes exactly what `compare` would, so "no snapshot, no compare body, no output" is consistent.
+
+### Sidebar — 🤖 Automation
+
+A new sidebar entry **`🤖 Automation`** opens the rules editor page. The list view shows one row per rule with: enable/disable checkbox, name, applied / revert counts, an expand chevron showing WHEN/THEN in monospace, and a `View history` link that deep-links to History filtered to that rule. `+ New rule` opens the inline clause-builder editor (field dropdown → operator dropdown → value input, with `+ Add clause` / `+ Add group` controls capped at depth 3, and a THEN action dropdown). Save validates the predicate + action through the same loader path; broken rules surface inline error messages on the offending clause.
+
+### Settings additions
+
+| Field | Type | Default | Stored as |
+|---|---|---|---|
+| Trending: min baseline | Number | `5` | `trending_min_baseline` |
+| Trending: ratio threshold | Number | `2.0` | `trending_ratio_threshold` |
+| Rules: warn before disabling built-in | Bool | `true` | `rules_warn_before_disable` |
+| Bulk: confirmation threshold | Number | `25` | `bulk_confirm_threshold` (rows above this count get a sterner confirmation modal) |
+
+---
+
 ## Receiving patches (v1.2+)
 
 > From v1.2 onward, updates are distributed as small zip patches (~5-15 MB) instead of full 78 MB installers. Your admin builds the patch and shares it (OneDrive / email / network drive). The **v1.2.0 → v2.0.0** upgrade will be the first real-world patch distributed via this mechanism.
@@ -816,6 +897,55 @@ Quick reference — the most common ones:
 ---
 
 ## Changelog
+
+### v2.3.0 (19 May 2026)
+
+Workflow automation — rules engine, anomaly badges, bulk operations, trending tile, pre-compare dry-run. Shipped as a patch on top of v2.2.0.
+
+#### Custom rules engine
+
+`src/rule-engine.js` evaluates declarative WHEN/THEN rules per spec § 3-4. AND/OR predicates up to depth 3, 8 operators, 13-field allowlist, two-pass evaluation (anomaly accumulation + first-match terminal action). `src/rule-loader.js` reads rules from the new `automation_rule` table, validates JSON, and silently disables (with audit) any rule whose schema fails. Built-ins R-1000…R-1003 (alias auto-approve, large-price flag, large-area flag, cancelled-BP auto-acknowledge) ship enabled by default with `builtin=1`. `src/auto-approve.js` collapses to a thin wrapper that delegates to the engine with the R-1000 built-in.
+
+#### Anomaly badges
+
+`pending_change.anomaly` (new nullable column from migration 009) stores a JSON `{ severity, reasons[] }` blob written by every matching `flag_anomaly` rule. Review Pending grid gains a sortable Flags column (🚨 high / ⚠️ warn) and a 9th filter (`Flagged`). The per-unit history side panel lists each contributing reason with a clickable `rule_id`. Distinct axis from v2.1 Tier-2 — a row can be auto-approved AND carry an anomaly.
+
+#### Bulk operations
+
+`src/commands/bulk.js` exposes `bulkApprove(db, rowIds, justification?)` and `bulkReject(db, rowIds)`. Chunked transactions (50 rows/chunk); partial commit on chunk failure; UUID v4 batch id via `crypto.randomUUID()`; each row writes its own `audit_log` with `source='bulk_op'` and `user_note='batch=<UUID>'`. Tier-2 rows in the selection use one shared justification. Review Pending and BP cards both gain selection UI + bulk toolbars.
+
+#### Cross-month trending tile
+
+`src/trending.js` `getTrendingProjects(db, { minBaseline=5, ratioThreshold=2.0 })` buckets `pending_change` by `dld_snapshot.imported_at` month (SF-drift by `proposed_at`), computes trailing 6-month average excluding current, and filters by baseline + ratio. New Dashboard tile renders one row per project meeting the threshold; empty state hides the tile.
+
+#### Pre-compare dry-run
+
+`node . compare --dry-run [--source=dld|sf|both] [--format=text|json]` wraps the compare body in `SAVEPOINT dry … ROLLBACK TO dry`. Runs the same code path as a real compare, persists nothing, emits would-write totals. Desktop app runs it automatically before the first Apply on a fresh snapshot and shows a modal with `[Continue]` / `[Cancel]`.
+
+#### Schema migration 009
+
+One idempotent pass:
+- Creates `automation_rule` table (id, name, enabled, priority, when_json, then_json, builtin, created_at, created_by, applied_count, revert_count) + priority index
+- Adds nullable `pending_change.anomaly` (TEXT, JSON)
+- Widens `audit_log.source` CHECK from 5 enum values to 7 (adds `rule_fired`, `bulk_op`) via the migration 005 rebuild idiom — SQLite CHECK can't use LIKE so rule-id / batch-uuid context lives in `user_note`
+- Seeds 4 built-in rules with `INSERT OR IGNORE` on id
+
+Application-layer enforcement (`validateAuditSource`, `auditSourceFor` in `src/audit-log.js`) backstops the widened CHECK.
+
+#### Sidebar + Settings
+
+Sidebar adds `🤖 Automation` entry → rules editor page (list view, inline clause-builder editor, per-rule history deep-link). Settings adds 4 fields (trending min baseline, trending ratio threshold, rules warn-before-disable, bulk confirmation threshold).
+
+#### Process notes
+
+First release to run end-to-end through the spec-process hardening flow (`docs/superpowers/spec-template.md` + pre-spec exploration + `spec-checklist.md` gate, ratified in v2.2 cleanup). Phases were executed in parallel by independent sub-agents wherever the rule engine, anomaly module, bulk backend, trending query, and dry-run wrap had no shared state. The rules editor's inline clause-builder was descoped in advance to a JSON textarea fallback (planned via the spec's Realism Check § 3) so the visual editor lands in v2.4.
+
+**Test count:** 428 → **522**.
+
+**Spec:** `docs/superpowers/specs/2026-05-18-v2.3-workflow-automation-design.md`
+**Plan:** `docs/superpowers/plans/2026-05-19-v2.3-workflow-automation.md`
+
+---
 
 ### v2.2.0 (15 May 2026)
 

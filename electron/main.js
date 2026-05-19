@@ -285,6 +285,28 @@ app.whenReady().then(async () => {
   const { getProjectsSummary, getProjectCompare } = require('../src/commands/compare-query');
   ipcMain.handle('dlp:compare:summary',  ()               => withDb(db => getProjectsSummary(db)));
   ipcMain.handle('dlp:compare:project',  (e, projectId)   => withDb(db => getProjectCompare(db, projectId)));
+
+  // ── v2.3 Automation rules (spec § 4, § 10) ─────────────────────────────
+  const rulesCmd = require('../src/commands/rules');
+  ipcMain.handle('dlp:rules:list',   ()                       => withDb(db => rulesCmd.listRules(db)));
+  ipcMain.handle('dlp:rules:get',    (e, id)                  => withDb(db => rulesCmd.getRule(db, id)));
+  ipcMain.handle('dlp:rules:create', (e, payload)             => withDb(db => rulesCmd.createRule(db, payload)));
+  ipcMain.handle('dlp:rules:update', (e, { id, patch })       => withDb(db => rulesCmd.updateRule(db, id, patch)));
+  ipcMain.handle('dlp:rules:delete', (e, id)                  => withDb(db => rulesCmd.deleteRule(db, id)));
+  ipcMain.handle('dlp:rules:test',   (e, { id, snapshotId })  => withDb(db => rulesCmd.testRule(db, id, snapshotId)));
+
+  // ── v2.3 Trending (spec § 7) ──────────────────────────────────────────
+  const { getTrendingProjects } = require('../src/trending');
+  ipcMain.handle('dlp:trending:get', (e, opts)                => withDb(db => getTrendingProjects(db, opts || {})));
+
+  // ── v2.3 Bulk operations (spec § 6) ───────────────────────────────────
+  const bulkCmd = require('../src/commands/bulk');
+  ipcMain.handle('dlp:bulk:approve', (e, { rowIds, justification }) => withDb(db => bulkCmd.bulkApprove(db, rowIds, justification)));
+  ipcMain.handle('dlp:bulk:reject',  (e, { rowIds })                => withDb(db => bulkCmd.bulkReject(db, rowIds)));
+
+  // ── v2.3 Dry-run (spec § 8) ───────────────────────────────────────────
+  const { runCompareDryRun } = require('../src/commands/compare');
+  ipcMain.handle('dlp:compare:dry-run', (e, opts)             => withDb(db => runCompareDryRun(db, null, Object.assign({ _emit: false, format: 'json' }, opts || {}))));
   ipcMain.handle('dlp:audit:export-csv', async (e, opts) => {
     const rows = withDb(db => auditQuery.globalHistory(db, Object.assign({}, opts || {}, { limit: 1000000, offset: 0 })));
     const cols = ['ts','project_name','unit_number_norm','table_name','field','old_value','new_value','action','source','change_id','user_note'];
@@ -415,20 +437,31 @@ app.whenReady().then(async () => {
   // v2.1 Settings IPC — reads/writes %APPDATA%\dl-processor\config.json
   ipcMain.handle('dlp:settings:get', () => {
     const cfg = loadAppConfig(state.appConfigPath) || {};
-    // Return the v2.1-relevant keys with defaults applied
+    // Return the v2.1 + v2.3 keys with defaults applied.
     return {
-      audit_user:       cfg.audit_user       || '',
-      tier2_price_pct:  cfg.tier2_price_pct  != null ? cfg.tier2_price_pct  : 10,
-      tier2_price_abs:  cfg.tier2_price_abs  != null ? cfg.tier2_price_abs  : 50000,
-      tier2_area_pct:   cfg.tier2_area_pct   != null ? cfg.tier2_area_pct   : 5
+      // v2.1 audit + tier-2
+      audit_user:                          cfg.audit_user                          || '',
+      tier2_price_pct:                     cfg.tier2_price_pct                     != null ? cfg.tier2_price_pct                     : 10,
+      tier2_price_abs:                     cfg.tier2_price_abs                     != null ? cfg.tier2_price_abs                     : 50000,
+      tier2_area_pct:                      cfg.tier2_area_pct                      != null ? cfg.tier2_area_pct                      : 5,
+      // v2.3 workflow automation
+      trending_min_baseline:               cfg.trending_min_baseline               != null ? cfg.trending_min_baseline               : 5,
+      trending_ratio_threshold:            cfg.trending_ratio_threshold            != null ? cfg.trending_ratio_threshold            : 2.0,
+      rules_warn_before_disabling_builtin: cfg.rules_warn_before_disabling_builtin != null ? cfg.rules_warn_before_disabling_builtin : true,
+      bulk_confirmation_threshold:         cfg.bulk_confirmation_threshold         != null ? cfg.bulk_confirmation_threshold         : 25
     };
   });
 
   ipcMain.handle('dlp:settings:set', (e, partial) => {
     const cfg = loadAppConfig(state.appConfigPath) || {};
     const incoming = partial || {};
-    // Merge in only the recognized keys
-    for (const k of ['audit_user', 'tier2_price_pct', 'tier2_price_abs', 'tier2_area_pct']) {
+    // Merge in only the recognized keys (v2.1 + v2.3).
+    const ALLOWED = [
+      'audit_user', 'tier2_price_pct', 'tier2_price_abs', 'tier2_area_pct',
+      'trending_min_baseline', 'trending_ratio_threshold',
+      'rules_warn_before_disabling_builtin', 'bulk_confirmation_threshold'
+    ];
+    for (const k of ALLOWED) {
       if (Object.prototype.hasOwnProperty.call(incoming, k)) cfg[k] = incoming[k];
     }
     // Persist along with whatever was already in cfg (dataFolder, etc.)
