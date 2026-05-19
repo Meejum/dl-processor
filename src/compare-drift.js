@@ -2,10 +2,7 @@ const { writeAuditLog } = require('./audit-log');
 const { extractUnitFields } = require('./snapshot-extract');
 const { AUDIT_FIELDS } = require('./audit-fields');
 const { evaluate } = require('./rule-engine');
-
-// Stub loader — Phase 5 replaces with src/rule-loader.js that reads from
-// automation_rule. Until then, drift detection runs with no user rules.
-function loadRulesStub() { return []; }
+const { loadRules } = require('./rule-loader');
 
 // Build a rule-engine-shaped change object from a drift candidate.
 // Spec § 4.3 fields are populated where derivable; the rest stay null
@@ -116,7 +113,7 @@ function detectDrift(db, projectId, currentSnapshotId, source) {
       AND IFNULL(proposed_value, '') = IFNULL(?, '')
   `);
 
-  const rules = loadRulesStub();
+  const rules = loadRules(db);
 
   const apply = db.transaction(() => {
     for (const cur of currentRows) {
@@ -196,7 +193,7 @@ function detectDldDrift(db, projectId, currentSnapshotId) {
       AND IFNULL(proposed_value, '') = IFNULL(?, '')
   `);
 
-  const rules = loadRulesStub();
+  const rules = loadRules(db);
 
   const apply = db.transaction(() => {
     for (const { unit_number_norm: unit } of units) {
