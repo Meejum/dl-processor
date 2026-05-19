@@ -261,3 +261,85 @@ test('evaluate: note from then carries through', () => {
   const d = evaluate(baseChange, ctx, rules);
   assert.equal(d.note, 'alias match, sub-threshold');
 });
+
+// ───── edge cases (Task 2.4) ─────
+
+test('evaluate: auto_acknowledge_bp on non-BP row falls through to next rule', () => {
+  // Non-BP rows have bp_type=null; the auto_acknowledge_bp rule's WHEN
+  // requires a specific bp_type, so it won't match on a non-BP row.
+  // The next rule wins.
+  const rules = [
+    rule(1, 1,
+      { op: 'and', clauses: [
+        { field: 'bp_type', operator: '=', value: 'REGISTRATION' },
+        { field: 'sf_state', operator: '=', value: 'cancelled' }
+      ]},
+      { action: 'auto_acknowledge_bp' }),
+    rule(2, 2, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'auto_approve' })
+  ];
+  const d = evaluate(baseChange, ctx, rules); // bp_type=null in baseChange
+  assert.equal(d.action, 'auto_approve');
+  assert.equal(d.rule_id, 2);
+});
+
+test('evaluate: malformed rule (bad operator) silently skipped, others still evaluate', () => {
+  const rules = [
+    rule(1, 1, { field: 'change_type', operator: '~bad~', value: 'x' },
+      { action: 'auto_reject' }),  // throws inside predicate → skipped
+    rule(2, 2, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'auto_approve' })
+  ];
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.action, 'auto_approve');
+  assert.equal(d.rule_id, 2);
+});
+
+test('evaluate: malformed anomaly rule silently skipped', () => {
+  const rules = [
+    rule(1, 1, { field: 'not_a_field', operator: '=', value: 'x' },
+      { action: 'flag_anomaly', anomaly_severity: 'high' }),  // throws on allowlist → skipped
+    rule(2, 2, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'flag_anomaly', anomaly_severity: 'warn' })
+  ];
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.anomaly.severity, 'warn');
+  assert.equal(d.anomaly.reasons.length, 1);
+  assert.equal(d.anomaly.reasons[0].rule_id, 2);
+});
+
+test('evaluate: skip action wins like other terminal actions', () => {
+  const rules = [
+    rule(1, 1, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'skip' }),
+    rule(2, 2, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'auto_approve' })
+  ];
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.action, 'skip');
+  assert.equal(d.rule_id, 1);
+});
+
+test('evaluate: anomaly accumulates even when terminal=skip', () => {
+  const rules = [
+    rule(1, 1, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'flag_anomaly', anomaly_severity: 'high' }),
+    rule(2, 2, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'skip' })
+  ];
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.action, 'skip');
+  assert.equal(d.anomaly.severity, 'high');
+});
+
+test('evaluate: regex compile failure in a rule is silently skipped (loader will disable)', () => {
+  const rules = [
+    rule(1, 1, { field: 'project_name', operator: 'regex', value: '[unclosed' },
+      { action: 'auto_approve' }),
+    rule(2, 2, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'auto_reject' })
+  ];
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.action, 'auto_reject');
+  assert.equal(d.rule_id, 2);
+});
