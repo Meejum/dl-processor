@@ -52,6 +52,16 @@ Append-only. Single file. One entry per planning gap that surfaced as spec drift
 - **Pattern keywords:** patch-apply, cmd, batch, variable-expansion, cross-version, installer-masking
 - **Mitigation next time:** Cross-version test path for patch updates — every release ships with an integration test that exercises the full patch chain (vN → vN+1) on a clean install. Realism Check section for patch-system specs must include "what happens if N consecutive releases mask this bug" as one of the three scenarios.
 
+## 2026-05-19 — exploration-agent false-positive on merged branches
+
+- **Spec:** N/A — caught during the v2.3 exploration pass at `docs/superpowers/explorations/2026-05-19-v2.3-workflow-automation-exploration.md`
+- **Where caught:** mid-impl (first real use of the new spec-process flow)
+- **What was missed:** The exploration agent ran `git branch -a` and reported 6 stale local feature branches as "unmerged in-flight" with HIGH overlap on `electron/main.js` and `electron/preload.js`. All 7 local feature branches were already fully merged to master — the agent didn't cross-check with `git branch --merged master`. Reported as a blocker; corrected during reviewer pass.
+- **Root cause:** tool-limitation (exploration agent prompt insufficient)
+- **Touched files:** N/A — meta about the exploration process
+- **Pattern keywords:** git branch, --merged, --no-merged, exploration-agent, stale-branch, in-flight, merge-status
+- **Mitigation next time:** Every exploration report's branch-overlap section MUST include the output of `git branch --merged master` and `git branch --no-merged master` (not just `git branch -a`). Update the exploration-agent prompt template to require both commands. Reviewer always cross-checks the "in-flight" list against actual merge status before accepting the report.
+
 ---
 
 *(Append new entries below this line in chronological order.)*
