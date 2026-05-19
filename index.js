@@ -82,7 +82,17 @@ function main() {
   }
 
   if (cmd === 'compare') {
-    cmdCompare(rest[0] || null);
+    // Parse flags: --dry-run, --format=text|json. First non-flag arg
+    // (if any) is the project-name filter. Order-independent.
+    const dryRun = rest.includes('--dry-run');
+    let format = 'text';
+    const fmtArg = rest.find(a => a.startsWith('--format='));
+    if (fmtArg) {
+      const v = fmtArg.slice('--format='.length);
+      if (v === 'json' || v === 'text') format = v;
+    }
+    const filter = rest.find(a => !a.startsWith('--')) || null;
+    cmdCompare(filter, { dryRun, format });
     return;
   }
 
