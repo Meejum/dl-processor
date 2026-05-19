@@ -1,6 +1,39 @@
 const { writeAuditLog } = require('./audit-log');
 const { extractUnitFields } = require('./snapshot-extract');
 const { AUDIT_FIELDS } = require('./audit-fields');
+const { evaluate } = require('./rule-engine');
+
+// Stub loader — Phase 5 replaces with src/rule-loader.js that reads from
+// automation_rule. Until then, drift detection runs with no user rules.
+function loadRulesStub() { return []; }
+
+// Build a rule-engine-shaped change object from a drift candidate.
+// Spec § 4.3 fields are populated where derivable; the rest stay null
+// so WHEN clauses requiring them simply don't match (forward-compat).
+function changeFromDrift(driftType, projectId, unit, field, oldStr, newStr) {
+  const oldN = Number(oldStr);
+  const newN = Number(newStr);
+  const numeric = Number.isFinite(oldN) && Number.isFinite(newN) && oldN !== 0;
+  const delta_abs = numeric ? Math.abs(newN - oldN) : 0;
+  const delta_pct = numeric ? Math.abs((newN - oldN) / oldN) * 100 : 0;
+  return {
+    change_type:      driftType,           // 'SF_DRIFT' or 'DLD_DRIFT'
+    field,                                 // buyer_name | purchase_price_aed | ...
+    delta_pct,
+    delta_abs,
+    alias_exists:     false,
+    bp_type:          null,
+    sf_state:         null,
+    project_id:       projectId,
+    project_name:     null,
+    tier2:            false,
+    source:           'compare',
+    unit_number_norm: unit,
+    procedure_number: null,
+    new_value:        newStr,
+    old_value:        oldStr
+  };
+}
 
 // SF column → master_data audit field
 const SF_FIELD_MAP = {
@@ -72,12 +105,9 @@ function detectDrift(db, projectId, currentSnapshotId, source) {
   const insertPending = db.prepare(`
     INSERT INTO pending_change
       (project_id, unit_number_norm, field_name, old_value, proposed_value,
-       change_type, decision, decided_at, source_snapshot_id)
-    VALUES (?, ?, ?, ?, ?, 'SF_DRIFT', 'auto_applied', datetime('now'), NULL)
+       change_type, decision, decided_at, source_snapshot_id, anomaly)
+    VALUES (?, ?, ?, ?, ?, 'SF_DRIFT', 'auto_applied', datetime('now'), NULL, ?)
   `);
-  // Idempotency guard: the same (project, unit, field) auto_applied SF_DRIFT
-  // row with the same (old, new) values is treated as "already recorded".
-  // source_snapshot_id is left NULL for SF drift, so we key on the value pair.
   const existsCheck = db.prepare(`
     SELECT 1 FROM pending_change
     WHERE project_id = ? AND unit_number_norm = ? AND field_name = ?
@@ -86,10 +116,12 @@ function detectDrift(db, projectId, currentSnapshotId, source) {
       AND IFNULL(proposed_value, '') = IFNULL(?, '')
   `);
 
+  const rules = loadRulesStub();
+
   const apply = db.transaction(() => {
     for (const cur of currentRows) {
       const prevRow = prevByUnit.get(cur.unit_norm);
-      if (!prevRow) continue;  // brand-new unit — no prior row to diff against
+      if (!prevRow) continue;
       for (const [auditField, sfCol] of Object.entries(SF_FIELD_MAP)) {
         const oldVal = prevRow[sfCol];
         const newVal = cur[sfCol];
@@ -97,7 +129,16 @@ function detectDrift(db, projectId, currentSnapshotId, source) {
         const oldStr = stringify(oldVal);
         const newStr = stringify(newVal);
         if (existsCheck.get(projectId, cur.unit_norm, auditField, oldStr, newStr)) continue;
-        const info = insertPending.run(projectId, cur.unit_norm, auditField, oldStr, newStr);
+
+        // v2.3: run rule engine. Drift rows default to auto_apply (the
+        // source already changed), but rules can attach anomaly metadata
+        // or skip-record entirely.
+        const candidate = changeFromDrift('SF_DRIFT', projectId, cur.unit_norm, auditField, oldStr, newStr);
+        const decision = evaluate(candidate, {}, rules);
+        if (decision.action === 'skip') continue;
+        const anomalyJson = decision.anomaly ? JSON.stringify(decision.anomaly) : null;
+
+        const info = insertPending.run(projectId, cur.unit_norm, auditField, oldStr, newStr, anomalyJson);
         writeAuditLog(db, {
           projectId,
           unitNumberNorm: cur.unit_norm,
@@ -144,11 +185,9 @@ function detectDldDrift(db, projectId, currentSnapshotId) {
   const insertPending = db.prepare(`
     INSERT INTO pending_change
       (project_id, unit_number_norm, field_name, old_value, proposed_value,
-       change_type, decision, decided_at, source_snapshot_id)
-    VALUES (?, ?, ?, ?, ?, 'DLD_DRIFT', 'auto_applied', datetime('now'), ?)
+       change_type, decision, decided_at, source_snapshot_id, anomaly)
+    VALUES (?, ?, ?, ?, ?, 'DLD_DRIFT', 'auto_applied', datetime('now'), ?, ?)
   `);
-  // Idempotency guard: a DLD_DRIFT auto_applied row with the same
-  // (project, unit, field, old, new) tuple is already-recorded.
   const existsCheck = db.prepare(`
     SELECT 1 FROM pending_change
     WHERE project_id = ? AND unit_number_norm = ? AND field_name = ?
@@ -157,22 +196,30 @@ function detectDldDrift(db, projectId, currentSnapshotId) {
       AND IFNULL(proposed_value, '') = IFNULL(?, '')
   `);
 
+  const rules = loadRulesStub();
+
   const apply = db.transaction(() => {
     for (const { unit_number_norm: unit } of units) {
       if (unit == null) continue;
       const curFields  = extractUnitFields(db, currentSnapshotId, projectId, unit);
       const prevFields = extractUnitFields(db, prevSnapshotId,    projectId, unit);
-      if (!curFields || !prevFields) continue;  // brand-new (or vanished) unit — no diff
+      if (!curFields || !prevFields) continue;
       for (const field of AUDIT_FIELDS) {
         const oldVal = prevFields[field];
         const newVal = curFields[field];
-        // status + procedure_number are null↔null on DLD side — skip
         if (oldVal == null && newVal == null) continue;
         if (String(oldVal ?? '') === String(newVal ?? '')) continue;
         const oldStr = oldVal == null ? null : String(oldVal);
         const newStr = newVal == null ? null : String(newVal);
         if (existsCheck.get(projectId, unit, field, oldStr, newStr)) continue;
-        const info = insertPending.run(projectId, unit, field, oldStr, newStr, currentSnapshotId);
+
+        // v2.3: rule engine wire (same pattern as detectDrift SF branch).
+        const candidate = changeFromDrift('DLD_DRIFT', projectId, unit, field, oldStr, newStr);
+        const decision = evaluate(candidate, {}, rules);
+        if (decision.action === 'skip') continue;
+        const anomalyJson = decision.anomaly ? JSON.stringify(decision.anomaly) : null;
+
+        const info = insertPending.run(projectId, unit, field, oldStr, newStr, currentSnapshotId, anomalyJson);
         writeAuditLog(db, {
           projectId,
           unitNumberNorm: unit,
