@@ -285,6 +285,28 @@ app.whenReady().then(async () => {
   const { getProjectsSummary, getProjectCompare } = require('../src/commands/compare-query');
   ipcMain.handle('dlp:compare:summary',  ()               => withDb(db => getProjectsSummary(db)));
   ipcMain.handle('dlp:compare:project',  (e, projectId)   => withDb(db => getProjectCompare(db, projectId)));
+
+  // ── v2.3 Automation rules (spec § 4, § 10) ─────────────────────────────
+  const rulesCmd = require('../src/commands/rules');
+  ipcMain.handle('dlp:rules:list',   ()                       => withDb(db => rulesCmd.listRules(db)));
+  ipcMain.handle('dlp:rules:get',    (e, id)                  => withDb(db => rulesCmd.getRule(db, id)));
+  ipcMain.handle('dlp:rules:create', (e, payload)             => withDb(db => rulesCmd.createRule(db, payload)));
+  ipcMain.handle('dlp:rules:update', (e, { id, patch })       => withDb(db => rulesCmd.updateRule(db, id, patch)));
+  ipcMain.handle('dlp:rules:delete', (e, id)                  => withDb(db => rulesCmd.deleteRule(db, id)));
+  ipcMain.handle('dlp:rules:test',   (e, { id, snapshotId })  => withDb(db => rulesCmd.testRule(db, id, snapshotId)));
+
+  // ── v2.3 Trending (spec § 7) ──────────────────────────────────────────
+  const { getTrendingProjects } = require('../src/trending');
+  ipcMain.handle('dlp:trending:get', (e, opts)                => withDb(db => getTrendingProjects(db, opts || {})));
+
+  // ── v2.3 Bulk operations (spec § 6) ───────────────────────────────────
+  const bulkCmd = require('../src/commands/bulk');
+  ipcMain.handle('dlp:bulk:approve', (e, { rowIds, justification }) => withDb(db => bulkCmd.bulkApprove(db, rowIds, justification)));
+  ipcMain.handle('dlp:bulk:reject',  (e, { rowIds })                => withDb(db => bulkCmd.bulkReject(db, rowIds)));
+
+  // ── v2.3 Dry-run (spec § 8) ───────────────────────────────────────────
+  const { runCompareDryRun } = require('../src/commands/compare');
+  ipcMain.handle('dlp:compare:dry-run', (e, opts)             => withDb(db => runCompareDryRun(db, null, Object.assign({ _emit: false, format: 'json' }, opts || {}))));
   ipcMain.handle('dlp:audit:export-csv', async (e, opts) => {
     const rows = withDb(db => auditQuery.globalHistory(db, Object.assign({}, opts || {}, { limit: 1000000, offset: 0 })));
     const cols = ['ts','project_name','unit_number_norm','table_name','field','old_value','new_value','action','source','change_id','user_note'];
