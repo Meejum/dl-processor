@@ -506,6 +506,38 @@ SELECT COUNT(*) FROM audit_log WHERE row_hash IS NULL;
 
 ---
 
+## v2.2 native dashboard problems
+
+### Dashboard tab opens but shows no cards
+
+The `dlp:compare:summary` IPC call returned an empty array. Common causes:
+
+- `data/dl-processor.db` doesn't exist yet — open the app, run `Import DLD` and `Import SF` at least once.
+- The database has projects but no `dld_snapshot` rows — projects need at least one snapshot before they show on the Dashboard (`status: 'no-dld-snapshot'`).
+- Devtools check: open the renderer devtools console and run `await window.dlp.compare.summary()`. An empty array confirms the backend has no data; a thrown error points at the underlying IPC failure (DB locked, schema mismatch, etc.).
+
+### Project Compare opens blank for a Salesforce-only project
+
+Expected. Projects with `project_id = null` (no DLD mapping yet) have no DLD snapshot to compare against. The tab shows a "not available" inline message and falls back to opening the static `output/compare/<slug>.compare.html` if it exists. Add the project to `config/project-mapping.json` and re-run `compare` to bring it into the native tab.
+
+### Buyer / applicant popup gets clipped behind the tab strip
+
+Known z-index gotcha — the popup uses `position: fixed` with a high z-index, but a sufficiently deep custom DPI / zoom setting can still clip it. Workaround: scroll the row up so the popup opens below the chip instead of above. File an issue with your screen resolution + Windows scaling % so we can reproduce.
+
+### Procedure or PENDING chip click does nothing
+
+Both chips dispatch custom events (`dlp:open-history` / `dlp:open-review-pending`) that the main app listens for in `electron/renderer/app.js`. If clicks are dead:
+
+- Confirm you're on v2.2+ (check `Help → About` or `package.json`).
+- Open devtools and watch the Console — a thrown error during event dispatch means the receiving page failed to render (usually a DB / IPC issue, not a UI bug).
+- Try opening the target page directly from the sidebar (`📜 History` or `5. Review pending`). If that works, the event listener is fine — the chip handler is the bug.
+
+### Native Project Compare and static HTML show different counts
+
+The native page reads live data; the static HTML is frozen at `compare` time. Re-run `compare` (or click `🔄 Refresh` on the native tab) so both surfaces reflect the same `dld_snapshot` / `sf_snapshot`. v2.1 audit hardening fields (user, tier-2, hash chain) only appear in the live data, never in the frozen HTML.
+
+---
+
 ## Build problems (developers)
 
 ### `npm run dist` fails with "icon must be at least 256x256"

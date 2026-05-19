@@ -27,6 +27,11 @@ contextBridge.exposeInMainWorld('dlp', {
     exportXlsx:  (opts) => ipcRenderer.invoke('dlp:audit:export-xlsx', opts || {}),
     revert:      (args) => ipcRenderer.invoke('dlp:audit:revert', args)
   },
+  // v2.2: native dashboard compare bridge (spec § 1)
+  compare: {
+    summary: ()          => ipcRenderer.invoke('dlp:compare:summary'),
+    project: (projectId) => ipcRenderer.invoke('dlp:compare:project', projectId)
+  },
   db: {
     probeZip:  (args) => ipcRenderer.invoke('dlp:db:probe-zip',  args || {}),
     commitZip: (args) => ipcRenderer.invoke('dlp:db:commit-zip', args || {})

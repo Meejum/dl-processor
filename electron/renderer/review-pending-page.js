@@ -220,8 +220,17 @@
     }
   }
 
-  function renderReviewPendingPage(container, _opts) {
+  function renderReviewPendingPage(container, initialFilters) {
     container.classList.add('review-pending-page');
+
+    // v2.2: accept initial filters from deep-link dispatcher (Dashboard PENDING
+    // chip and Project Compare PENDING flag chip). Sanitize to known keys.
+    const safeFilters = {};
+    if (initialFilters) {
+      if (initialFilters.projectId)    safeFilters.projectId    = initialFilters.projectId;
+      if (initialFilters.projectName)  safeFilters.projectName  = initialFilters.projectName;
+      if (initialFilters.unitNumber)   safeFilters.unitNumber   = initialFilters.unitNumber;
+    }
 
     // Page skeleton — filter bar sits above the tab strip; content area
     // below switches between Needs review (BP cards) and Drift log (table).
@@ -842,6 +851,20 @@
       // race the settings IPC. Failure is non-fatal — loadThresholds()
       // falls back to defaults.
       try { await loadThresholds(); } catch (_) { /* non-fatal */ }
+
+      // v2.2: deep-link seeding. Apply AFTER populateProjects() so the project
+      // <select> options exist, and BEFORE writeFiltersToInputs() so the seeded
+      // values are reflected in the rendered inputs. Honors projectId (passed
+      // by Dashboard PENDING chip / Project Compare) and unitNumber (pre-seeds
+      // the free-text search so the user sees a narrowed result immediately).
+      // Do NOT auto-fire Apply — the user can commit the seeded filters when ready.
+      if (safeFilters.projectId != null) {
+        filterState.projectId = Number(safeFilters.projectId);
+      }
+      if (safeFilters.unitNumber && !filterState.search) {
+        filterState.search = safeFilters.unitNumber;
+      }
+
       writeFiltersToInputs();
       renderTabs(0, 0);
       await reloadActiveTab();
