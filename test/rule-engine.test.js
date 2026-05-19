@@ -103,3 +103,65 @@ test('rejects unknown operator', () => {
     /operator/i
   );
 });
+
+// ───── AND/OR nesting (Task 2.2) ─────
+
+const { evaluatePredicate } = require('../src/rule-engine');
+
+test('AND: all clauses true → true', () => {
+  const p = { op: 'and', clauses: [
+    { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+    { field: 'delta_pct', operator: '=', value: 0 }
+  ]};
+  assert.equal(evaluatePredicate(p, baseChange, ctx), true);
+});
+
+test('AND: one clause false → false', () => {
+  const p = { op: 'and', clauses: [
+    { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+    { field: 'delta_pct', operator: '>', value: 99 }
+  ]};
+  assert.equal(evaluatePredicate(p, baseChange, ctx), false);
+});
+
+test('OR: any clause true → true', () => {
+  const p = { op: 'or', clauses: [
+    { field: 'change_type', operator: '=', value: 'PRICE_UP' },
+    { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' }
+  ]};
+  assert.equal(evaluatePredicate(p, baseChange, ctx), true);
+});
+
+test('OR: all clauses false → false', () => {
+  const p = { op: 'or', clauses: [
+    { field: 'change_type', operator: '=', value: 'PRICE_UP' },
+    { field: 'change_type', operator: '=', value: 'PRICE_DOWN' }
+  ]};
+  assert.equal(evaluatePredicate(p, baseChange, ctx), false);
+});
+
+test('nesting depth 3 works', () => {
+  const p = { op: 'and', clauses: [
+    { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+    { op: 'or', clauses: [
+      { field: 'tier2', operator: '=', value: true },
+      { op: 'and', clauses: [
+        { field: 'delta_pct', operator: '<', value: 5 },
+        { field: 'alias_exists', operator: '=', value: false }
+      ]}
+    ]}
+  ]};
+  assert.equal(evaluatePredicate(p, baseChange, ctx), true);
+});
+
+test('nesting depth 4 rejected', () => {
+  let p = { op: 'and', clauses: [{ field: 'tier2', operator: '=', value: false }] };
+  for (let i = 0; i < 4; i++) p = { op: 'and', clauses: [p] };
+  assert.throws(() => evaluatePredicate(p, baseChange, ctx), /depth/i);
+});
+
+test('leaf clause inside predicate position', () => {
+  // Single-leaf predicate (no op/clauses wrapper) is valid as input to evaluatePredicate
+  const p = { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' };
+  assert.equal(evaluatePredicate(p, baseChange, ctx), true);
+});

@@ -47,8 +47,39 @@ function evaluateLeaf(clause, change, ctx) {
   return !!op(fieldValue, value);
 }
 
+const MAX_NESTING_DEPTH = 3;
+
+function evaluatePredicate(pred, change, ctx, depth = 0) {
+  if (depth > MAX_NESTING_DEPTH) {
+    throw new Error(`predicate nesting depth ${depth} exceeds max ${MAX_NESTING_DEPTH}`);
+  }
+  // Leaf clause (no op/clauses wrapper)
+  if (pred.op === undefined) {
+    return evaluateLeaf(pred, change, ctx);
+  }
+  const { op, clauses } = pred;
+  if (!Array.isArray(clauses) || clauses.length === 0) {
+    throw new Error(`predicate "${op}" must have a non-empty clauses array`);
+  }
+  if (op === 'and') {
+    for (const c of clauses) {
+      if (!evaluatePredicate(c, change, ctx, depth + 1)) return false;
+    }
+    return true;
+  }
+  if (op === 'or') {
+    for (const c of clauses) {
+      if (evaluatePredicate(c, change, ctx, depth + 1)) return true;
+    }
+    return false;
+  }
+  throw new Error(`unknown predicate op "${op}"`);
+}
+
 module.exports = {
   FIELD_ALLOWLIST,
   OPERATORS,
-  evaluateLeaf
+  MAX_NESTING_DEPTH,
+  evaluateLeaf,
+  evaluatePredicate
 };
