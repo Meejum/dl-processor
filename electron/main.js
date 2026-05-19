@@ -437,20 +437,31 @@ app.whenReady().then(async () => {
   // v2.1 Settings IPC — reads/writes %APPDATA%\dl-processor\config.json
   ipcMain.handle('dlp:settings:get', () => {
     const cfg = loadAppConfig(state.appConfigPath) || {};
-    // Return the v2.1-relevant keys with defaults applied
+    // Return the v2.1 + v2.3 keys with defaults applied.
     return {
-      audit_user:       cfg.audit_user       || '',
-      tier2_price_pct:  cfg.tier2_price_pct  != null ? cfg.tier2_price_pct  : 10,
-      tier2_price_abs:  cfg.tier2_price_abs  != null ? cfg.tier2_price_abs  : 50000,
-      tier2_area_pct:   cfg.tier2_area_pct   != null ? cfg.tier2_area_pct   : 5
+      // v2.1 audit + tier-2
+      audit_user:                          cfg.audit_user                          || '',
+      tier2_price_pct:                     cfg.tier2_price_pct                     != null ? cfg.tier2_price_pct                     : 10,
+      tier2_price_abs:                     cfg.tier2_price_abs                     != null ? cfg.tier2_price_abs                     : 50000,
+      tier2_area_pct:                      cfg.tier2_area_pct                      != null ? cfg.tier2_area_pct                      : 5,
+      // v2.3 workflow automation
+      trending_min_baseline:               cfg.trending_min_baseline               != null ? cfg.trending_min_baseline               : 5,
+      trending_ratio_threshold:            cfg.trending_ratio_threshold            != null ? cfg.trending_ratio_threshold            : 2.0,
+      rules_warn_before_disabling_builtin: cfg.rules_warn_before_disabling_builtin != null ? cfg.rules_warn_before_disabling_builtin : true,
+      bulk_confirmation_threshold:         cfg.bulk_confirmation_threshold         != null ? cfg.bulk_confirmation_threshold         : 25
     };
   });
 
   ipcMain.handle('dlp:settings:set', (e, partial) => {
     const cfg = loadAppConfig(state.appConfigPath) || {};
     const incoming = partial || {};
-    // Merge in only the recognized keys
-    for (const k of ['audit_user', 'tier2_price_pct', 'tier2_price_abs', 'tier2_area_pct']) {
+    // Merge in only the recognized keys (v2.1 + v2.3).
+    const ALLOWED = [
+      'audit_user', 'tier2_price_pct', 'tier2_price_abs', 'tier2_area_pct',
+      'trending_min_baseline', 'trending_ratio_threshold',
+      'rules_warn_before_disabling_builtin', 'bulk_confirmation_threshold'
+    ];
+    for (const k of ALLOWED) {
       if (Object.prototype.hasOwnProperty.call(incoming, k)) cfg[k] = incoming[k];
     }
     // Persist along with whatever was already in cfg (dataFolder, etc.)
