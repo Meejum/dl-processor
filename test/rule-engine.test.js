@@ -165,3 +165,99 @@ test('leaf clause inside predicate position', () => {
   const p = { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' };
   assert.equal(evaluatePredicate(p, baseChange, ctx), true);
 });
+
+// ───── two-pass evaluate (Task 2.3) ─────
+
+const { evaluate } = require('../src/rule-engine');
+
+function rule(id, priority, when, then, opts = {}) {
+  return {
+    id,
+    priority,
+    enabled: opts.enabled !== false,
+    when,
+    then
+  };
+}
+
+test('evaluate: terminal action wins (first match by priority order)', () => {
+  const rules = [
+    rule(1, 1, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' }, { action: 'auto_approve' }),
+    rule(2, 2, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' }, { action: 'auto_reject' })
+  ];
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.action, 'auto_approve');
+  assert.equal(d.rule_id, 1);
+  assert.equal(d.anomaly, null);
+});
+
+test('evaluate: rules already sorted by priority (caller responsibility)', () => {
+  // The loader returns sorted rules; the engine assumes priority order in the array.
+  const rules = [
+    rule(2, 2, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' }, { action: 'auto_reject' }),
+    rule(1, 1, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' }, { action: 'auto_approve' })
+  ];
+  // Engine iterates in array order — first match wins regardless of priority field
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.action, 'auto_reject');
+  assert.equal(d.rule_id, 2);
+});
+
+test('evaluate: flag_anomaly never short-circuits; max severity wins; reasons accumulate', () => {
+  const rules = [
+    rule(1, 1, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'flag_anomaly', anomaly_severity: 'warn' }),
+    rule(2, 2, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'flag_anomaly', anomaly_severity: 'high' }),
+    rule(3, 3, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'auto_approve' })
+  ];
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.action, 'auto_approve');
+  assert.equal(d.rule_id, 3);
+  assert.ok(d.anomaly, 'anomaly should accumulate');
+  assert.equal(d.anomaly.severity, 'high');
+  assert.equal(d.anomaly.reasons.length, 2);
+  // Reasons preserved in priority order (1 then 2)
+  assert.deepEqual(d.anomaly.reasons.map(r => r.rule_id), [1, 2]);
+});
+
+test('evaluate: anomaly without terminal match → action null but anomaly populated', () => {
+  const rules = [
+    rule(1, 1, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'flag_anomaly', anomaly_severity: 'warn' })
+  ];
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.action, null);
+  assert.equal(d.rule_id, null);
+  assert.equal(d.anomaly.severity, 'warn');
+  assert.equal(d.anomaly.reasons.length, 1);
+});
+
+test('evaluate: no rules → null everywhere', () => {
+  const d = evaluate(baseChange, ctx, []);
+  assert.equal(d.action, null);
+  assert.equal(d.rule_id, null);
+  assert.equal(d.anomaly, null);
+});
+
+test('evaluate: disabled rules are skipped (both passes)', () => {
+  const rules = [
+    rule(1, 1, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'flag_anomaly', anomaly_severity: 'high' }, { enabled: false }),
+    rule(2, 2, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'auto_approve' }, { enabled: false })
+  ];
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.action, null);
+  assert.equal(d.anomaly, null);
+});
+
+test('evaluate: note from then carries through', () => {
+  const rules = [
+    rule(1, 1, { field: 'change_type', operator: '=', value: 'BUYER_MISMATCH' },
+      { action: 'auto_approve', note: 'alias match, sub-threshold' })
+  ];
+  const d = evaluate(baseChange, ctx, rules);
+  assert.equal(d.note, 'alias match, sub-threshold');
+});

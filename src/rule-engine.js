@@ -76,10 +76,74 @@ function evaluatePredicate(pred, change, ctx, depth = 0) {
   throw new Error(`unknown predicate op "${op}"`);
 }
 
+const TERMINAL_ACTIONS = new Set(['auto_approve', 'auto_reject', 'auto_acknowledge_bp', 'skip']);
+const SEVERITY_RANK = { warn: 1, high: 2 };
+
+// Two-pass evaluation per spec § 3.2.
+// Pass 1: every enabled flag_anomaly rule whose WHEN matches contributes
+//         a reason. Reasons accumulate in array (priority) order; max
+//         severity wins.
+// Pass 2: scan enabled rules in array order for the first match whose
+//         action is NOT 'flag_anomaly'. That action + rule wins.
+//
+// Caller (rule-loader) is responsible for passing rules already sorted
+// by priority. The engine iterates in array order.
+function evaluate(change, ctx, rules) {
+  const reasons = [];
+  let maxSeverity = null;
+
+  // Pass 1: anomalies
+  for (const r of rules) {
+    if (!r.enabled) continue;
+    if (r.then.action !== 'flag_anomaly') continue;
+    let matched = false;
+    try { matched = evaluatePredicate(r.when, change, ctx); }
+    catch (_err) { continue; } // malformed rule — silently skip; loader handles disable+log
+    if (!matched) continue;
+    const sev = r.then.anomaly_severity || 'warn';
+    reasons.push({
+      rule_id: r.id,
+      code: r.then.code || r.then.action,
+      severity: sev,
+      detail: r.then.note || null
+    });
+    if (maxSeverity === null || (SEVERITY_RANK[sev] || 0) > (SEVERITY_RANK[maxSeverity] || 0)) {
+      maxSeverity = sev;
+    }
+  }
+
+  // Pass 2: terminal action
+  let action = null;
+  let rule_id = null;
+  let note = null;
+  for (const r of rules) {
+    if (!r.enabled) continue;
+    if (!TERMINAL_ACTIONS.has(r.then.action)) continue;
+    let matched = false;
+    try { matched = evaluatePredicate(r.when, change, ctx); }
+    catch (_err) { continue; }
+    if (matched) {
+      action = r.then.action;
+      rule_id = r.id;
+      note = r.then.note || null;
+      break;
+    }
+  }
+
+  const anomaly = reasons.length > 0
+    ? { severity: maxSeverity, reasons }
+    : null;
+
+  return { action, rule_id, anomaly, note };
+}
+
 module.exports = {
   FIELD_ALLOWLIST,
   OPERATORS,
   MAX_NESTING_DEPTH,
+  TERMINAL_ACTIONS,
+  SEVERITY_RANK,
   evaluateLeaf,
-  evaluatePredicate
+  evaluatePredicate,
+  evaluate
 };
