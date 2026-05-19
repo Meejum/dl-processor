@@ -1147,6 +1147,52 @@ body.log-hidden .log-column { display: none; }
 .chip.dld   { background: #BFD4E8; color: #1E4E7A; border-color: #9ABDD7; }
 .chip.sf    { background: #D6BFE4; color: #5A2B82; border-color: #BB9DD0; }
 
+/* Automation rules editor — v2.3 Phase 9. JSON-textarea descope per spec
+   Realism Check #3. Every selector is scoped under .automation-page so
+   styles cannot leak into other tabs. */
+.automation-page { padding: 16px 22px 24px; }
+.automation-page .ap-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 14px; }
+.automation-page .ap-head h2 { margin: 0; font: 700 22px/1.2 'Dubai','Inter',sans-serif; color: var(--ink, #1F1A14); }
+.automation-page .ap-totals { color: var(--ink-2, #5A4A37); font-size: 13px; }
+.automation-page .ap-totals b { color: var(--accent-dark, #5C3D1E); }
+.automation-page .ap-new-btn { padding: 6px 14px; background: var(--accent, #C9A66B); color: #fff; border: 1px solid var(--accent-dark, #5C3D1E); border-radius: 6px; cursor: pointer; font: inherit; }
+.automation-page .ap-new-btn:hover { background: var(--accent-dark, #5C3D1E); }
+.automation-page .ap-status { min-height: 18px; color: var(--ink-2, #5A4A37); font-size: 13px; margin-bottom: 8px; }
+.automation-page .ap-status.is-error { color: #A12C1B; }
+.automation-page .ap-list { display: flex; flex-direction: column; gap: 6px; }
+.automation-page .ap-row { display: grid; grid-template-columns: 36px minmax(220px, 1fr) 80px 130px auto; gap: 12px; align-items: center; padding: 10px 12px; background: var(--surface, #fff); border: 1px solid var(--border, #E3D9C8); border-radius: 6px; }
+.automation-page .ap-row.is-disabled { opacity: .6; }
+.automation-page .ap-row.is-builtin { background: var(--surface-2, #FBF5EA); }
+.automation-page .ap-cell-toggle input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+.automation-page .ap-name { font-weight: 600; color: var(--ink, #1F1A14); }
+.automation-page .ap-badge { display: inline-block; margin-left: 6px; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.automation-page .ap-badge-builtin { background: #E8DCC4; color: #5C3D1E; border: 1px solid #C9A66B; }
+.automation-page .ap-mute { color: var(--muted, #8A7B62); font-weight: normal; font-size: 12px; }
+.automation-page .ap-cell-priority, .automation-page .ap-cell-counts { font-size: 13px; color: var(--ink-2, #5A4A37); }
+.automation-page .ap-cell-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.automation-page .ap-btn { padding: 5px 12px; border: 1px solid var(--border-2, #C9A66B); background: var(--surface, #fff); border-radius: 4px; cursor: pointer; font: inherit; font-size: 13px; }
+.automation-page .ap-btn:hover:not(:disabled) { background: var(--accent-soft, #F3E6CC); }
+.automation-page .ap-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.automation-page .ap-btn-primary { background: var(--accent, #C9A66B); color: #fff; border-color: var(--accent-dark, #5C3D1E); }
+.automation-page .ap-btn-primary:hover:not(:disabled) { background: var(--accent-dark, #5C3D1E); }
+
+/* Inline modal — overlays the page only (not the whole app). */
+.automation-page .ap-modal { position: fixed; inset: 0; background: rgba(28,20,10,.4); display: flex; align-items: center; justify-content: center; z-index: 220; }
+.automation-page .ap-modal-card { background: var(--surface, #fff); border-radius: 10px; width: 640px; max-width: 92vw; max-height: 88vh; display: flex; flex-direction: column; box-shadow: 0 8px 24px rgba(0,0,0,.18); }
+.automation-page .ap-modal-head { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px; border-bottom: 1px solid var(--border, #E3D9C8); }
+.automation-page .ap-modal-head h3 { margin: 0; font-size: 16px; color: var(--accent-dark, #5C3D1E); }
+.automation-page .ap-modal-close { background: none; border: none; font-size: 22px; line-height: 1; cursor: pointer; color: var(--muted, #8A7B62); }
+.automation-page .ap-modal-close:hover { color: var(--ink, #1F1A14); }
+.automation-page .ap-modal-error { margin: 12px 18px 0; padding: 8px 12px; background: #FBE2DC; color: #A12C1B; border: 1px solid #E8AC9C; border-radius: 4px; font-size: 13px; white-space: pre-wrap; }
+.automation-page .ap-modal-error[hidden] { display: none; }
+.automation-page .ap-modal-body { padding: 14px 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.automation-page .ap-field { display: flex; flex-direction: column; gap: 4px; }
+.automation-page .ap-field-label { font-size: 12px; font-weight: 600; color: var(--ink-2, #5A4A37); }
+.automation-page .ap-input { padding: 6px 10px; border: 1px solid var(--border, #E3D9C8); border-radius: 4px; font: inherit; }
+.automation-page .ap-textarea { padding: 8px 10px; border: 1px solid var(--border, #E3D9C8); border-radius: 4px; font: 12px/1.45 ui-monospace, 'Cascadia Code', 'Consolas', monospace; resize: vertical; min-height: 80px; }
+.automation-page .ap-input:focus, .automation-page .ap-textarea:focus { outline: none; border-color: var(--accent, #C9A66B); box-shadow: 0 0 0 2px rgba(201,166,107,.25); }
+.automation-page .ap-modal-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 18px; border-top: 1px solid var(--border, #E3D9C8); }
+
 .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font: 600 10px/1.4 'Inter', sans-serif; letter-spacing: .4px; text-transform: uppercase; }
 .badge.ok   { background: #DCEDC8; color: #2E6B3A; }
 .badge.up   { background: #C5E1A5; color: #1E6B34; }
