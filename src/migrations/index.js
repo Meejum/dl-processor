@@ -10,7 +10,8 @@ const MIGRATIONS = [
   require('./2026-05-12-005-audit-log-source-widen'),
   require('./2026-05-13-006-sf-booking-step-cols'),
   require('./2026-05-13-007-audit-log-action-widen'),
-  require('./2026-05-13-008-audit-hardening')
+  require('./2026-05-13-008-audit-hardening'),
+  require('./2026-05-18-009-automation')
 ];
 
 function runMigrations(db) {

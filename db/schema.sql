@@ -299,7 +299,8 @@ CREATE TABLE IF NOT EXISTS pending_change (
   decision_notes       TEXT,
   proposed_at          TEXT NOT NULL DEFAULT (datetime('now')),
   decided_at           TEXT,
-  decided_by           TEXT
+  decided_by           TEXT,
+  anomaly              TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_pending_proj_unit ON pending_change(project_id, unit_number_norm);
@@ -323,7 +324,8 @@ CREATE TABLE IF NOT EXISTS audit_log (
                       ('approve','override','reject','auto_apply','learn_alias',
                        'approve_bp','reject_bp','acknowledge_bp','revert')),
   source            TEXT NOT NULL CHECK (source IN
-                      ('review_pending','import_dld','import_sf','apply_pending','compare')),
+                      ('review_pending','import_dld','import_sf','apply_pending',
+                       'compare','rule_fired','bulk_op')),
   change_id         INTEGER,
   user_note         TEXT,
   user              TEXT,
@@ -346,3 +348,24 @@ CREATE TABLE IF NOT EXISTS buyer_alias (
   UNIQUE (project_id, variant)
 );
 CREATE INDEX IF NOT EXISTS buyer_alias_lookup ON buyer_alias (project_id, variant);
+
+-- ─────────────────────────────────────────────────────────────────────
+-- v2.3 — automation_rule. Migration 009 also creates this for upgrade
+-- DBs; this section ensures fresh DBs get it in one shot AND seeds the
+-- 4 built-in rules (migration 009's INSERT OR IGNORE handles dedupe).
+-- ─────────────────────────────────────────────────────────────────────
+CREATE TABLE IF NOT EXISTS automation_rule (
+  id            INTEGER PRIMARY KEY,
+  name          TEXT NOT NULL,
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  priority      INTEGER NOT NULL,
+  when_json     TEXT NOT NULL,
+  then_json     TEXT NOT NULL,
+  builtin       INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  created_by    TEXT,
+  applied_count INTEGER NOT NULL DEFAULT 0,
+  revert_count  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_automation_rule_priority
+  ON automation_rule(enabled, priority);
