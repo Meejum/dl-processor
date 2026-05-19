@@ -7,7 +7,8 @@
 1. **Done** — v1.2 (patch-based updates), v2.0 (de-iframe + BP grouping + DLD drift) on 2026-05-12, v2.1 (audit hardening) on 2026-05-13, and v2.2 (native project dashboard) on 2026-05-15. v1.3 and v1.4 were folded into v2.0.
 2. **Now (v2.2 production phase)** — Use v2.2 with the registration team for 2-4 weeks. Capture friction on the native Dashboard and Project Compare tabs (popup behavior, column sort cases, refresh ergonomics).
 3. **Next milestone** — v2.3 (workflow automation: bulk operations, rules engine, anomaly flags).
-4. **Mid-2026** — Evaluate v2.x vs v3.0 against actual team adoption signals.
+4. **Planning process (from 2026-05-19)** — Every new spec uses the template at `docs/superpowers/spec-template.md`, runs a pre-spec exploration agent committed to `docs/superpowers/explorations/`, and passes the `docs/superpowers/spec-checklist.md` gate before graduating to plan-writing. Planning gaps are logged in `docs/superpowers/planning-mistakes-log.md`. Forward-only; existing specs (v0.4 → v2.3) are not retrofitted. v2.3 implementation plan is the first to use the new process end-to-end.
+5. **Mid-2026** — Evaluate v2.x vs v3.0 against actual team adoption signals.
 
 ---
 
