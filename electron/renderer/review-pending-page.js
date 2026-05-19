@@ -268,6 +268,14 @@
           '<label class="rp-f rp-f-search">Search',
             '<input type="text" class="rp-f-search-input" placeholder="unit, buyer, comments…">',
           '</label>',
+          '<label class="rp-f">Flagged',
+            '<select class="rp-f-flagged">',
+              '<option value="any" selected>any</option>',
+              '<option value="high">high</option>',
+              '<option value="warn">warn</option>',
+              '<option value="none">none</option>',
+            '</select>',
+          '</label>',
           '<div class="rp-filter-actions">',
             '<button type="button" class="rp-btn rp-btn-apply">Apply</button>',
             '<button type="button" class="rp-btn rp-btn-reset">Reset</button>',
@@ -296,6 +304,7 @@
     const fProcedure = container.querySelector('.rp-f-procedure');
     const fDate      = container.querySelector('.rp-f-date');
     const fSearch    = container.querySelector('.rp-f-search-input');
+    const fFlagged   = container.querySelector('.rp-f-flagged');
     const btnApply   = container.querySelector('.rp-btn-apply');
     const btnReset   = container.querySelector('.rp-btn-reset');
 
@@ -323,7 +332,8 @@
       datePreset: 'last_30_days',
       fromTs: computeFromTs('last_30_days'),
       toTs: null,
-      search: null
+      search: null,
+      flagged: 'any'
     };
     let filterState = Object.assign({}, filterDefaults);
 
@@ -337,6 +347,56 @@
       return String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
         '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
       }[c]));
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Anomaly helpers (v2.3 Phase 10)
+    //
+    // pending_change.anomaly is JSON of shape:
+    //   { "severity": "high"|"warn", "reasons": [{ rule_id, code, detail? }, ...] }
+    // Cells render as a chip (🚨 high / ⚠️ warn) or empty. Sort order: high > warn > none.
+    // ─────────────────────────────────────────────────────────────────
+    function parseAnomaly(raw) {
+      if (raw == null || raw === '') return null;
+      if (typeof raw === 'object') return raw;
+      try {
+        const o = JSON.parse(String(raw));
+        return o && typeof o === 'object' ? o : null;
+      } catch (_) { return null; }
+    }
+
+    function anomalySeverity(raw) {
+      const a = parseAnomaly(raw);
+      if (!a) return null;
+      const s = a.severity;
+      return (s === 'high' || s === 'warn') ? s : null;
+    }
+
+    function anomalySeverityRank(sev) {
+      // For sorting: high > warn > none.
+      if (sev === 'high') return 2;
+      if (sev === 'warn') return 1;
+      return 0;
+    }
+
+    function fmtAnomalyChipCell(raw) {
+      const sev = anomalySeverity(raw);
+      if (sev === 'high') return '<span class="rp-anomaly-chip chip-anomaly-high" title="High severity anomaly">🚨 high</span>';
+      if (sev === 'warn') return '<span class="rp-anomaly-chip chip-anomaly-warn" title="Warning-level anomaly">⚠️ warn</span>';
+      return '';
+    }
+
+    // Filter predicate keyed off filterState.flagged. Accepts a raw anomaly
+    // value (string JSON or null/undefined) and returns true if the row
+    // should be kept under the current chip selection.
+    function passesFlaggedFilter(rawAnomaly) {
+      const pick = filterState.flagged || 'any';
+      if (pick === 'any') return true;
+      const sev = anomalySeverity(rawAnomaly);
+      if (pick === 'high') return sev === 'high';
+      if (pick === 'warn') return sev === 'warn';
+      if (pick === 'none') return sev == null;
+      return true;
     }
 
     function fmtField(f) {
@@ -416,6 +476,7 @@
       filterState.fromTs          = computeFromTs(filterState.datePreset);
       filterState.toTs            = null;
       filterState.search          = fSearch.value.trim() || null;
+      filterState.flagged         = fFlagged.value || 'any';
     }
 
     function writeFiltersToInputs() {
@@ -427,6 +488,7 @@
       fProcedure.value = filterState.procedureNumber || '';
       fDate.value      = filterState.datePreset || 'last_30_days';
       fSearch.value    = filterState.search || '';
+      fFlagged.value   = filterState.flagged || 'any';
     }
 
     // ─────────────────────────────────────────────────────────────────
@@ -464,6 +526,16 @@
         if (filterState.towerName) {
           const t = bp.sfContext && bp.sfContext.tower_name;
           if (t !== filterState.towerName) return false;
+        }
+        // Flagged severity filter (v2.3 Phase 10) — a BP passes when ANY of
+        // its rows matches the picked severity. "none" requires that no row
+        // carries an anomaly at all.
+        const pick = filterState.flagged || 'any';
+        if (pick !== 'any') {
+          const sevs = (bp.rows || []).map(r => anomalySeverity(r.anomaly));
+          if (pick === 'high'  && !sevs.includes('high')) return false;
+          if (pick === 'warn'  && !sevs.includes('warn')) return false;
+          if (pick === 'none'  && sevs.some(s => s != null)) return false;
         }
         return true;
       });
@@ -682,6 +754,8 @@
           return isNaN(t) ? true : t >= fromMs;
         });
       }
+      // Flagged severity filter (v2.3 Phase 10)
+      rows = rows.filter(r => passesFlaggedFilter(r.anomaly));
       // Search across unit / project / field / values
       if (filterState.search) {
         const needle = filterState.search.toLowerCase();
@@ -692,6 +766,11 @@
         });
       }
       rows.sort((a, b) => {
+        // Primary: anomaly severity (high > warn > none) so flagged rows surface to the top.
+        const ar = anomalySeverityRank(anomalySeverity(a.anomaly));
+        const br = anomalySeverityRank(anomalySeverity(b.anomaly));
+        if (ar !== br) return br - ar;
+        // Secondary: decided_at desc (existing behaviour).
         const ad = a.decided_at || '';
         const bd = b.decided_at || '';
         if (ad === bd) return 0;
@@ -716,6 +795,7 @@
           '<td class="rp-old">', esc(r.old_value), '</td>',
           '<td class="rp-proposed">', esc(r.proposed_value), '</td>',
           '<td><span class="rp-change-type rp-ct-', esc(r.change_type), '">', esc(fmtSource(r.change_type)), '</span></td>',
+          '<td class="rp-flags-cell">', fmtAnomalyChipCell(r.anomaly), '</td>',
         '</tr>'
       ].join('');
     }
@@ -747,7 +827,7 @@
       const html = [
         '<table class="rp-table"><thead><tr>',
           '<th>When</th><th>Unit</th><th>Field</th>',
-          '<th>Old</th><th>New</th><th>Source</th>',
+          '<th>Old</th><th>New</th><th>Source</th><th>Flags</th>',
         '</tr></thead><tbody class="rp-drift-tbody">',
         shown.map(driftRowHtml).join(''),
         '</tbody></table>',
@@ -772,11 +852,115 @@
         const unit      = tr.getAttribute('data-unit');
         const opener = window.__openUnitHistoryPanel;
         if (typeof opener === 'function') {
-          try { opener(projectId, unit); }
+          try {
+            const ret = opener(projectId, unit);
+            // After the panel finishes loading (or even synchronously), inject
+            // the anomaly-reasons section using anomalies sourced from the
+            // current drift cache for this (project_id, unit).
+            const inject = () => injectAnomalyReasonsIntoPanel(
+              gatherAnomalyReasonsForUnit(projectId, unit)
+            );
+            if (ret && typeof ret.then === 'function') ret.then(inject, inject);
+            else inject();
+          }
           catch (e) { setStatus('Could not open unit history: ' + (e && e.message ? e.message : String(e)), 'error'); }
         } else {
           setStatus('Unit history panel not available.', 'error');
         }
+      });
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Side-panel anomaly section (v2.3 Phase 10)
+    //
+    // Pulls every row in driftRowsCache + needsBpsCache for the supplied
+    // (project_id, unit) and returns a flat de-duplicated array of reasons.
+    // Each reason gets the originating row's severity attached so the
+    // rendered chip can carry the correct emoji.
+    // ─────────────────────────────────────────────────────────────────
+    function gatherAnomalyReasonsForUnit(projectId, unit) {
+      const out = [];
+      const seen = new Set();
+      const pushRow = (raw) => {
+        const a = parseAnomaly(raw);
+        if (!a || !Array.isArray(a.reasons)) return;
+        const sev = (a.severity === 'high' || a.severity === 'warn') ? a.severity : null;
+        for (const reason of a.reasons) {
+          if (!reason || typeof reason !== 'object') continue;
+          const ruleId = reason.rule_id || '';
+          const code   = reason.code    || '';
+          const detail = reason.detail  || '';
+          const key = sev + '|' + ruleId + '|' + code + '|' + detail;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          out.push({ severity: sev, rule_id: ruleId, code, detail });
+        }
+      };
+
+      for (const r of (driftRowsCache || [])) {
+        if (Number(r.project_id) !== Number(projectId)) continue;
+        if (String(r.unit_number_norm) !== String(unit)) continue;
+        pushRow(r.anomaly);
+      }
+      for (const bp of (needsBpsCache || [])) {
+        if (Number(bp.project_id) !== Number(projectId)) continue;
+        if (String(bp.unit_number_norm) !== String(unit)) continue;
+        for (const r of (bp.rows || [])) pushRow(r.anomaly);
+      }
+
+      // Order: high reasons first, then warn, preserving discovery order
+      // within each bucket.
+      out.sort((a, b) => anomalySeverityRank(b.severity) - anomalySeverityRank(a.severity));
+      return out;
+    }
+
+    function injectAnomalyReasonsIntoPanel(reasons) {
+      const panel = document.getElementById('unit-history-panel');
+      if (!panel) return;
+      // Remove any previously-injected anomaly section so re-opens replace
+      // rather than stack.
+      const prev = panel.querySelector('.anomaly-reasons-section');
+      if (prev) prev.remove();
+      if (!reasons || reasons.length === 0) return;
+
+      const itemsHtml = reasons.map(r => {
+        const emoji = r.severity === 'high' ? '🚨' : (r.severity === 'warn' ? '⚠️' : '•');
+        const ruleId = esc(r.rule_id);
+        const ruleAttr = esc(r.rule_id);
+        const code = r.code ? '<span class="anomaly-reason-code">' + esc(r.code) + '</span>' : '';
+        const detail = r.detail
+          ? '<div class="anomaly-reason-detail">' + esc(r.detail) + '</div>'
+          : '';
+        const ruleLink = r.rule_id
+          ? '<a href="#" class="anomaly-reason-rule" data-rule-id="' + ruleAttr + '">' + ruleId + '</a>'
+          : '';
+        return (
+          '<li class="anomaly-reason-item">' +
+            '<span class="anomaly-reason-emoji">' + emoji + '</span>' +
+            ruleLink + ' ' + code +
+            detail +
+          '</li>'
+        );
+      }).join('');
+
+      const section = document.createElement('div');
+      section.className = 'anomaly-reasons-section';
+      section.innerHTML =
+        '<h3 class="anomaly-reasons-title">Anomaly reasons</h3>' +
+        '<ul class="anomaly-reasons-list">' + itemsHtml + '</ul>';
+
+      // Insert ABOVE the .uhp-history section per spec.
+      const historyEl = panel.querySelector('.uhp-history');
+      if (historyEl) panel.insertBefore(section, historyEl);
+      else panel.appendChild(section);
+
+      // Wire rule_id clicks → custom event for Phase 9 / future rule editor.
+      section.addEventListener('click', (ev) => {
+        const a = ev.target.closest && ev.target.closest('a.anomaly-reason-rule');
+        if (!a) return;
+        ev.preventDefault();
+        const ruleId = a.getAttribute('data-rule-id') || '';
+        document.dispatchEvent(new CustomEvent('dlp:open-rule', { detail: { ruleId } }));
       });
     }
 

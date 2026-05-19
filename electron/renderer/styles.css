@@ -460,6 +460,56 @@ body.log-hidden .log-column { display: none; }
   color: var(--muted); font-size: 11px; margin-top: 14px; text-align: right;
 }
 
+/* Anomaly chips (v2.3 Phase 10) — flagged column in drift grid and BP rows.
+   Palette tuned to the existing review-pending tonal vars (rp-danger / rp-warn). */
+.rp-anomaly-chip {
+  display: inline-block; font-size: 10px; font-weight: 600;
+  padding: 1px 6px; border-radius: 8px; letter-spacing: 0.02em;
+  white-space: nowrap;
+}
+.chip-anomaly-high {
+  background: var(--rp-danger-soft, #FBEAE5);
+  color: var(--rp-danger, #8A2415);
+  border: 1px solid var(--rp-danger-border, #E7B5A8);
+  font-weight: 700;
+}
+.chip-anomaly-warn {
+  background: var(--rp-warn-soft, #FBEFD2);
+  color: var(--rp-warn, #8A5A08);
+  border: 1px solid var(--rp-warn-border, #E5C885);
+}
+.review-pending-page .rp-table td.rp-flags-cell { white-space: nowrap; }
+
+/* Anomaly reasons section injected into the per-unit side panel. */
+#unit-history-panel .anomaly-reasons-section {
+  border-left: 3px solid var(--rp-danger, #8A2415);
+  background: var(--rp-danger-soft, #FBEAE5);
+  padding: 8px 12px; margin: 0 0 12px 0; border-radius: 0 6px 6px 0;
+}
+#unit-history-panel .anomaly-reasons-title {
+  margin: 0 0 6px 0; font-size: 12px; font-weight: 700;
+  color: var(--rp-danger, #8A2415); text-transform: uppercase; letter-spacing: 0.06em;
+}
+#unit-history-panel .anomaly-reasons-list { list-style: none; padding: 0; margin: 0; }
+#unit-history-panel .anomaly-reason-item {
+  padding: 4px 0; font-size: 12px; line-height: 1.4;
+  border-top: 1px dashed var(--rp-danger-border, #E7B5A8);
+}
+#unit-history-panel .anomaly-reason-item:first-child { border-top: 0; }
+#unit-history-panel .anomaly-reason-emoji { margin-right: 4px; }
+#unit-history-panel .anomaly-reason-rule {
+  color: var(--accent-dark, #5C3D1E); text-decoration: underline; font-weight: 600;
+  cursor: pointer;
+}
+#unit-history-panel .anomaly-reason-rule:hover { color: var(--rp-danger, #8A2415); }
+#unit-history-panel .anomaly-reason-code {
+  font-family: 'Consolas','Cascadia Mono',monospace; font-size: 11px;
+  color: var(--ink-2); margin-left: 4px;
+}
+#unit-history-panel .anomaly-reason-detail {
+  color: var(--ink-2); font-size: 11px; margin-top: 2px; padding-left: 18px;
+}
+
 /* ---------------------------------------------------------------------------
    History page (v2.0 Task 6 — moved from inline <style> in srcdoc).
    Every selector is scoped to .history-page so styles cannot leak to other
