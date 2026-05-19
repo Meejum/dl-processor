@@ -51,12 +51,14 @@ test('writeAuditLog rejects invalid action via CHECK', () => {
   }), /CHECK/);
 });
 
-test('writeAuditLog rejects invalid source via CHECK', () => {
+test('writeAuditLog rejects invalid source (fail-fast app-layer)', () => {
+  // v2.3: validateAuditSource fails before the SQLite CHECK fires, with
+  // a clearer error message. The CHECK is still in place as a safety net.
   const db = freshDb();
   assert.throws(() => writeAuditLog(db, {
     projectId: 1, unitNumberNorm: '1', tableName: 't', field: 'f',
     action: 'approve', source: 'not_a_source'
-  }), /CHECK/);
+  }), /invalid audit_log\.source/i);
 });
 
 test('writeAuditLog allows null unit_number_norm for non-unit events', () => {
