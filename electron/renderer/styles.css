@@ -1119,6 +1119,18 @@ body.log-hidden .log-column { display: none; }
 .dashboard-page .dc-timestamps { display: flex; gap: 10px; font-size: 11px; color: var(--muted, #8A7E69); margin-top: 4px; }
 .dashboard-page .dc-match { font-size: 10px; color: var(--muted, #8A7E69); margin-top: 6px; letter-spacing: .4px; }
 
+/* v2.3 Phase 7.2 — ⚠ Unusual activity tile sits between the totals strip
+   and the project grid. Hidden entirely when there are no trending rows. */
+.dashboard-page .trending-tile { background: var(--surface-2, #FBF5EA); border: 1px solid var(--warn, #8A5A08); border-radius: 6px; padding: 12px 14px; margin-bottom: 14px; }
+.dashboard-page .trending-tile[hidden] { display: none; }
+.dashboard-page .trending-tile .trending-head h3 { margin: 0 0 8px; font: 700 14px/1.2 'Dubai','Inter',sans-serif; color: var(--warn, #8A5A08); }
+.dashboard-page .trending-tile .trending-rows { display: flex; flex-direction: column; gap: 4px; }
+.dashboard-page .trending-tile .trending-row { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; background: transparent; border: 0; padding: 6px 8px; border-radius: 4px; cursor: pointer; font: inherit; text-align: left; color: var(--ink, #1F1A14); }
+.dashboard-page .trending-tile .trending-row:hover { background: rgba(138, 90, 8, 0.08); }
+.dashboard-page .trending-tile .tr-name { font-weight: 600; }
+.dashboard-page .trending-tile .tr-stats { font-size: 12px; color: var(--ink-2, #5A4A37); }
+.dashboard-page .trending-tile .tr-stats .muted { color: var(--muted, #8A7E69); }
+
 /* v2.2: chip + badge palette ported from src/html-styles.js. Used by
    project-compare-page (status filter chips + Match badges) and
    dashboard-page (issue chips + PENDING chip). Keep visual parity with
