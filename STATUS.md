@@ -3,7 +3,7 @@
 *A chronological history, from the first commit to where we are today, and where we're going next.*
 
 **Snapshot taken:** 2026-05-19
-**Current version:** **v2.2.0** · 428 tests green · `master` at `fd167b5`
+**Current version:** **v2.3.0** (release in progress on `feat/v2.3-workflow-automation` at `4cf3d39`) · 522 tests green · last shipped tag `v2.2.0` on `master` at `fd167b5`
 **Repo:** github.com/Meejum/dl-processor (private)
 **Maintainer:** Ali Alghumlasi — Sobha Realty · Registration / DLD team
 
@@ -357,23 +357,11 @@ Pending team-facing actions: upload to `dl-processor.pages.dev` Cloudflare Pages
 
 ## Chapter 13 — Where the story goes next
 
-### v2.3 — Workflow automation (spec drafted, ~3 weeks)
+### v2.3 — Workflow automation ✅ SHIPPED 2026-05-19
 
-The next milestone. Five features:
+See Chapter 14 below for the full narrative. Headline: 15 commits on `feat/v2.3-workflow-automation` (`7614d73` SAVEPOINT spike → `4cf3d39` IPC wiring), test count 428 → **522** (+94), schema migration 009 (new `automation_rule` table, `pending_change.anomaly` column, widened `audit_log.source` CHECK enum). First release through the spec-process hardening flow.
 
-1. **Bulk operations** — filter the queue, then approve/override/reject the whole filtered set in one click ("approve all 23 BUYER_MISMATCH rows in Sobha One").
-2. **Custom rules engine** — declarative rules in a new `automation_rule` table. Example: `if change_type='BUYER_MISMATCH' AND alias_exists THEN auto_approve`. Applied during compare; matching rows route to `audit_log.action='auto_apply'` instead of `pending_change`.
-3. **Anomaly badges** — visible 🚨 chip on rows with extreme deltas. Distinct from the Tier-2 *gate* (which blocks commit); anomaly is informational.
-4. **Cross-month trending** — Dashboard tile: "Project X has 23 pending changes this month vs avg 8 over last 6 months."
-5. **Pre-compare report** — preview what `compare` *would* produce before writing it, so users can size up the queue before committing to a long review.
-
-Open design questions to settle during planning: rule storage format (JSON body vs typed columns vs small DSL), rule precedence and conflict resolution, anomaly thresholds (reuse Tier-2 settings or new ones?), trending window size, pre-compare report output location.
-
-**Resume phrases:**
-- `"resume dl area — plan v2.3"` — writes the implementation plan from the spec.
-- `"resume dl area — start v2.3"` — once plan exists, begins phased execution on `feat/v2.3-workflow-automation`.
-
-### v2.4 — Reporting & exports (~1 week)
+### v2.4 — Reporting & exports (~1 week, next milestone)
 
 Excel monthly audit reports (all the columns compliance wants), print-friendly per-project A4 layouts, scheduled weekly summary email via Outlook on Windows, "Take me to this unit" deep links in those emails.
 
@@ -483,11 +471,11 @@ electron/
     └── styles.css
 ```
 
-## Appendix B — Schema (18 tables)
+## Appendix B — Schema (19 tables)
 
-`dld_project` · `dld_snapshot` · `dld_building` · `dld_unit` · `dld_transaction` · `dld_breakdown` · `sf_snapshot` · `sf_booking` · `manual_override` · `project_mapping` · `manual_area` · `manual_audit_snapshot` · `manual_audit_project` · `manual_audit_row` · **`master_data`** · **`pending_change`** · **`audit_log`** · **`buyer_alias`**
+`dld_project` · `dld_snapshot` · `dld_building` · `dld_unit` · `dld_transaction` · `dld_breakdown` · `sf_snapshot` · `sf_booking` · `manual_override` · `project_mapping` · `manual_area` · `manual_audit_snapshot` · `manual_audit_project` · `manual_audit_row` · **`master_data`** · **`pending_change`** · **`audit_log`** · **`buyer_alias`** · **`automation_rule`**
 
-8 migrations applied automatically: `001-audit-log` → `002-buyer-alias` → `003-pending-change-v2` → `004-buyer-alias-seed` → `005-audit-log-source-widen` → `006-sf-booking-step-cols` → `007-audit-log-action-widen` → `008-audit-hardening`.
+9 migrations applied automatically: `001-audit-log` → `002-buyer-alias` → `003-pending-change-v2` → `004-buyer-alias-seed` → `005-audit-log-source-widen` → `006-sf-booking-step-cols` → `007-audit-log-action-widen` → `008-audit-hardening` → `009-automation` (creates `automation_rule`, adds `pending_change.anomaly`, widens `audit_log.source` CHECK to 7 enum values, seeds 4 built-in rules).
 
 ## Appendix C — Test count trajectory
 
@@ -500,6 +488,7 @@ v1.2   → 338   (+16, patch system)
 v2.0   → 390   (+52, de-iframe + BP grouping + drift)
 v2.1   → 422   (+32, audit hardening)
 v2.2   → 428   (+6, native panes)
+v2.3   → 522   (+94, rules engine + anomaly + bulk + trending + dry-run)
 ```
 
 ## Appendix D — Pointers
